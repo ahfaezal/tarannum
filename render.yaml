@@ -4,11 +4,10 @@ services:
     runtime: python
     repo: https://github.com/ahfaezal/tarannum
     branch: main
-    rootDir: voice_analyze_backend
     region: singapore
     plan: free
-    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
-    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    buildCommand: cd voice_analyze_backend && pip install --upgrade pip && pip install -r requirements.txt
+    startCommand: cd voice_analyze_backend && uvicorn main:app --host 0.0.0.0 --port $PORT
     autoDeployTrigger: commit
     envVars:
       - key: ENVIRONMENT
