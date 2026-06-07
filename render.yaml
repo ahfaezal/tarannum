@@ -4,6 +4,8 @@ services:
     runtime: docker
     repo: https://github.com/ahfaezal/tarannum
     branch: main
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
     region: singapore
     plan: free
     autoDeployTrigger: commit
