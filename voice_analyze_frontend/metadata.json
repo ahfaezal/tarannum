@@ -1,0 +1,7 @@
+{
+  "name": "Tarannum AI Trainer",
+  "description": "A web-based Quranic Tarannum voice training system with waveform visualization, recording, and automated mimic scoring.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}

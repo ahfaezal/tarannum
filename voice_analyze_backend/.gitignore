@@ -1,0 +1,15 @@
+/venv
+.vscode/
+__pycache__/
+temp_audio/*
+.env
+.env.local
+/models
+/uploads
+
+# Secret / credential
+*.txt
+*key*
+*secret*
+Railway Key.txt
+.env*

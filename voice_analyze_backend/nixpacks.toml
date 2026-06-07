@@ -1,0 +1,10 @@
+[phases.setup]
+nixPkgs = ["python310", "ffmpeg"]
+
+# Ensure setuptools (pkg_resources) is in the runtime venv after default pip install
+[phases.build]
+cmds = ["/opt/venv/bin/python -m pip install --upgrade setuptools wheel"]
+
+[start]
+cmd = "/opt/venv/bin/python main.py"
+
