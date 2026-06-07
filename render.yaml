@@ -23,7 +23,7 @@ services:
       - key: AWS_REGION
         value: ap-southeast-1
       - key: AUTO_DOWNLOAD_MODEL
-        value: "true"
+        value: "false"
       - key: VOSK_MODEL_TYPE
         value: ar-mgb2
       - key: VOSK_MODEL_PATH
