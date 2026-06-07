@@ -4,7 +4,6 @@ services:
     runtime: docker
     repo: https://github.com/ahfaezal/tarannum
     branch: main
-    rootDir: voice_analyze_backend
     region: singapore
     plan: free
     autoDeployTrigger: commit

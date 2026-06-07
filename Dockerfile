@@ -12,11 +12,11 @@ RUN apt-get update \
         libsndfile1 \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
+COPY voice_analyze_backend/requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+COPY voice_analyze_backend/ .
 
 EXPOSE 8000
 

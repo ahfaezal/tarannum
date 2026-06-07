@@ -1,0 +1,13 @@
+.git/
+.vercel/
+.env
+.env.*
+**/__pycache__/
+**/*.py[cod]
+**/.env
+**/.env.*
+voice_analyze_backend/models/
+voice_analyze_backend/temp_audio/
+voice_analyze_backend/uploads/
+voice_analyze_frontend/node_modules/
+voice_analyze_frontend/dist/
