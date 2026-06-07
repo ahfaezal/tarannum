@@ -1,13 +1,14 @@
 services:
   - type: web
     name: tarannum-backend
-    runtime: docker
+    runtime: python
     repo: https://github.com/ahfaezal/tarannum
     branch: main
-    dockerfilePath: ./Dockerfile
-    dockerContext: .
+    rootDir: voice_analyze_backend
     region: singapore
     plan: free
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
     autoDeployTrigger: commit
     envVars:
       - key: ENVIRONMENT
@@ -27,7 +28,7 @@ services:
       - key: VOSK_MODEL_TYPE
         value: ar-mgb2
       - key: VOSK_MODEL_PATH
-        value: /app/models
+        value: /opt/render/project/src/voice_analyze_backend/models
       - key: USE_ASYNC_PROCESSING
         value: "false"
       - key: ENABLE_RATE_LIMITING

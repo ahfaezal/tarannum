@@ -9,6 +9,7 @@ temp_audio/*
 
 # Secret / credential
 *.txt
+!apt.txt
 *key*
 *secret*
 Railway Key.txt
