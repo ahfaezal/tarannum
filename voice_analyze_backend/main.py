@@ -2308,13 +2308,14 @@ if __name__ == "__main__":
     # Check if we're in development mode (auto-reload)
     # Set DEV_MODE=1 environment variable to enable auto-reload
     dev_mode = os.getenv("DEV_MODE", "0") == "1"
+    port = int(os.getenv("PORT", "8000"))
 
     if dev_mode:
         # Development mode: auto-reload on code changes
         uvicorn.run(
             "main:app",
             host="0.0.0.0",
-            port=8000,
+            port=port,
             reload=True,
             reload_dirs=[str(Path(__file__).parent)],
             reload_includes=["*.py"],
@@ -2322,4 +2323,4 @@ if __name__ == "__main__":
         )
     else:
         # Production mode: no auto-reload
-        uvicorn.run(app, host="0.0.0.0", port=8000)
+        uvicorn.run(app, host="0.0.0.0", port=port)

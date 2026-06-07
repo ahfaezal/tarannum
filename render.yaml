@@ -1,0 +1,41 @@
+services:
+  - type: web
+    name: tarannum-backend
+    runtime: docker
+    repo: https://github.com/ahfaezal/tarannum
+    branch: main
+    rootDir: voice_analyze_backend
+    region: singapore
+    plan: free
+    autoDeployTrigger: commit
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: DEBUG
+        value: "false"
+      - key: ALLOWED_ORIGINS
+        value: https://tarannum.vercel.app,https://voice-analyze-frontend-lsyr.vercel.app,http://localhost:5173,http://localhost:3000
+      - key: CLOUD_STORAGE_TYPE
+        value: s3
+      - key: S3_BUCKET_NAME
+        value: tarannum-audio-prod
+      - key: AWS_REGION
+        value: ap-southeast-1
+      - key: AUTO_DOWNLOAD_MODEL
+        value: "true"
+      - key: VOSK_MODEL_TYPE
+        value: ar-mgb2
+      - key: VOSK_MODEL_PATH
+        value: /app/models
+      - key: USE_ASYNC_PROCESSING
+        value: "false"
+      - key: ENABLE_RATE_LIMITING
+        value: "true"
+      - key: DATABASE_URL
+        sync: false
+      - key: SECRET_KEY
+        sync: false
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
