@@ -1,0 +1,25 @@
+setuptools<82
+wheel>=0.40.0
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+python-multipart==0.0.6
+numpy==1.26.4
+librosa==0.10.1
+scipy==1.11.4
+fastdtw==0.3.4
+pydub==0.25.1
+vosk==0.3.45
+rapidfuzz==3.14.3
+sqlalchemy==2.0.23
+psycopg2-binary==2.9.9
+alembic==1.12.1
+python-dotenv==1.0.0
+passlib[bcrypt]==1.7.4
+python-jose[cryptography]==3.3.0
+email-validator==2.1.0
+
+# Milestone 4: Production & Certification Infrastructure
+boto3>=1.34.0  # AWS S3 cloud storage
+celery[redis]>=5.3.4  # Async task queue
+redis>=5.0.0  # Redis client for Celery
+psutil>=5.9.0  # System monitoring (optional but recommended)

@@ -9,6 +9,7 @@ temp_audio/*
 
 # Secret / credential
 *.txt
+!requirements.txt
 !apt.txt
 *key*
 *secret*
