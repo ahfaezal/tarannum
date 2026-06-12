@@ -414,7 +414,8 @@ const TrainingStudio: React.FC = () => {
           // This ensures they see admin-uploaded public references
           try {
             refs = await referenceLibraryService.getReferences();
-            // Filter to only public references (backend should already filter, but double-check)
+            // Public demo users should only see references curated as presets.
+            refs = refs.filter((ref: any) => ref.is_preset === true);
             if (refs.length === 0) {
               // Try platform endpoint as fallback
               const { getAvailableContent } = await import("../services/platformService");
@@ -2196,15 +2197,105 @@ const TrainingStudio: React.FC = () => {
 
   return (
       <div className='max-w-7xl mx-auto px-3 sm:px-4 md:px-6 py-4 sm:py-6 pb-20 sm:pb-24 overflow-x-clip min-h-0'>
+      {userRole === 'public' && (
+        <>
+          <section className='relative overflow-hidden rounded-3xl border border-slate-100 bg-white px-5 py-7 shadow-sm sm:px-8 sm:py-9'>
+            <div className='pointer-events-none absolute inset-y-0 right-0 hidden w-[42%] overflow-hidden lg:block'>
+              <div className='absolute right-12 top-8 h-40 w-40 rounded-full bg-emerald-100/70 blur-2xl'></div>
+              <div className='absolute right-24 top-12 flex h-32 w-32 items-center justify-center rounded-full bg-emerald-50 text-emerald-600 shadow-sm'>
+                <Music size={52} />
+              </div>
+              <div className='absolute bottom-8 right-10 flex h-16 w-16 items-center justify-center rounded-2xl bg-white text-blue-600 shadow-lg shadow-blue-100'>
+                <BarChart2 size={30} />
+              </div>
+              <div className='absolute bottom-16 right-40 h-1 w-44 rotate-[-8deg] rounded-full bg-gradient-to-r from-emerald-300 via-emerald-500 to-blue-400'></div>
+            </div>
+
+            <div className='relative z-10 max-w-3xl'>
+              <span className='mb-3 inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-emerald-700'>
+                <span className='h-2 w-2 rounded-full bg-emerald-500 animate-pulse'></span>
+                Analisis AI Secara Live
+              </span>
+              <h1 className='text-3xl font-bold leading-tight text-slate-900 sm:text-4xl lg:text-5xl'>
+                Belajar Tarannum
+                <span className='mt-1 block text-emerald-600'>
+                  Dengan Analisis AI Secara LIVE
+                </span>
+              </h1>
+              <p className='mt-4 max-w-2xl text-sm leading-7 text-slate-600 sm:text-base'>
+                Padankan bacaan anda dengan Qari pilihan menggunakan analisis nada
+                (pitch), tempo dan ketepatan bacaan.
+              </p>
+              <div className='mt-6 flex flex-col gap-3 sm:flex-row'>
+                <button
+                  type='button'
+                  onClick={() =>
+                    document
+                      .getElementById("training-workspace")
+                      ?.scrollIntoView({ behavior: "smooth", block: "start" })
+                  }
+                  className='inline-flex min-h-[46px] items-center justify-center gap-2 rounded-xl bg-emerald-600 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-emerald-500/20 transition-all hover:bg-emerald-700 active:scale-95'
+                >
+                  <Target size={18} />
+                  Mulakan Latihan
+                </button>
+                <button
+                  type='button'
+                  onClick={() =>
+                    document
+                      .getElementById("training-workspace")
+                      ?.scrollIntoView({ behavior: "smooth", block: "start" })
+                  }
+                  className='inline-flex min-h-[46px] items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 shadow-sm transition-all hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700 active:scale-95'
+                >
+                  <Play size={18} />
+                  Lihat Demo
+                </button>
+              </div>
+            </div>
+          </section>
+
+          <section className='mt-4 grid grid-cols-1 overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm sm:grid-cols-3'>
+            <div className='flex items-center gap-4 px-5 py-4 sm:border-r sm:border-slate-100'>
+              <div className='flex h-11 w-11 items-center justify-center rounded-full bg-emerald-50 text-emerald-600'>
+                <Music size={21} />
+              </div>
+              <div>
+                <div className='text-xl font-bold text-slate-900'>150+</div>
+                <div className='text-xs text-slate-500'>Rakaman Dianalisis</div>
+              </div>
+            </div>
+            <div className='flex items-center gap-4 border-t border-slate-100 px-5 py-4 sm:border-r sm:border-t-0'>
+              <div className='flex h-11 w-11 items-center justify-center rounded-full bg-emerald-50 text-emerald-600'>
+                <TrendingUp size={21} />
+              </div>
+              <div>
+                <div className='text-xl font-bold text-slate-900'>95%</div>
+                <div className='text-xs text-slate-500'>Ketepatan Pengesanan Pitch</div>
+              </div>
+            </div>
+            <div className='flex items-center gap-4 border-t border-slate-100 px-5 py-4 sm:border-t-0'>
+              <div className='flex h-11 w-11 items-center justify-center rounded-full bg-blue-50 text-blue-600'>
+                <Target size={21} />
+              </div>
+              <div>
+                <div className='text-xl font-bold text-slate-900'>50+</div>
+                <div className='text-xs text-slate-500'>Pelajar Menguji Sistem</div>
+              </div>
+            </div>
+          </section>
+        </>
+      )}
+
       {/* Header Section */}
-      <div className='flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-slate-100'>
+      <div className='mt-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-slate-100'>
         <div>
-          <h1 className='text-2xl sm:text-3xl font-bold text-slate-800'>
-            {userRole === 'public' ? 'Training Studio (Demo)' : 'Training Studio'}
-          </h1>
-          <p className='text-slate-500'>
-            {userRole === 'public' 
-              ? 'Demo mode: Try the platform with sample content. Register for full features.'
+          <h2 className='text-xl sm:text-2xl font-bold text-slate-800'>
+            {userRole === 'public' ? 'Pilih Audio Rujukan' : 'Training Studio'}
+          </h2>
+          <p className='text-sm text-slate-500'>
+            {userRole === 'public'
+              ? 'Pilih bacaan qari sebagai rujukan untuk memulakan latihan.'
               : 'Compare your recitation with a reference track'}
           </p>
         </div>
@@ -2417,21 +2508,22 @@ const TrainingStudio: React.FC = () => {
               const ref = referenceLibrary.find((r) => r.id === id);
               if (!ref) return;
 
-              // Get authenticated blob URL for audio elements
+              // Public demo references are intentionally accessible without a token.
               let url: string;
-              try {
-                url = await referenceLibraryService.getReferenceAudioBlobUrl(ref.id);
-              } catch (error) {
-                console.error("Failed to load reference audio:", error);
-                // Don't fallback to direct URL - it won't work without auth
-                // Retry getting blob URL
+              if (userRole === "public" || !user) {
+                url = referenceLibraryService.getReferenceAudioUrl(ref.id);
+              } else {
                 try {
                   url = await referenceLibraryService.getReferenceAudioBlobUrl(ref.id);
-                } catch (retryError) {
-                  console.error("Retry also failed:", retryError);
-                  // Show error but don't set URL
-                  setReferenceLibraryError("Failed to load reference audio. Please try again.");
-                  return; // Don't set selectedRef if we can't get the audio
+                } catch (error) {
+                  console.error("Failed to load reference audio:", error);
+                  try {
+                    url = await referenceLibraryService.getReferenceAudioBlobUrl(ref.id);
+                  } catch (retryError) {
+                    console.error("Retry also failed:", retryError);
+                    setReferenceLibraryError("Failed to load reference audio. Please try again.");
+                    return;
+                  }
                 }
               }
 
@@ -2536,7 +2628,10 @@ const TrainingStudio: React.FC = () => {
         </div>
       </div>
 
-      <div className='grid grid-cols-1 lg:grid-cols-12 gap-6 md:gap-8 mt-4'>
+      <div
+        id='training-workspace'
+        className='grid grid-cols-1 lg:grid-cols-12 gap-6 md:gap-8 mt-4 scroll-mt-24'
+      >
         {/* Main Workspace */}
         <div className='lg:col-span-8 space-y-4 sm:space-y-6 min-w-0'>
           {/* Reference Audio Section */}
@@ -3722,6 +3817,100 @@ const TrainingStudio: React.FC = () => {
         </div>
 
         <div className='lg:col-span-4 space-y-4 sm:space-y-6 min-w-0'>
+          {userRole === 'public' && (
+            <>
+              <section className='rounded-2xl border border-slate-100 bg-white p-5 shadow-sm sm:p-6'>
+                <h3 className='mb-5 flex items-center gap-2 text-lg font-bold text-slate-800'>
+                  <span className='flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600'>
+                    <Info size={19} />
+                  </span>
+                  Cara Menggunakan
+                </h3>
+                <div className='space-y-5'>
+                  {[
+                    {
+                      title: "Pilih Audio Rujukan",
+                      description: "Pilih bacaan qari sebagai rujukan.",
+                      icon: <Music size={17} />,
+                    },
+                    {
+                      title: "Latihan Bacaan Bersama Qari",
+                      description:
+                        "Dengar dan fahami bacaan qari untuk membiasakan diri.",
+                      icon: <Play size={17} />,
+                    },
+                    {
+                      title: "Rakam Bacaan Anda",
+                      description:
+                        "Rakam bacaan anda mengikut rujukan yang dipilih.",
+                      icon: <Target size={17} />,
+                    },
+                    {
+                      title: "Lihat Analisis Bacaan",
+                      description:
+                        "Dapatkan laporan analisis AI dan perbaiki bacaan anda.",
+                      icon: <BarChart2 size={17} />,
+                    },
+                  ].map((step, index) => (
+                    <div key={step.title} className='flex gap-3'>
+                      <div className='flex flex-col items-center'>
+                        <span className='flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-indigo-600 text-xs font-bold text-white'>
+                          {index + 1}
+                        </span>
+                        {index < 3 && (
+                          <span className='mt-1 h-full min-h-8 w-px bg-indigo-100'></span>
+                        )}
+                      </div>
+                      <div className='flex min-w-0 flex-1 gap-3 pb-1'>
+                        <span className='mt-0.5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-slate-50 text-indigo-600'>
+                          {step.icon}
+                        </span>
+                        <div>
+                          <h4 className='text-sm font-semibold text-slate-800'>
+                            {step.title}
+                          </h4>
+                          <p className='mt-1 text-xs leading-5 text-slate-500'>
+                            {step.description}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              <section className='rounded-2xl border border-slate-100 bg-white p-5 shadow-sm sm:p-6'>
+                <h3 className='mb-3 flex items-center gap-2 text-lg font-bold text-slate-800'>
+                  <span className='flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600'>
+                    <Target size={19} />
+                  </span>
+                  Sedia Untuk Penilaian
+                </h3>
+                <p className='mb-4 text-xs text-slate-500'>Sistem akan menilai:</p>
+                <div className='space-y-2.5'>
+                  {[
+                    "Ketepatan Nada (Pitch)",
+                    "Keseragaman Lenggok",
+                    "Kestabilan Bacaan",
+                    "Perbandingan Dengan Qari",
+                  ].map((item) => (
+                    <div
+                      key={item}
+                      className='flex items-center gap-2 text-sm text-slate-700'
+                    >
+                      <CheckCircle size={16} className='text-emerald-500' />
+                      <span>{item}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className='mt-5 rounded-xl bg-emerald-50 px-4 py-3 text-xs leading-5 text-emerald-800'>
+                  Pastikan rakaman dibuat dalam persekitaran yang senyap untuk
+                  hasil terbaik.
+                </div>
+              </section>
+            </>
+          )}
+
           {/* Progress Tracking Card */}
           {progressData && progressData.totalAttempts > 0 && (
             <div className='bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-slate-100'>

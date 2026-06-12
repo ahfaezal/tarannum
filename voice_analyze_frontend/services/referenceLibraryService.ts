@@ -160,8 +160,8 @@ class ReferenceLibraryService {
 
   /**
    * Get reference audio file URL (for direct use in audio elements)
-   * Note: This URL requires authentication. For audio elements that can't send headers,
-   * use getReferenceAudioBlobUrl() instead.
+   * Public/demo references can use this URL without authentication.
+   * Use getReferenceAudioBlobUrl() for authenticated private references.
    */
   getReferenceAudioUrl(refId: string): string {
     return `${API_BASE_URL}/api/references/${refId}/audio`;

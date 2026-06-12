@@ -70,7 +70,7 @@ const App: React.FC = () => {
             <div>
               <h1 className="font-bold text-lg tracking-tight">Tarannum</h1>
               <p className="text-xs text-slate-400">
-                {isAuthenticated ? "AI Trainer System" : "Demo Mode - Public Access"}
+                AI Trainer System
               </p>
             </div>
           </div>
@@ -82,9 +82,7 @@ const App: React.FC = () => {
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${(currentPath === '/' || currentPath === '/training') ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
           >
             <Mic2 size={20} />
-            <span className="font-medium">
-              {isAuthenticated ? "Training Studio" : "Training (Demo)"}
-            </span>
+            <span className="font-medium">Training Studio</span>
           </Link>
 
           {/* Student-specific tabs */}
@@ -159,6 +157,14 @@ const App: React.FC = () => {
             </>
           ) : (
             <div className="space-y-2 px-4 py-2 text-sm">
+              <div className="mb-4 px-3 text-xs leading-relaxed">
+                <div className="mb-1 uppercase tracking-wider text-slate-500">
+                  Powered By
+                </div>
+                <div className="font-semibold text-slate-300">Tarannum Technologies</div>
+                <div className="font-medium text-emerald-400">AI Tarannum Trainer</div>
+                <div className="text-slate-500">Bandar Baru Bangi</div>
+              </div>
               <div className="text-slate-300 font-medium">Public User</div>
               <div className="text-slate-500 text-xs">
                 You are in demo mode.{" "}
@@ -205,7 +211,7 @@ const App: React.FC = () => {
             <div>
               <h1 className="font-bold text-lg tracking-tight">Tarannum</h1>
               <p className="text-xs text-slate-400">
-                {isAuthenticated ? "AI Trainer System" : "Demo Mode"}
+                AI Trainer System
               </p>
             </div>
           </div>
@@ -228,9 +234,7 @@ const App: React.FC = () => {
             }`}
           >
             <Mic2 size={20} />
-            <span className="font-medium">
-              {isAuthenticated ? "Training Studio" : "Training (Demo)"}
-            </span>
+            <span className="font-medium">Training Studio</span>
           </Link>
 
           {userRole === 'student' && (
@@ -328,6 +332,14 @@ const App: React.FC = () => {
             </>
           ) : (
             <div className="space-y-2 px-4 py-2 text-sm">
+              <div className="mb-4 px-3 text-xs leading-relaxed">
+                <div className="mb-1 uppercase tracking-wider text-slate-500">
+                  Powered By
+                </div>
+                <div className="font-semibold text-slate-300">Tarannum Technologies</div>
+                <div className="font-medium text-emerald-400">AI Tarannum Trainer</div>
+                <div className="text-slate-500">Bandar Baru Bangi</div>
+              </div>
               <div className="text-slate-300 font-medium">Public User</div>
               <div className="text-slate-500 text-xs">
                 <button
