@@ -21,6 +21,34 @@ export interface StudentActivityEventPayload {
   metadata?: Record<string, unknown>;
 }
 
+export interface StudentActivitySummary {
+  total_practice_sessions: number;
+  total_practice_minutes: number;
+  total_reference_plays: number;
+  total_recordings_started: number;
+  total_recordings_submitted: number;
+  total_analysis_completed: number;
+  practice_streak_days: number;
+  last_practice_at: string | null;
+  weekly_activity: Array<{
+    date: string;
+    practice_sessions: number;
+    practice_minutes: number;
+    recordings: number;
+  }>;
+  recent_activity: Array<{
+    event_type: string;
+    created_at: string;
+    reference_id: string | null;
+    duration_seconds: number | null;
+    metadata: Record<string, unknown> | null;
+  }>;
+  qari?: {
+    qari_id: string;
+    qari_name: string;
+  } | null;
+}
+
 const lastSentAt = new Map<string, number>();
 
 const buildDebounceKey = (payload: StudentActivityEventPayload): string =>
@@ -64,3 +92,18 @@ export const sendStudentActivityEvent = (
     }
   });
 };
+
+export const getStudentActivitySummary =
+  async (): Promise<StudentActivitySummary> => {
+    const response = await fetch(`${API_URL}/api/platform/student/activity-summary`, {
+      headers: {
+        ...getAuthHeader(),
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to get student activity summary");
+    }
+
+    return response.json();
+  };

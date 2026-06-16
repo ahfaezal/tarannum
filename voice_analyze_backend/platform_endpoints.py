@@ -366,6 +366,21 @@ async def get_student_statistics(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/student/activity-summary")
+async def get_student_activity_summary(
+    current_user: User = Depends(get_current_student_user),
+    db: Session = Depends(get_db)
+):
+    """Get activity analytics summary for the authenticated student."""
+    try:
+        from student_activity_analytics_service import student_activity_analytics_service
+
+        return student_activity_analytics_service.get_activity_summary(current_user, db)
+    except Exception as e:
+        logger.error(f"Error getting student activity summary: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/student/activity-events")
 async def create_student_activity_event(
     activity: StudentActivityEventRequest,
