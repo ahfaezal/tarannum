@@ -55,6 +55,7 @@ def migrate():
         add_column_if_missing(db, "otp_attempt_count", "INTEGER DEFAULT 0 NOT NULL")
         add_column_if_missing(db, "otp_last_sent_at", "TIMESTAMP")
         add_column_if_missing(db, "otp_resend_count", "INTEGER DEFAULT 0 NOT NULL")
+        add_column_if_missing(db, "pending_referral_code", "VARCHAR")
 
         if added_email_verified:
             db.execute(text("""

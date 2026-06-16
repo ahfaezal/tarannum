@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel, EmailStr
 from typing import Optional
 from datetime import datetime, timedelta
-from database import User, UserRole, SessionLocal, get_db
+from database import User, UserRole, StudentQariRelationship, SessionLocal, get_db
 from auth import (
     get_password_hash, authenticate_user, create_access_token,
     get_current_user, get_current_active_user, get_current_admin_user,
@@ -21,6 +21,7 @@ import logging
 import os
 import secrets
 import re
+from sqlalchemy import and_, func
 from urllib import request, error
 
 logger = logging.getLogger(__name__)
@@ -41,6 +42,7 @@ class UserRegister(BaseModel):
     full_name: Optional[str] = None
     ic_number: Optional[str] = None
     address: Optional[str] = None
+    referral_code: Optional[str] = None
     role: str = "student"  # Default to student (allow both "student" and "qari")
 
 
@@ -90,6 +92,60 @@ def _normalize_email(email: str) -> str:
 def _role_value(role) -> str:
     """Return a stable string role value for enum or plain string roles."""
     return getattr(role, "value", role)
+
+
+def _normalize_referral_code(code: Optional[str]) -> Optional[str]:
+    """Normalize referral codes before lookup/storage."""
+    if not code:
+        return None
+    cleaned = re.sub(r"[^A-Za-z0-9]", "", code).upper()
+    return cleaned or None
+
+
+def _find_valid_qari_by_referral_code(db: Session, referral_code: Optional[str]) -> Optional[User]:
+    """Return active approved Qari for a referral code, if valid."""
+    normalized_code = _normalize_referral_code(referral_code)
+    if not normalized_code:
+        return None
+
+    return db.query(User).filter(
+        and_(
+            func.upper(User.referral_code) == normalized_code,
+            User.role == UserRole.QARI.value,
+            User.is_active == True,
+            User.is_approved == True,
+        )
+    ).first()
+
+
+def _assign_verified_student_to_referral_qari(user: User, db: Session):
+    """Assign a verified student to the pending referral Qari, if any."""
+    if _role_value(user.role) != UserRole.STUDENT.value or not user.pending_referral_code:
+        return
+
+    qari = _find_valid_qari_by_referral_code(db, user.pending_referral_code)
+    if not qari:
+        logger.warning("Pending referral code is invalid during verification for user %s", user.email)
+        return
+
+    existing = db.query(StudentQariRelationship).filter(
+        and_(
+            StudentQariRelationship.student_id == user.id,
+            StudentQariRelationship.is_active == True,
+        )
+    ).first()
+
+    if existing:
+        return
+
+    relationship = StudentQariRelationship(
+        student_id=user.id,
+        qari_id=qari.id,
+        is_active=True,
+        referral_code=_normalize_referral_code(user.pending_referral_code),
+        commission_rate=qari.commission_rate or 0.0,
+    )
+    db.add(relationship)
 
 
 def _generate_otp() -> str:
@@ -232,6 +288,22 @@ async def get_email_config_debug():
     }
 
 
+@router.get("/referral/validate")
+async def validate_referral(code: str, db: Session = Depends(get_db)):
+    """Validate a Qari referral code for public registration."""
+    normalized_code = _normalize_referral_code(code)
+    qari = _find_valid_qari_by_referral_code(db, normalized_code)
+
+    if not qari:
+        return {"valid": False}
+
+    return {
+        "valid": True,
+        "referralCode": normalized_code,
+        "qariName": qari.full_name or qari.email,
+    }
+
+
 def _set_new_otp(user: User, otp_code: str, now: datetime, resend_count: int = 0):
     """Attach a fresh OTP challenge to a user record."""
     user.otp_code_hash = _hash_otp(user.email, otp_code)
@@ -329,6 +401,12 @@ async def register(user_data: UserRegister, db: Session = Depends(get_db)):
             )
         ic_number = user_data.ic_number.strip() if user_data.ic_number else None
         address = user_data.address.strip() if user_data.address else None
+        pending_referral_code = None
+        if user_data.role == "student":
+            normalized_referral_code = _normalize_referral_code(user_data.referral_code)
+            if normalized_referral_code and _find_valid_qari_by_referral_code(db, normalized_referral_code):
+                pending_referral_code = normalized_referral_code
+
         now = datetime.utcnow()
         otp_code = _generate_otp()
 
@@ -343,6 +421,7 @@ async def register(user_data: UserRegister, db: Session = Depends(get_db)):
             is_approved=is_approved,
             email_verified=False,
             email_verified_at=None,
+            pending_referral_code=pending_referral_code,
         )
         _set_new_otp(new_user, otp_code, now, resend_count=0)
 
@@ -470,6 +549,8 @@ async def verify_email(payload: VerifyEmailRequest, db: Session = Depends(get_db
         raise HTTPException(status_code=404, detail="User not found.")
 
     if user.email_verified:
+        _assign_verified_student_to_referral_qari(user, db)
+        db.commit()
         return {"message": "Email verified successfully."}
 
     now = datetime.utcnow()
@@ -492,6 +573,7 @@ async def verify_email(payload: VerifyEmailRequest, db: Session = Depends(get_db
     user.email_verified_at = now
     user.otp_consumed_at = now
     user.otp_attempt_count = 0
+    _assign_verified_student_to_referral_qari(user, db)
     db.commit()
 
     return {"message": "Email verified successfully."}

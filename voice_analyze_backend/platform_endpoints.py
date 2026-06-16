@@ -22,6 +22,28 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/platform", tags=["platform"])
 
 
+def _generate_unique_referral_code(db: Session) -> str:
+    """Generate a unique Qari referral code."""
+    import secrets
+    import string
+
+    code_length = 8
+    while True:
+        code = ''.join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(code_length))
+        existing = db.query(User).filter(User.referral_code == code).first()
+        if not existing:
+            return code
+
+
+def _ensure_qari_referral_code(qari: User, db: Session) -> str:
+    """Ensure an approved Qari has a referral code."""
+    if not qari.referral_code:
+        qari.referral_code = _generate_unique_referral_code(db)
+        db.commit()
+        db.refresh(qari)
+    return qari.referral_code
+
+
 # Request Models
 class AssignQariRequest(BaseModel):
     qari_id: str
@@ -426,18 +448,7 @@ async def get_qari_referral_code(
     """Get or generate Qari's referral code."""
     try:
         if not current_user.referral_code:
-            # Generate unique referral code
-            import secrets
-            import string
-            code_length = 8
-            while True:
-                code = ''.join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(code_length))
-                # Check if code already exists
-                existing = db.query(User).filter(User.referral_code == code).first()
-                if not existing:
-                    current_user.referral_code = code
-                    db.commit()
-                    break
+            _ensure_qari_referral_code(current_user, db)
         
         return {
             "referral_code": current_user.referral_code,
@@ -458,6 +469,8 @@ async def get_qari_commission_stats(
     try:
         from database import StudentQariRelationship
         from sqlalchemy import func
+
+        _ensure_qari_referral_code(current_user, db)
         
         # Count active students
         active_students = db.query(StudentQariRelationship).filter(
@@ -489,6 +502,24 @@ async def get_qari_commission_stats(
         }
     except Exception as e:
         logger.error(f"Error getting commission stats: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/qari/referral-info")
+async def get_qari_referral_info(
+    current_user: User = Depends(get_current_qari_user),
+    db: Session = Depends(get_db)
+):
+    """Get Qari referral info for QR registration."""
+    try:
+        referral_code = _ensure_qari_referral_code(current_user, db)
+        return {
+            "referralCode": referral_code,
+            "qariName": current_user.full_name or current_user.email,
+        }
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error getting Qari referral info: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 

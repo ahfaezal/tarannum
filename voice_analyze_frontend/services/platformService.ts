@@ -481,6 +481,26 @@ export const getQariCommissionStats = async (): Promise<{
 };
 
 /**
+ * Qari: Get referral info for QR registration
+ */
+export const getQariReferralInfo = async (): Promise<{
+  referralCode: string;
+  qariName: string;
+}> => {
+  const response = await fetch(`${API_URL}/api/platform/qari/referral-info`, {
+    headers: {
+      ...getAuthHeader(),
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to get referral info");
+  }
+
+  return response.json();
+};
+
+/**
  * Admin: List all users
  */
 export interface AdminUser {

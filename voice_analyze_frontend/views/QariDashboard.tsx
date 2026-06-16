@@ -3,9 +3,9 @@
  */
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { getQariStudents, getQariContent, getQariCommissionStats, getStudentDetails, StudentDetails, deleteQariContent } from "../services/platformService";
+import { getQariStudents, getQariContent, getQariCommissionStats, getQariReferralInfo, getStudentDetails, StudentDetails, deleteQariContent } from "../services/platformService";
 import { StudentInfo, QariContent } from "../services/platformService";
-import { Users, TrendingUp, TrendingDown, BookOpen, BarChart3, DollarSign, Copy, Check, X, Play, FileAudio, ChevronDown, Edit, Trash2 } from "lucide-react";
+import { Users, TrendingUp, TrendingDown, BookOpen, BarChart3, DollarSign, Copy, Check, X, Play, FileAudio, ChevronDown, Edit, Trash2, QrCode, Download, Link as LinkIcon } from "lucide-react";
 import ConfirmModal from "../components/ConfirmModal";
 
 const QariDashboard: React.FC = () => {
@@ -21,6 +21,8 @@ const QariDashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
+  const [referralInfo, setReferralInfo] = useState<{ referralCode: string; qariName: string } | null>(null);
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   const [studentDetails, setStudentDetails] = useState<StudentDetails | null>(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
@@ -44,10 +46,14 @@ const QariDashboard: React.FC = () => {
         getQariContent(),
         getQariCommissionStats().catch(() => null), // Optional, don't fail if not available
       ]);
+      const referralData = await getQariReferralInfo().catch(() => null);
       setStudents(studentsData.students);
       setContent(contentData.content);
       if (commissionData) {
         setCommissionStats(commissionData);
+      }
+      if (referralData) {
+        setReferralInfo(referralData);
       }
     } catch (err: any) {
       setError(err.message || "Failed to load dashboard");
@@ -61,6 +67,20 @@ const QariDashboard: React.FC = () => {
       navigator.clipboard.writeText(commissionStats.referral_code);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  const referralCode = referralInfo?.referralCode || commissionStats?.referral_code || "";
+  const referralLink = referralCode ? `${window.location.origin}/register?ref=${encodeURIComponent(referralCode)}` : "";
+  const qrImageUrl = referralLink
+    ? `https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=12&data=${encodeURIComponent(referralLink)}`
+    : "";
+
+  const copyReferralLink = () => {
+    if (referralLink) {
+      navigator.clipboard.writeText(referralLink);
+      setCopiedLink(true);
+      setTimeout(() => setCopiedLink(false), 2000);
     }
   };
 
@@ -229,6 +249,65 @@ const QariDashboard: React.FC = () => {
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+        {/* Student Registration QR Section */}
+        {referralCode && referralLink && (
+          <div className="bg-white rounded-xl shadow-md border border-slate-200 p-6 mb-8">
+            <div className="flex items-center gap-2 mb-4">
+              <QrCode className="w-5 h-5 text-emerald-600" />
+              <h2 className="text-lg font-semibold text-slate-800">Student Registration QR</h2>
+            </div>
+            <div className="grid grid-cols-1 lg:grid-cols-[260px_1fr] gap-6 items-start">
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex items-center justify-center">
+                <img
+                  src={qrImageUrl}
+                  alt="Student registration QR code"
+                  className="w-56 h-56 rounded-lg bg-white"
+                />
+              </div>
+              <div className="space-y-4">
+                <p className="text-sm text-slate-600">
+                  Share this QR code with students. Students who register through this link will be linked to your Qari account after email verification.
+                </p>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">
+                    <LinkIcon className="w-4 h-4" />
+                    Referral Link
+                  </div>
+                  <div className="break-all text-sm font-medium text-slate-800">{referralLink}</div>
+                </div>
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <button
+                    onClick={copyReferralLink}
+                    className="px-4 py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2 font-medium"
+                  >
+                    {copiedLink ? (
+                      <>
+                        <Check className="w-5 h-5" />
+                        Link Copied!
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-5 h-5" />
+                        Copy Link
+                      </>
+                    )}
+                  </button>
+                  <a
+                    href={qrImageUrl}
+                    download={`tarannum-qari-${referralCode}-qr.png`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="px-4 py-3 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 transition-all flex items-center justify-center gap-2 font-medium"
+                  >
+                    <Download className="w-5 h-5" />
+                    Download QR Code
+                  </a>
+                </div>
+              </div>
+            </div>
           </div>
         )}
 

@@ -23,6 +23,7 @@ export interface RegisterData {
   full_name?: string;
   ic_number?: string;
   address?: string;
+  referral_code?: string;
   role: "student" | "qari"; // Allow both student and qari registration
 }
 
@@ -145,6 +146,24 @@ export const resendOtp = async (email: string): Promise<MessageResponse> => {
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: response.statusText }));
     throw new Error(error.detail || "Failed to resend OTP");
+  }
+
+  return response.json();
+};
+
+/**
+ * Validate a public Qari referral code
+ */
+export const validateReferralCode = async (code: string): Promise<{
+  valid: boolean;
+  referralCode?: string;
+  qariName?: string;
+}> => {
+  const response = await fetch(`${API_URL}/api/auth/referral/validate?code=${encodeURIComponent(code)}`);
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: response.statusText }));
+    throw new Error(error.detail || "Failed to validate referral code");
   }
 
   return response.json();

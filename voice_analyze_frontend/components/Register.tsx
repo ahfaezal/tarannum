@@ -3,8 +3,10 @@
  */
 import React, { useState, useMemo } from "react";
 import { useDispatch, useSelector } from "react-redux";
+import { useSearchParams } from "react-router-dom";
 import { registerUser } from "../store/slices/authSlice";
 import { RootState } from "../store";
+import { validateReferralCode } from "../services/authService";
 import { UserPlus, Mail, Lock, User, AlertCircle, Check, X, CheckCircle, Info } from "lucide-react";
 
 interface RegisterProps {
@@ -15,6 +17,7 @@ interface RegisterProps {
 
 const Register: React.FC<RegisterProps> = ({ onSwitchToLogin, onSuccess, onClose }) => {
   const dispatch = useDispatch();
+  const [searchParams] = useSearchParams();
   const { isLoading, error } = useSelector((state: RootState) => state.auth);
 
   const [email, setEmail] = useState("");
@@ -24,6 +27,42 @@ const Register: React.FC<RegisterProps> = ({ onSwitchToLogin, onSuccess, onClose
   const [address, setAddress] = useState("");
   const [role, setRole] = useState<"student" | "qari">("student");
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [referralCode, setReferralCode] = useState<string | null>(null);
+  const [referralQariName, setReferralQariName] = useState<string | null>(null);
+  const [referralWarning, setReferralWarning] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    const rawReferralCode = searchParams.get("ref");
+    if (!rawReferralCode) return;
+
+    let cancelled = false;
+    const validateReferral = async () => {
+      try {
+        const result = await validateReferralCode(rawReferralCode);
+        if (cancelled) return;
+        if (result.valid && result.referralCode && result.qariName) {
+          setReferralCode(result.referralCode);
+          setReferralQariName(result.qariName);
+          setReferralWarning(null);
+        } else {
+          setReferralCode(null);
+          setReferralQariName(null);
+          setReferralWarning("Invalid referral code. You may continue registration without Qari assignment.");
+        }
+      } catch {
+        if (!cancelled) {
+          setReferralCode(null);
+          setReferralQariName(null);
+          setReferralWarning("Invalid referral code. You may continue registration without Qari assignment.");
+        }
+      }
+    };
+
+    validateReferral();
+    return () => {
+      cancelled = true;
+    };
+  }, [searchParams]);
 
   // Password validation rules
   const passwordRules = useMemo(() => {
@@ -55,6 +94,7 @@ const Register: React.FC<RegisterProps> = ({ onSwitchToLogin, onSuccess, onClose
           full_name: fullName || undefined,
           ic_number: icNumber || undefined,
           address: address || undefined,
+          referral_code: role === "student" ? referralCode || undefined : undefined,
           role: role, // Use selected role (student or qari)
         })
       ).unwrap();
@@ -97,6 +137,22 @@ const Register: React.FC<RegisterProps> = ({ onSwitchToLogin, onSuccess, onClose
           <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2 text-red-700">
             <AlertCircle className="w-5 h-5" />
             <span className="text-sm">{error}</span>
+          </div>
+        )}
+
+        {referralQariName && role === "student" && !successMessage && (
+          <div className="mb-4 p-3 bg-emerald-50 border border-emerald-200 rounded-lg flex items-start gap-2 text-emerald-800">
+            <CheckCircle className="w-5 h-5 mt-0.5 flex-shrink-0" />
+            <div className="text-sm">
+              You are registering under Qari: <span className="font-semibold">{referralQariName}</span>
+            </div>
+          </div>
+        )}
+
+        {referralWarning && !successMessage && (
+          <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-2 text-amber-800">
+            <AlertCircle className="w-5 h-5 mt-0.5 flex-shrink-0" />
+            <span className="text-sm">{referralWarning}</span>
           </div>
         )}
 
@@ -167,7 +223,7 @@ const Register: React.FC<RegisterProps> = ({ onSwitchToLogin, onSuccess, onClose
             </div>
             <p className="mt-1 text-xs text-gray-500">
               {role === "student" 
-                ? "Students can log in immediately after registration."
+                ? "Students can log in after email verification."
                 : "Qari accounts require admin approval before you can log in."}
             </p>
           </div>

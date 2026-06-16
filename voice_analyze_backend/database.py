@@ -76,6 +76,7 @@ class User(Base):
     
     # Qari-specific fields
     referral_code = Column(String, unique=True, nullable=True, index=True)  # Unique referral code for Qari
+    pending_referral_code = Column(String, nullable=True, index=True)  # Referral captured before email verification
     commission_rate = Column(Float, nullable=True, default=0.0)  # Default commission rate
     
     # Subscription fields (Milestone 4)
@@ -337,6 +338,7 @@ def ensure_email_otp_columns():
         "otp_attempt_count": "INTEGER DEFAULT 0 NOT NULL",
         "otp_last_sent_at": "TIMESTAMP",
         "otp_resend_count": "INTEGER DEFAULT 0 NOT NULL",
+        "pending_referral_code": "VARCHAR",
     }
 
     with engine.begin() as conn:
