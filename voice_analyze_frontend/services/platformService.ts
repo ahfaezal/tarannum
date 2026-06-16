@@ -62,8 +62,11 @@ export interface StudentProgress {
     text: string;
   }>;
   reference_id?: string;
+  reference_title?: string | null;
+  reference_filename?: string | null;
+  surah_name?: string | null;
+  maqam?: string | null;
   created_at: string;
-  file_path?: string;
 }
 
 export interface QariInfo {

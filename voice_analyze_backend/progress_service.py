@@ -6,9 +6,7 @@ from typing import List, Dict, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, desc
 from uuid import UUID
-from database import (
-    StudentProgress, UserSession, AnalysisResult, User, SessionLocal
-)
+from database import QariContent, Reference, StudentProgress, SessionLocal
 
 logger = logging.getLogger(__name__)
 
@@ -104,7 +102,17 @@ class ProgressService:
             
             result = []
             for progress in progress_records:
-                session = db_session.query(UserSession).filter(UserSession.id == progress.session_id).first()
+                reference = None
+                qari_content = None
+                if progress.reference_id:
+                    reference = db_session.query(Reference).filter(Reference.id == progress.reference_id).first()
+                    qari_content_query = db_session.query(QariContent).filter(
+                        QariContent.reference_id == progress.reference_id
+                    )
+                    if progress.qari_id:
+                        qari_content_query = qari_content_query.filter(QariContent.qari_id == progress.qari_id)
+                    qari_content = qari_content_query.first()
+
                 result.append({
                     "id": str(progress.id),
                     "session_id": str(progress.session_id),
@@ -114,8 +122,11 @@ class ProgressService:
                     "verse_scores": progress.verse_scores,
                     "weakest_verses": progress.weakest_verses,
                     "reference_id": progress.reference_id,
-                    "created_at": progress.created_at.isoformat() if progress.created_at else None,
-                    "file_path": session.file_path if session else None
+                    "reference_title": reference.title if reference else None,
+                    "reference_filename": reference.filename if reference else None,
+                    "surah_name": qari_content.surah_name if qari_content else None,
+                    "maqam": qari_content.maqam if qari_content else reference.maqam if reference else None,
+                    "created_at": progress.created_at.isoformat() if progress.created_at else None
                 })
             
             return result

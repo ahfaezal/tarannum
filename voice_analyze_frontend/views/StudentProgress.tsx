@@ -31,6 +31,7 @@ import {
   TrendingDown,
   TrendingUp,
   Trophy,
+  UserRound,
 } from "lucide-react";
 
 const emptyActivitySummary: StudentActivitySummary = {
@@ -100,6 +101,71 @@ const getReferenceLabel = (referenceId?: string): string => {
   return `Reference ${referenceId.slice(0, 8)}`;
 };
 
+const readStringField = (
+  source: unknown,
+  keys: string[]
+): string | undefined => {
+  if (!source || typeof source !== "object") {
+    return undefined;
+  }
+
+  const record = source as Record<string, unknown>;
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+  return undefined;
+};
+
+const getReferenceDisplayName = (record?: Partial<StudentProgress>): string => {
+  if (!record) {
+    return "Unknown Reference";
+  }
+
+  const directName = readStringField(record, [
+    "surah_name",
+    "reference_title",
+    "reference_filename",
+    "title",
+    "filename",
+    "file_name",
+  ]);
+  if (directName) {
+    return directName;
+  }
+
+  const nestedReference = (record as Record<string, unknown>).reference;
+  const nestedName = readStringField(nestedReference, [
+    "surah_name",
+    "title",
+    "filename",
+    "file_name",
+  ]);
+  if (nestedName) {
+    return nestedName;
+  }
+
+  return getReferenceLabel(record.reference_id);
+};
+
+const getCoachingRecommendation = (
+  latestScore: number,
+  hasAssessments: boolean
+): string => {
+  if (!hasAssessments) {
+    return "Start your first recording to unlock personalised feedback.";
+  }
+  if (latestScore >= 80) {
+    return "Excellent progress. Keep your consistency and maintain your pitch control.";
+  }
+  if (latestScore >= 60) {
+    return "Good progress. Focus on weak verses and repeat short segments.";
+  }
+  return "Keep practicing. Start with slower reference playback and repeat each verse.";
+};
+
 const formatMinutes = (minutes: number): string => {
   if (!minutes) {
     return "0m";
@@ -151,6 +217,7 @@ const StudentProgressView: React.FC = () => {
   const [activitySummary, setActivitySummary] =
     useState<StudentActivitySummary>(emptyActivitySummary);
   const [showAllAssessments, setShowAllAssessments] = useState(false);
+  const [selectedReferenceId, setSelectedReferenceId] = useState("all");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -213,11 +280,6 @@ const StudentProgressView: React.FC = () => {
     [activitySummary.weekly_activity]
   );
 
-  const trendAssessments = useMemo(
-    () => chronologicalAssessments.slice(-15),
-    [chronologicalAssessments]
-  );
-
   const performanceByReference = useMemo(() => {
     const grouped = new Map<string, StudentProgress[]>();
     chronologicalAssessments.forEach((item) => {
@@ -243,19 +305,43 @@ const StudentProgressView: React.FC = () => {
 
         return {
           referenceId,
-          label:
-            referenceId === "unknown"
-              ? "Unknown Reference"
-              : getReferenceLabel(referenceId),
+          label: getReferenceDisplayName(items[items.length - 1]),
           sessions: items.length,
           average,
           best,
           latest,
+          lastAssessedAt: items[items.length - 1]?.created_at || "",
           trend: delta > 2 ? "up" : delta < -2 ? "down" : "flat",
         };
       })
-      .sort((a, b) => b.sessions - a.sessions || b.best - a.best);
+      .sort(
+        (a, b) =>
+          b.sessions - a.sessions ||
+          new Date(b.lastAssessedAt).getTime() - new Date(a.lastAssessedAt).getTime()
+      );
   }, [chronologicalAssessments]);
+
+  const referenceFilterOptions = useMemo(
+    () => [
+      { id: "all", label: "All References" },
+      ...performanceByReference.map((item) => ({
+        id: item.referenceId,
+        label: item.label,
+      })),
+    ],
+    [performanceByReference]
+  );
+
+  const trendAssessments = useMemo(() => {
+    const source =
+      selectedReferenceId === "all"
+        ? chronologicalAssessments
+        : chronologicalAssessments.filter(
+            (item) => (item.reference_id || "unknown") === selectedReferenceId
+          );
+
+    return source.slice(-15);
+  }, [chronologicalAssessments, selectedReferenceId]);
 
   const currentMonthSummary = useMemo(
     () => buildMonthSummary(new Date(), chronologicalAssessments, activitySummary),
@@ -312,6 +398,11 @@ const StudentProgressView: React.FC = () => {
   const assessmentsToShow = showAllAssessments
     ? sortedAssessments
     : sortedAssessments.slice(0, 5);
+
+  const coachingRecommendation = getCoachingRecommendation(
+    scoreStats.latest,
+    hasAssessments
+  );
 
   if (loading) {
     return (
@@ -452,6 +543,30 @@ const StudentProgressView: React.FC = () => {
           />
         </section>
 
+        <section className="bg-white rounded-3xl shadow-md border border-slate-200 p-6 mb-8">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600">
+                <UserRound className="w-6 h-6" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold uppercase tracking-wider text-slate-500 mb-1">
+                  Qari Insight
+                </p>
+                <h2 className="text-xl font-bold text-slate-900">
+                  Your Qari: {activitySummary.qari?.qari_name || "Not assigned yet"}
+                </h2>
+                <p className="text-slate-600 mt-1 max-w-3xl">
+                  {coachingRecommendation}
+                </p>
+              </div>
+            </div>
+            <div className="rounded-2xl bg-gradient-to-r from-emerald-50 to-cyan-50 border border-emerald-100 px-4 py-3 text-sm text-emerald-800">
+              Tip: use weak verses as your next focused practice list.
+            </div>
+          </div>
+        </section>
+
         <section className="grid grid-cols-1 xl:grid-cols-5 gap-6 mb-8">
           <div className="xl:col-span-3 bg-white rounded-3xl shadow-md border border-slate-200 p-6">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
@@ -463,9 +578,17 @@ const StudentProgressView: React.FC = () => {
                   Latest {Math.min(trendAssessments.length, 15)} assessment records.
                 </p>
               </div>
-              <div className="inline-flex items-center rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
-                All Surah
-              </div>
+              <select
+                value={selectedReferenceId}
+                onChange={(event) => setSelectedReferenceId(event.target.value)}
+                className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:ring-2 focus:ring-emerald-500"
+              >
+                {referenceFilterOptions.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
             </div>
             {!hasAssessments ? (
               <EmptyState
@@ -609,6 +732,11 @@ const StudentProgressView: React.FC = () => {
             <p className="text-sm text-slate-500 mb-6">
               Practice sessions, minutes, and recordings over the last 7 days.
             </p>
+            <div className="mb-5 flex flex-wrap gap-3 text-xs text-slate-600">
+              <LegendDot color="#10b981" label="Practice Sessions" />
+              <LegendDot color="#22d3ee" label="Practice Minutes" />
+              <LegendDot color="#a855f7" label="Assessments / Recordings" />
+            </div>
             {activitySummary.weekly_activity.length === 0 ? (
               <EmptyState
                 title="No practice activity recorded yet."
@@ -684,7 +812,7 @@ const StudentProgressView: React.FC = () => {
                       <div>
                         <p className="font-semibold text-slate-900">{verse.text}</p>
                         <p className="text-xs text-slate-500 mt-1">
-                          Reference context unavailable in current aggregate
+                          Reference details are not available for this verse yet.
                         </p>
                       </div>
                       <span
@@ -697,7 +825,10 @@ const StudentProgressView: React.FC = () => {
                       <span className="text-sm text-amber-700 font-semibold">
                         Appears {verse.frequency} time{verse.frequency > 1 ? "s" : ""}
                       </span>
-                      <button className="text-sm font-semibold text-emerald-700">
+                      <button
+                        type="button"
+                        className="text-sm font-semibold text-emerald-700"
+                      >
                         Practice
                       </button>
                     </div>
@@ -1042,6 +1173,8 @@ const ReferencePerformanceRow: React.FC<{
 }> = ({ item }) => {
   const TrendIcon =
     item.trend === "up" ? TrendingUp : item.trend === "down" ? TrendingDown : Activity;
+  const trendLabel =
+    item.trend === "up" ? "Up" : item.trend === "down" ? "Down" : "Flat";
   const trendColor =
     item.trend === "up"
       ? "text-emerald-600 bg-emerald-50"
@@ -1052,9 +1185,17 @@ const ReferencePerformanceRow: React.FC<{
   return (
     <div className="rounded-2xl border border-slate-200 p-4 hover:border-emerald-200 hover:shadow-sm transition-all">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div>
+        <div className="min-w-0">
           <p className="font-semibold text-slate-900">{item.label}</p>
-          <p className="text-sm text-slate-500">{item.sessions} assessment sessions</p>
+          <p className="text-sm text-slate-500">
+            {item.sessions} assessment session{item.sessions > 1 ? "s" : ""}
+          </p>
+          <div className="mt-3 h-2.5 rounded-full bg-slate-100 overflow-hidden md:max-w-sm">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-cyan-400"
+              style={{ width: `${Math.min(item.average, 100)}%` }}
+            />
+          </div>
         </div>
         <div className="grid grid-cols-3 gap-4 md:min-w-80">
           <MiniStat label="Avg" value={`${Math.round(item.average)}%`} />
@@ -1063,7 +1204,7 @@ const ReferencePerformanceRow: React.FC<{
             className={`rounded-xl px-3 py-2 flex items-center justify-center gap-2 ${trendColor}`}
           >
             <TrendIcon className="w-4 h-4" />
-            <span className="text-sm font-semibold capitalize">{item.trend}</span>
+            <span className="text-sm font-semibold">{trendLabel}</span>
           </div>
         </div>
       </div>
@@ -1166,7 +1307,7 @@ const AssessmentHistoryRow: React.FC<{ session: StudentProgress }> = ({ session 
           {new Date(session.created_at).toLocaleString()}
         </p>
         <p className="text-xs text-slate-400 mt-1">
-          {getReferenceLabel(session.reference_id)}
+          {getReferenceDisplayName(session)}
         </p>
       </div>
       {session.verse_scores && session.verse_scores.length > 0 && (
