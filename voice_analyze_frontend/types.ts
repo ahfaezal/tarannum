@@ -109,6 +109,8 @@ export interface PronunciationAlert {
 }
 
 export interface AnalysisResult {
+  sessionId?: string;
+  analysisResultId?: string;
   score: number;
   /** Normalized overall score 0-100 (Milestone 5) */
   normalizedScore?: number;

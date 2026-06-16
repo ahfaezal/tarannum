@@ -271,6 +271,8 @@ export const analyzeRecitation = async (
       : undefined;
 
     return {
+      sessionId: data.session_id,
+      analysisResultId: data.analysis_result_id,
       score,
       normalizedScore,
       feedback,

@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, R
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_, or_, case, desc
 from pydantic import BaseModel
+from datetime import datetime
 from typing import Optional, List
 from database import User, UserRole, get_db
 from auth import (
@@ -63,6 +64,16 @@ class UpdateQariContentRequest(BaseModel):
     surah_name: Optional[str] = None
     ayah_number: Optional[int] = None
     maqam: Optional[str] = None
+
+
+class StudentActivityEventRequest(BaseModel):
+    event_type: str
+    reference_id: Optional[str] = None
+    session_id: Optional[str] = None
+    duration_seconds: Optional[float] = None
+    playback_position: Optional[float] = None
+    metadata: Optional[dict] = None
+    occurred_at: Optional[datetime] = None
 
 
 # Qari Endpoints
@@ -352,6 +363,59 @@ async def get_student_statistics(
         return stats
     except Exception as e:
         logger.error(f"Error getting student statistics: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/student/activity-events")
+async def create_student_activity_event(
+    activity: StudentActivityEventRequest,
+    request: Request,
+    current_user: Optional[User] = Depends(get_current_user_optional),
+    db: Session = Depends(get_db)
+):
+    """Append-only student activity event tracking."""
+    try:
+        if not current_user:
+            return {"success": True, "tracked": False, "reason": "unauthenticated"}
+
+        if current_user.role != UserRole.STUDENT:
+            return {"success": True, "tracked": False, "reason": "not_student"}
+
+        if activity.duration_seconds is not None and activity.duration_seconds < 0:
+            raise HTTPException(status_code=400, detail="duration_seconds must be positive")
+
+        if activity.playback_position is not None and activity.playback_position < 0:
+            raise HTTPException(status_code=400, detail="playback_position must be positive")
+
+        from student_activity_service import student_activity_service
+
+        client_ip = request.client.host if request.client else None
+        user_agent = request.headers.get("user-agent", None)
+        event = student_activity_service.record_event(
+            user=current_user,
+            event_type=activity.event_type,
+            reference_id=activity.reference_id,
+            session_id=activity.session_id,
+            duration_seconds=activity.duration_seconds,
+            playback_position=activity.playback_position,
+            metadata=activity.metadata,
+            occurred_at=activity.occurred_at,
+            db=db,
+            ip_address=client_ip,
+            user_agent=user_agent,
+        )
+
+        return {
+            "success": True,
+            "tracked": event is not None,
+            "event_id": str(event.id) if event else None,
+        }
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error creating student activity event: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 

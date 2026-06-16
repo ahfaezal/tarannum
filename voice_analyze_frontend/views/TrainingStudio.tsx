@@ -50,6 +50,7 @@ import {
   referenceLibraryService,
   ReferenceAudio,
 } from "../services/referenceLibraryService";
+import { sendStudentActivityEvent } from "../services/studentActivityService";
 
 // Helper function to convert AudioBuffer to WAV Blob (lossless, same as voice recorder)
 const audioBufferToWav = (audioBuffer: AudioBuffer): Blob => {
@@ -1124,6 +1125,39 @@ const TrainingStudio: React.FC = () => {
     // Note: Practice mode and recording are separate - recording doesn't affect practice mode
   };
 
+  const getActivityReferenceId = (): string | undefined => {
+    if (!selectedRef?.id || isCustomUploadRefId(selectedRef.id)) {
+      return undefined;
+    }
+
+    return referenceLibrary.some((reference) => reference.id === selectedRef.id)
+      ? selectedRef.id
+      : undefined;
+  };
+
+  const trackStudentActivity = (
+    eventType:
+      | "practice_started"
+      | "practice_stopped"
+      | "reference_play"
+      | "reference_pause"
+      | "recording_started"
+      | "recording_submitted"
+      | "analysis_completed",
+    extra: {
+      session_id?: string;
+      duration_seconds?: number;
+      playback_position?: number;
+      metadata?: Record<string, unknown>;
+    } = {}
+  ) => {
+    sendStudentActivityEvent({
+      event_type: eventType,
+      reference_id: getActivityReferenceId(),
+      ...extra,
+    });
+  };
+
   // Handle real-time student pitch updates for practice mode
   const handlePracticePitchUpdate = (pitch: PitchPoint) => {
     // Use refs to check if practice mode is active (avoid stale closures)
@@ -1155,11 +1189,20 @@ const TrainingStudio: React.FC = () => {
       );
       practicePitchExtractorRef.current.stop();
       practicePitchExtractorRef.current = null;
+      trackStudentActivity("practice_stopped", {
+        duration_seconds: elapsedTime,
+        playback_position: durationProbe,
+        metadata: { source: "auto_duration_limit" },
+      });
       setIsPracticeMode(false);
       isPracticeModeRef.current = false;
 
       // Stop reference audio when practice completes
       if (refWaveSurfer.current) {
+        trackStudentActivity("reference_pause", {
+          playback_position: refWaveSurfer.current.getCurrentTime(),
+          metadata: { source: "practice_auto_stop" },
+        });
         refWaveSurfer.current.stop();
         setIsPlaying(false);
         setPlaybackTime(0);
@@ -1490,6 +1533,10 @@ const TrainingStudio: React.FC = () => {
           refWaveSurfer.current.seekTo(0);
           refWaveSurfer.current.play();
           setIsPlaying(true);
+          trackStudentActivity("reference_play", {
+            playback_position: 0,
+            metadata: { source: "practice_auto_play" },
+          });
         } catch (e) {
           console.warn("[Practice] Could not auto-play reference:", e);
           setIsPlaying(false);
@@ -1499,6 +1546,10 @@ const TrainingStudio: React.FC = () => {
         setIsPlaying(false);
         setPlaybackTime(0);
       }
+
+      trackStudentActivity("practice_started", {
+        metadata: { reference_duration: referenceDuration },
+      });
 
       console.log(
         "Practice mode started - reference playback and pitch share the same timeline."
@@ -1545,6 +1596,13 @@ const TrainingStudio: React.FC = () => {
 
   // Stop practice mode (stops but keeps graph data)
   const handlePracticeStop = () => {
+    const practiceDurationSeconds = practiceStartTimeRef.current
+      ? Math.max(0, (Date.now() - practiceStartTimeRef.current) / 1000)
+      : undefined;
+    const currentReferenceTime = refWaveSurfer.current
+      ? refWaveSurfer.current.getCurrentTime()
+      : playbackTime;
+
     // Stop pitch extraction
     if (practicePitchExtractorRef.current) {
       practicePitchExtractorRef.current.stop();
@@ -1588,6 +1646,10 @@ const TrainingStudio: React.FC = () => {
 
     // Stop reference audio playback
     if (refWaveSurfer.current) {
+      trackStudentActivity("reference_pause", {
+        playback_position: currentReferenceTime,
+        metadata: { source: "practice_stop" },
+      });
       refWaveSurfer.current.stop();
       setIsPlaying(false);
       setPlaybackTime(0);
@@ -1600,6 +1662,10 @@ const TrainingStudio: React.FC = () => {
     practiceStartTimeRef.current = null;
     setPracticeTime(0);
     setPracticeError(null); // Clear any errors
+    trackStudentActivity("practice_stopped", {
+      duration_seconds: practiceDurationSeconds,
+      playback_position: currentReferenceTime,
+    });
 
     console.log("Practice mode stopped (graph data preserved)");
   };
@@ -1631,6 +1697,9 @@ const TrainingStudio: React.FC = () => {
 
     // Trigger the Recorder component to start recording
     setTriggerRecordingStart(true);
+    trackStudentActivity("recording_started", {
+      playback_position: playbackTime,
+    });
     
     console.log("[Recording] Starting recording after countdown - pitch data cleared, time mapping initialized");
   };
@@ -1652,6 +1721,10 @@ const TrainingStudio: React.FC = () => {
   const handleAnalyze = async () => {
     if (!studentBlob) return;
     setIsAnalyzing(true);
+    trackStudentActivity("recording_submitted", {
+      duration_seconds: recordingTime || undefined,
+      playback_position: playbackTime,
+    });
 
     let refBlob: Blob | null = null;
     let referenceId: string | undefined = undefined;
@@ -1746,6 +1819,16 @@ const TrainingStudio: React.FC = () => {
       );
     }
 
+    trackStudentActivity("analysis_completed", {
+      session_id: result.sessionId,
+      duration_seconds: recordingTime || undefined,
+      metadata: {
+        score: result.score,
+        normalizedScore: result.normalizedScore,
+        analysisResultId: result.analysisResultId,
+      },
+    });
+
     setAnalysisResult(result);
 
     // Force a small delay to ensure state updates before graph renders
@@ -1771,6 +1854,10 @@ const TrainingStudio: React.FC = () => {
       refWaveSurfer.current.setPlaybackRate(playbackSpeed);
       refWaveSurfer.current.seekTo(0);
       refWaveSurfer.current.play();
+      trackStudentActivity("reference_play", {
+        playback_position: 0,
+        metadata: { source: "sync_play", playback_speed: playbackSpeed },
+      });
       // Track playback time
       const interval = setInterval(() => {
         if (refWaveSurfer.current && !refWaveSurfer.current.isPlaying()) {
@@ -1792,6 +1879,10 @@ const TrainingStudio: React.FC = () => {
     setIsPlaying(false);
     if (refWaveSurfer.current) refWaveSurfer.current.stop();
     if (studentWaveSurfer.current) studentWaveSurfer.current.stop();
+    trackStudentActivity("reference_pause", {
+      playback_position: playbackTime,
+      metadata: { source: "stop_all" },
+    });
     setSyncProgress(0);
     setPlaybackTime(0);
   };
@@ -1801,11 +1892,19 @@ const TrainingStudio: React.FC = () => {
     if (refWaveSurfer.current && !refWaveSurfer.current.isPlaying()) {
       refWaveSurfer.current.play();
       setIsPlaying(true);
+      trackStudentActivity("reference_play", {
+        playback_position: refWaveSurfer.current.getCurrentTime(),
+        metadata: { source: "fullscreen" },
+      });
     }
   };
 
   const handleFullScreenPause = () => {
     if (refWaveSurfer.current && refWaveSurfer.current.isPlaying()) {
+      trackStudentActivity("reference_pause", {
+        playback_position: refWaveSurfer.current.getCurrentTime(),
+        metadata: { source: "fullscreen" },
+      });
       refWaveSurfer.current.pause();
       setIsPlaying(false);
     }
@@ -1815,6 +1914,10 @@ const TrainingStudio: React.FC = () => {
     setIsPlaying(false);
     if (refWaveSurfer.current) refWaveSurfer.current.stop();
     if (studentWaveSurfer.current) studentWaveSurfer.current.stop();
+    trackStudentActivity("reference_pause", {
+      playback_position: playbackTime,
+      metadata: { source: "fullscreen_stop" },
+    });
     setSyncProgress(0);
     setPlaybackTime(0);
   };
@@ -3498,6 +3601,10 @@ const TrainingStudio: React.FC = () => {
                       if (refWaveSurfer.current) {
                         if (refWaveSurfer.current.isPlaying()) {
                           // Pause reference audio
+                          trackStudentActivity("reference_pause", {
+                            playback_position: refWaveSurfer.current.getCurrentTime(),
+                            metadata: { source: "reference_control" },
+                          });
                           refWaveSurfer.current.pause();
                           setIsPlaying(false);
 
@@ -3518,6 +3625,10 @@ const TrainingStudio: React.FC = () => {
                           // Start reference audio playback
                           refWaveSurfer.current.play();
                           setIsPlaying(true);
+                          trackStudentActivity("reference_play", {
+                            playback_position: refWaveSurfer.current.getCurrentTime(),
+                            metadata: { source: "reference_control" },
+                          });
 
                           // Start real-time pitch extraction from microphone
                           try {

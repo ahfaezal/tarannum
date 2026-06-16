@@ -165,6 +165,28 @@ class StudentProgress(Base):
     session = relationship("UserSession", foreign_keys=[session_id])
 
 
+class StudentActivityEvent(Base):
+    """Append-only student learning activity events."""
+    __tablename__ = "student_activity_events"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    student_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    qari_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    reference_id = Column(String, ForeignKey("references.id", ondelete="SET NULL"), nullable=True, index=True)
+    session_id = Column(UUID(as_uuid=True), ForeignKey("user_sessions.id", ondelete="SET NULL"), nullable=True, index=True)
+    event_type = Column(String, nullable=False, index=True)
+    duration_seconds = Column(Float, nullable=True)
+    playback_position = Column(Float, nullable=True)
+    metadata_json = Column(JSON, nullable=True)
+    occurred_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+    student = relationship("User", foreign_keys=[student_id])
+    qari = relationship("User", foreign_keys=[qari_id])
+    reference = relationship("Reference", foreign_keys=[reference_id])
+    session = relationship("UserSession", foreign_keys=[session_id])
+
+
 class Reference(Base):
     """Reference audio file metadata."""
     __tablename__ = "references"
@@ -310,6 +332,7 @@ def init_db():
     try:
         Base.metadata.create_all(bind=engine)
         ensure_email_otp_columns()
+        ensure_student_activity_events_table()
         logger.info("Database tables created successfully")
     except Exception as e:
         logger.error(f"Error creating database tables: {e}", exc_info=True)
@@ -356,6 +379,32 @@ def ensure_email_otp_columns():
                 WHERE email_verified IS TRUE
             """))
             conn.execute(text("ALTER TABLE users ALTER COLUMN email_verified SET DEFAULT FALSE"))
+
+
+def ensure_student_activity_events_table():
+    """Safely create the append-only student activity events table."""
+    with engine.begin() as conn:
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS student_activity_events (
+                id UUID PRIMARY KEY,
+                student_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                qari_id UUID REFERENCES users(id) ON DELETE SET NULL,
+                reference_id VARCHAR REFERENCES "references"(id) ON DELETE SET NULL,
+                session_id UUID REFERENCES user_sessions(id) ON DELETE SET NULL,
+                event_type VARCHAR NOT NULL,
+                duration_seconds DOUBLE PRECISION,
+                playback_position DOUBLE PRECISION,
+                metadata_json JSON,
+                occurred_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                created_at TIMESTAMP NOT NULL DEFAULT NOW()
+            )
+        """))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_student_activity_events_student_id ON student_activity_events (student_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_student_activity_events_qari_id ON student_activity_events (qari_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_student_activity_events_reference_id ON student_activity_events (reference_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_student_activity_events_session_id ON student_activity_events (session_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_student_activity_events_event_type ON student_activity_events (event_type)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_student_activity_events_occurred_at ON student_activity_events (occurred_at)"))
 
 
 # Health check
