@@ -296,6 +296,46 @@ async def get_student_details(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/qari/students/{student_id}/activity-summary")
+async def get_qari_student_activity_summary(
+    student_id: str,
+    current_user: User = Depends(get_current_qari_user),
+    db: Session = Depends(get_db)
+):
+    """Get tracked learning activity for one student assigned to the current Qari."""
+    try:
+        from database import StudentQariRelationship
+        from student_activity_analytics_service import student_activity_analytics_service
+        from uuid import UUID
+
+        student_uuid = UUID(student_id) if isinstance(student_id, str) else student_id
+        relationship = db.query(StudentQariRelationship).filter(
+            and_(
+                StudentQariRelationship.student_id == student_uuid,
+                StudentQariRelationship.qari_id == current_user.id,
+                StudentQariRelationship.is_active == True
+            )
+        ).first()
+
+        if not relationship:
+            raise HTTPException(status_code=403, detail="Student not found or not assigned to this Qari")
+
+        student_user = db.query(User).filter(User.id == student_uuid).first()
+        if not student_user:
+            raise HTTPException(status_code=404, detail="Student not found")
+
+        return student_activity_analytics_service.get_qari_student_activity_summary(
+            student_user,
+            current_user,
+            db
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting Qari student activity summary: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # Student Endpoints
 @router.post("/student/assign-qari")
 async def assign_student_to_qari(

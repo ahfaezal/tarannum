@@ -3,9 +3,32 @@
  */
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { getQariStudents, getQariContent, getQariCommissionStats, getQariReferralInfo, getStudentDetails, StudentDetails, deleteQariContent } from "../services/platformService";
+import { getQariStudents, getQariContent, getQariCommissionStats, getQariReferralInfo, getStudentDetails, getQariStudentActivitySummary, StudentDetails, QariStudentActivitySummary, deleteQariContent } from "../services/platformService";
 import { StudentInfo, QariContent } from "../services/platformService";
-import { Users, TrendingUp, TrendingDown, BookOpen, BarChart3, DollarSign, Copy, Check, X, Play, FileAudio, ChevronDown, Edit, Trash2, QrCode, Download, Link as LinkIcon } from "lucide-react";
+import {
+  Activity,
+  AlertTriangle,
+  Award,
+  BarChart3,
+  BookOpen,
+  Check,
+  ChevronDown,
+  Copy,
+  DollarSign,
+  Download,
+  Edit,
+  FileAudio,
+  Link as LinkIcon,
+  QrCode,
+  Sparkles,
+  Target,
+  Trash2,
+  TrendingDown,
+  TrendingUp,
+  Trophy,
+  Users,
+  X,
+} from "lucide-react";
 import ConfirmModal from "../components/ConfirmModal";
 
 const QariDashboard: React.FC = () => {
@@ -25,9 +48,15 @@ const QariDashboard: React.FC = () => {
   const [referralInfo, setReferralInfo] = useState<{ referralCode: string; qariName: string } | null>(null);
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   const [studentDetails, setStudentDetails] = useState<StudentDetails | null>(null);
+  const [studentActivitySummary, setStudentActivitySummary] = useState<QariStudentActivitySummary | null>(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [studentFilter, setStudentFilter] = useState<string>("all");
   const [showFilterDropdown, setShowFilterDropdown] = useState(false);
+  const [showAllStudents, setShowAllStudents] = useState(false);
+  const [showAllWeakVerses, setShowAllWeakVerses] = useState(false);
+  const [showAllContent, setShowAllContent] = useState(false);
+  const [showAllRecordings, setShowAllRecordings] = useState(false);
+  const [showAllProgress, setShowAllProgress] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<{ isOpen: boolean; contentId: string; filename: string }>({
     isOpen: false,
     contentId: '',
@@ -87,9 +116,17 @@ const QariDashboard: React.FC = () => {
   const handleStudentClick = async (studentId: string) => {
     setSelectedStudentId(studentId);
     setLoadingDetails(true);
+    setStudentDetails(null);
+    setStudentActivitySummary(null);
+    setShowAllRecordings(false);
+    setShowAllProgress(false);
     try {
-      const details = await getStudentDetails(studentId);
+      const [details, activitySummary] = await Promise.all([
+        getStudentDetails(studentId),
+        getQariStudentActivitySummary(studentId).catch(() => null),
+      ]);
       setStudentDetails(details);
+      setStudentActivitySummary(activitySummary);
     } catch (err: any) {
       setError(err.message || "Failed to load student details");
     } finally {
@@ -100,7 +137,210 @@ const QariDashboard: React.FC = () => {
   const closeStudentDetails = () => {
     setSelectedStudentId(null);
     setStudentDetails(null);
+    setStudentActivitySummary(null);
+    setShowAllRecordings(false);
+    setShowAllProgress(false);
   };
+
+  const getStudentScore = (student: StudentInfo) =>
+    student.statistics?.average_score || student.latest_score || 0;
+
+  const getTrendValue = (student: StudentInfo) => {
+    if (student.improvement !== undefined && student.improvement !== null) {
+      return student.improvement;
+    }
+    const trend = student.statistics?.improvement_trend || [];
+    return trend.length > 0 ? trend[trend.length - 1] : 0;
+  };
+
+  const getTrendLabel = (student: StudentInfo) => {
+    const trend = getTrendValue(student);
+    if (trend > 0.5) return "Up";
+    if (trend < -0.5) return "Down";
+    return "Flat";
+  };
+
+  const getTrendClasses = (student: StudentInfo) => {
+    const label = getTrendLabel(student);
+    if (label === "Up") return "bg-emerald-50 text-emerald-700 border-emerald-200";
+    if (label === "Down") return "bg-red-50 text-red-700 border-red-200";
+    return "bg-slate-50 text-slate-600 border-slate-200";
+  };
+
+  const formatScore = (score?: number | null) =>
+    score !== undefined && score !== null ? `${Math.round(score)}%` : "No score";
+
+  const formatDuration = (seconds?: number) => {
+    if (!seconds) return "Duration not set";
+    const minutes = Math.floor(seconds / 60);
+    const remainder = Math.round(seconds % 60);
+    return minutes > 0 ? `${minutes}m ${remainder}s` : `${remainder}s`;
+  };
+
+  const formatPracticeMinutes = (minutes?: number | null) => {
+    if (!minutes) return "0m";
+    if (minutes < 1) return `${Math.round(minutes * 60)}s`;
+    const rounded = Math.round(minutes);
+    return `${rounded}m`;
+  };
+
+  const getActivityLabel = (eventType: string) => {
+    const labels: Record<string, string> = {
+      practice_started: "Practice started",
+      practice_stopped: "Practice completed",
+      reference_play: "Reference played",
+      reference_pause: "Reference paused",
+      recording_started: "Recording started",
+      recording_submitted: "Recording submitted",
+      analysis_completed: "Analysis completed",
+    };
+    return labels[eventType] || eventType.replace(/_/g, " ");
+  };
+
+  const getReferenceDisplayName = (record: any) => {
+    return (
+      record?.surah_name ||
+      record?.reference_title ||
+      record?.reference_filename ||
+      record?.reference?.title ||
+      record?.reference?.filename ||
+      (record?.reference_id ? `Reference ${String(record.reference_id).slice(0, 8)}` : "Unknown Reference")
+    );
+  };
+
+  const getModalCoachingMessage = () => {
+    if (studentActivitySummary?.coaching_snapshot?.recommendation) {
+      return studentActivitySummary.coaching_snapshot.recommendation;
+    }
+    if (!studentDetails) return "Start with reference listening before assessment.";
+    if (studentDetails.statistics.total_sessions === 0) {
+      return "Start with reference listening before assessment.";
+    }
+    if ((studentActivitySummary?.total_practice_sessions || 0) === 0) {
+      return "Student has assessment records but limited tracked practice.";
+    }
+    return "Review weak verses and encourage consistent short practice sessions.";
+  };
+
+  const getReferenceFocus = () => {
+    if (!studentDetails) return [];
+    const grouped = new Map<
+      string,
+      { name: string; scores: number[]; dates: string[] }
+    >();
+
+    studentDetails.progress.forEach((progress) => {
+      const key = progress.reference_id || getReferenceDisplayName(progress);
+      const existing = grouped.get(key) || {
+        name: getReferenceDisplayName(progress),
+        scores: [],
+        dates: [],
+      };
+      existing.scores.push(progress.overall_score || 0);
+      if (progress.created_at) existing.dates.push(progress.created_at);
+      grouped.set(key, existing);
+    });
+
+    return Array.from(grouped.values())
+      .map((item) => {
+        const average = item.scores.length
+          ? item.scores.reduce((sum, score) => sum + score, 0) / item.scores.length
+          : 0;
+        const best = item.scores.length ? Math.max(...item.scores) : 0;
+        const first = item.scores[0] || 0;
+        const last = item.scores[item.scores.length - 1] || 0;
+        const trend = last > first + 0.5 ? "Up" : last < first - 0.5 ? "Down" : "Flat";
+        return {
+          ...item,
+          average,
+          best,
+          trend,
+          count: item.scores.length,
+          latestAt: item.dates[0] || "",
+        };
+      })
+      .sort((a, b) => b.count - a.count || b.latestAt.localeCompare(a.latestAt))
+      .slice(0, 5);
+  };
+
+  const filteredStudents = students.filter((student) => {
+    if (studentFilter === "all") return true;
+    const lastActive = new Date(student.last_active);
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    if (studentFilter === "active") return lastActive >= thirtyDaysAgo;
+    if (studentFilter === "inactive") return lastActive < thirtyDaysAgo;
+    return true;
+  });
+
+  const qariName = referralInfo?.qariName || "Qari";
+  const activeStudentCount = commissionStats?.active_students ?? students.length;
+  const totalAssessments = students.reduce(
+    (sum, student) => sum + (student.statistics?.total_sessions || 0),
+    0
+  );
+  const scoredStudents = students.filter(
+    (student) => student.latest_score !== undefined || (student.statistics?.total_sessions || 0) > 0
+  );
+  const averageStudentScore =
+    scoredStudents.length > 0
+      ? scoredStudents.reduce((sum, student) => sum + getStudentScore(student), 0) / scoredStudents.length
+      : 0;
+  const bestStudentScore =
+    students.length > 0
+      ? Math.max(...students.map((student) => student.statistics?.best_score || student.latest_score || 0))
+      : 0;
+
+  const coachingMessage =
+    students.length === 0
+      ? "Invite students using your referral QR to begin coaching with Tarannum AI."
+      : averageStudentScore >= 80
+      ? "Your students are performing strongly. Keep reinforcing consistency and expressive control."
+      : averageStudentScore >= 60
+      ? "Your students are improving. Focus on weak verses and consistent practice."
+      : "Your students need guided repetition. Start with short references and review weak verses often.";
+
+  const performanceDistribution = [
+    {
+      label: "High performers",
+      range: "80%+",
+      count: students.filter((student) => getStudentScore(student) >= 80).length,
+      color: "bg-emerald-500",
+      soft: "bg-emerald-50 text-emerald-700",
+    },
+    {
+      label: "Developing",
+      range: "60-79%",
+      count: students.filter((student) => {
+        const score = getStudentScore(student);
+        return score >= 60 && score < 80;
+      }).length,
+      color: "bg-amber-500",
+      soft: "bg-amber-50 text-amber-700",
+    },
+    {
+      label: "Needs support",
+      range: "<60%",
+      count: students.filter((student) => getStudentScore(student) > 0 && getStudentScore(student) < 60).length,
+      color: "bg-red-500",
+      soft: "bg-red-50 text-red-700",
+    },
+  ];
+
+  const commonWeakVerses = Object.values(
+    students.reduce<Record<string, { text: string; frequency: number }>>((acc, student) => {
+      (student.statistics?.weakest_verses || []).forEach((verse) => {
+        if (!verse.text) return;
+        acc[verse.text] = acc[verse.text] || { text: verse.text, frequency: 0 };
+        acc[verse.text].frequency += verse.frequency || 1;
+      });
+      return acc;
+    }, {})
+  ).sort((a, b) => b.frequency - a.frequency);
+
+  const visibleStudents = showAllStudents ? filteredStudents : filteredStudents.slice(0, 5);
+  const visibleWeakVerses = showAllWeakVerses ? commonWeakVerses : commonWeakVerses.slice(0, 5);
+  const visibleContent = showAllContent ? content : content.slice(0, 6);
 
   if (loading) {
     return (
@@ -132,14 +372,67 @@ const QariDashboard: React.FC = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-emerald-50/30">
       <div className="p-4 md:p-8 max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl md:text-4xl font-bold text-slate-800 mb-2">Qari Dashboard</h1>
-          <p className="text-slate-600 text-base">Manage your students and content library</p>
+        {/* Hero Summary */}
+        <div className="mb-8 overflow-hidden rounded-3xl bg-slate-950 shadow-2xl shadow-slate-200">
+          <div className="grid gap-8 p-6 text-white md:grid-cols-[1.5fr_1fr] md:p-8">
+            <div>
+              <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-emerald-400/10 px-3 py-1 text-xs font-bold uppercase tracking-wider text-emerald-300">
+                <Sparkles className="h-4 w-4" />
+                Coaching Dashboard
+              </div>
+              <h1 className="text-3xl font-bold tracking-tight md:text-5xl">
+                Assalamualaikum, {qariName}
+              </h1>
+              <p className="mt-4 max-w-2xl text-sm leading-6 text-slate-300 md:text-base">
+                {coachingMessage}
+              </p>
+              <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <div className="rounded-2xl border border-white/10 bg-white/10 p-4">
+                  <div className="text-2xl font-bold">{students.length}</div>
+                  <div className="text-xs text-slate-300">Total Students</div>
+                </div>
+                <div className="rounded-2xl border border-white/10 bg-white/10 p-4">
+                  <div className="text-2xl font-bold">{activeStudentCount}</div>
+                  <div className="text-xs text-slate-300">Active Students</div>
+                </div>
+                <div className="rounded-2xl border border-white/10 bg-white/10 p-4">
+                  <div className="text-2xl font-bold">{formatScore(averageStudentScore)}</div>
+                  <div className="text-xs text-slate-300">Avg Score</div>
+                </div>
+                <div className="rounded-2xl border border-white/10 bg-white/10 p-4">
+                  <div className="text-2xl font-bold">{formatScore(bestStudentScore)}</div>
+                  <div className="text-xs text-slate-300">Best Score</div>
+                </div>
+              </div>
+            </div>
+            <div className="rounded-3xl border border-emerald-300/20 bg-gradient-to-br from-emerald-400/20 to-cyan-400/10 p-5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-emerald-200">Coaching Focus</p>
+                  <h2 className="mt-2 text-2xl font-bold">Weak verses + consistency</h2>
+                </div>
+                <Target className="h-10 w-10 text-emerald-300" />
+              </div>
+              <div className="mt-6 space-y-3 text-sm text-slate-200">
+                <div className="flex items-center justify-between rounded-2xl bg-white/10 px-4 py-3">
+                  <span>Total assessments</span>
+                  <span className="font-bold">{totalAssessments}</span>
+                </div>
+                <div className="flex items-center justify-between rounded-2xl bg-white/10 px-4 py-3">
+                  <span>Content references</span>
+                  <span className="font-bold">{content.length}</span>
+                </div>
+                <div className="flex items-center justify-between rounded-2xl bg-white/10 px-4 py-3">
+                  <span>Common weak verses</span>
+                  <span className="font-bold">{commonWeakVerses.length}</span>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-4 md:gap-6 mb-8">
           <div className="bg-white rounded-xl shadow-md border border-slate-200 p-6 hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1">
             <div className="flex items-center justify-between">
               <div>
@@ -169,13 +462,7 @@ const QariDashboard: React.FC = () => {
               <div>
                 <p className="text-sm font-medium text-slate-600 mb-1">Avg. Score</p>
                 <p className="text-3xl font-bold text-emerald-600">
-                  {students.length > 0
-                    ? Math.round(
-                        students.reduce((sum, s) => sum + (s.latest_score || 0), 0) /
-                          students.length
-                      )
-                    : 0}
-                  %
+                  {formatScore(averageStudentScore)}
                 </p>
               </div>
               <div className="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center">
@@ -199,6 +486,30 @@ const QariDashboard: React.FC = () => {
               </div>
             </div>
           )}
+
+          <div className="bg-white rounded-xl shadow-md border border-slate-200 p-6 hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-slate-600 mb-1">Total Assessments</p>
+                <p className="text-3xl font-bold text-cyan-600">{totalAssessments}</p>
+              </div>
+              <div className="w-12 h-12 bg-cyan-100 rounded-xl flex items-center justify-center">
+                <Activity className="w-6 h-6 text-cyan-600" />
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl shadow-md border border-slate-200 p-6 hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-slate-600 mb-1">Best Student Score</p>
+                <p className="text-3xl font-bold text-rose-600">{formatScore(bestStudentScore)}</p>
+              </div>
+              <div className="w-12 h-12 bg-rose-100 rounded-xl flex items-center justify-center">
+                <Award className="w-6 h-6 text-rose-600" />
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Referral Code Section */}
@@ -310,6 +621,114 @@ const QariDashboard: React.FC = () => {
             </div>
           </div>
         )}
+
+        <div className="grid grid-cols-1 xl:grid-cols-[1fr_1fr] gap-6 mb-8">
+          <div className="bg-white rounded-xl shadow-md border border-slate-200 p-6">
+            <h2 className="text-xl font-semibold text-slate-800 flex items-center gap-2 mb-1">
+              <Trophy className="w-5 h-5 text-amber-500" />
+              Student Performance Distribution
+            </h2>
+            <p className="text-sm text-slate-500 mb-5">Based on existing student score data.</p>
+            {students.length === 0 ? (
+              <div className="rounded-xl bg-slate-50 p-6 text-center text-sm text-slate-500">
+                No student scores yet.
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {performanceDistribution.map((item) => {
+                  const width = students.length > 0 ? Math.round((item.count / students.length) * 100) : 0;
+                  return (
+                    <div key={item.label}>
+                      <div className="flex items-center justify-between mb-2 text-sm">
+                        <span className="font-semibold text-slate-700">{item.label}</span>
+                        <span className={`rounded-full px-2 py-1 text-xs font-bold ${item.soft}`}>
+                          {item.count} student{item.count !== 1 ? "s" : ""}
+                        </span>
+                      </div>
+                      <div className="h-3 overflow-hidden rounded-full bg-slate-100">
+                        <div className={`h-full ${item.color}`} style={{ width: `${width}%` }} />
+                      </div>
+                      <p className="mt-1 text-xs text-slate-400">{item.range}</p>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          <div className="bg-white rounded-xl shadow-md border border-slate-200 p-6">
+            <h2 className="text-xl font-semibold text-slate-800 flex items-center gap-2 mb-1">
+              <AlertTriangle className="w-5 h-5 text-amber-500" />
+              Common Weak Verses
+            </h2>
+            <p className="text-sm text-slate-500 mb-5">Aggregated from current student progress records.</p>
+            {commonWeakVerses.length === 0 ? (
+              <div className="rounded-xl bg-slate-50 p-6 text-center text-sm text-slate-500">
+                No weak verse data yet.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {visibleWeakVerses.map((verse, index) => {
+                  const difficulty = verse.frequency >= 3 ? "High" : verse.frequency === 2 ? "Medium" : "Low";
+                  const difficultyClass =
+                    difficulty === "High"
+                      ? "bg-red-50 text-red-700"
+                      : difficulty === "Medium"
+                      ? "bg-amber-50 text-amber-700"
+                      : "bg-emerald-50 text-emerald-700";
+                  return (
+                    <div key={`${verse.text}-${index}`} className="rounded-xl border border-slate-200 p-4">
+                      <div className="flex items-center justify-between gap-2 mb-2">
+                        <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                          Priority {index + 1}
+                        </span>
+                        <span className={`rounded-full px-2 py-1 text-xs font-bold ${difficultyClass}`}>
+                          {difficulty}
+                        </span>
+                      </div>
+                      <p className="text-sm font-semibold text-slate-800">{verse.text}</p>
+                      <p className="mt-2 text-xs text-slate-500">
+                        Appears {verse.frequency} time{verse.frequency !== 1 ? "s" : ""}
+                      </p>
+                    </div>
+                  );
+                })}
+                {commonWeakVerses.length > 5 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllWeakVerses(!showAllWeakVerses)}
+                    className="w-full rounded-xl border border-slate-200 py-3 text-sm font-bold text-slate-700 transition hover:bg-slate-50"
+                  >
+                    {showAllWeakVerses ? "Show Less" : "View All Weak Verses"}
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="bg-emerald-50/80 rounded-xl shadow-sm border border-dashed border-emerald-300 p-6 mb-8">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 bg-emerald-600 rounded-xl flex items-center justify-center text-white">
+                <Trophy className="w-6 h-6" />
+              </div>
+              <div>
+                <h2 className="text-xl font-semibold text-slate-800">Competition Groups</h2>
+                <p className="text-sm text-slate-600 mt-1">
+                  Create training groups and leaderboards for schools and events.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              disabled
+              className="px-4 py-3 rounded-xl bg-slate-900/30 text-white text-sm font-bold cursor-not-allowed"
+            >
+              Coming Soon
+            </button>
+          </div>
+        </div>
 
         {/* Students List */}
         <div className="bg-white rounded-xl shadow-md border border-slate-200 p-6 mb-8">
@@ -427,7 +846,7 @@ const QariDashboard: React.FC = () => {
               </div>
             ) : (
               <div className="space-y-4">
-                {filteredStudents.map((student) => (
+                {visibleStudents.map((student) => (
                   <div
                     key={student.student_id}
                     onClick={() => handleStudentClick(student.student_id)}
@@ -459,8 +878,14 @@ const QariDashboard: React.FC = () => {
                       </div>
                     )}
                     {student.statistics && (
-                      <div className="text-sm text-gray-600 mt-1">
-                        {student.statistics.total_sessions} sessions
+                      <div className="text-sm text-gray-600 mt-1 space-y-1">
+                        <div>{student.statistics.total_sessions} sessions</div>
+                        <div>Avg: {formatScore(student.statistics.average_score)}</div>
+                        <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-bold ${getTrendClasses(student)}`}>
+                          {getTrendLabel(student) === "Up" && <TrendingUp className="w-3 h-3" />}
+                          {getTrendLabel(student) === "Down" && <TrendingDown className="w-3 h-3" />}
+                          {getTrendLabel(student)}
+                        </span>
                       </div>
                     )}
                   </div>
@@ -507,6 +932,15 @@ const QariDashboard: React.FC = () => {
                 )}
                   </div>
                 ))}
+                {filteredStudents.length > 5 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllStudents(!showAllStudents)}
+                    className="w-full rounded-xl border border-slate-200 py-3 text-sm font-bold text-slate-700 transition hover:bg-slate-50"
+                  >
+                    {showAllStudents ? "Show Less" : `Show More (${filteredStudents.length - 5} more)`}
+                  </button>
+                )}
               </div>
             );
           })()}
@@ -515,7 +949,15 @@ const QariDashboard: React.FC = () => {
         {/* Content Library */}
         <div className="bg-white rounded-xl shadow-md border border-slate-200 p-6">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-semibold text-gray-800">My Content Library</h2>
+          <div>
+            <h2 className="text-xl font-semibold text-gray-800 flex items-center gap-2">
+              <BookOpen className="w-5 h-5 text-blue-600" />
+              My Content Library
+            </h2>
+            <p className="text-sm text-slate-500 mt-1">
+              {content.length} reference{content.length !== 1 ? "s" : ""} available for coaching.
+            </p>
+          </div>
         </div>
         {content.length === 0 ? (
           <div className="text-center py-8 text-gray-500">
@@ -525,7 +967,7 @@ const QariDashboard: React.FC = () => {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {content.map((item) => (
+            {visibleContent.map((item) => (
               <div
                 key={item.id}
                 className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition-colors relative group"
@@ -556,8 +998,11 @@ const QariDashboard: React.FC = () => {
                   </button>
                 </div>
                 <h3 className="font-semibold text-gray-800 mb-1 pr-16">
-                  {item.filename || item.reference_title || "Untitled"}
+                  {item.surah_name || item.reference_title || item.filename || "Untitled Reference"}
                 </h3>
+                <p className="text-xs text-slate-500 mb-2">
+                  {item.filename || item.reference_title || "No filename"}
+                </p>
                 {item.surah_number || item.surah_name ? (
                   <p className="text-sm text-gray-600">
                     {item.surah_name || `Surah ${item.surah_number}`}
@@ -572,20 +1017,25 @@ const QariDashboard: React.FC = () => {
                   </span>
                 )}
                 <div className="flex items-center justify-between mt-2">
-                  {item.reference_duration && (
-                    <p className="text-xs text-gray-500">
-                      Duration: {Math.round(item.reference_duration)}s
-                    </p>
-                  )}
-                  {item.text_segments && item.text_segments.length > 0 && (
-                    <p className="text-xs text-slate-600 font-medium">
-                      {item.text_segments.length} text segment{item.text_segments.length !== 1 ? 's' : ''}
-                    </p>
-                  )}
+                  <p className="text-xs text-gray-500">
+                    {formatDuration(item.reference_duration || item.duration)}
+                  </p>
+                  <p className="text-xs text-slate-600 font-medium">
+                    {item.text_segments?.length || 0} text segment{(item.text_segments?.length || 0) !== 1 ? 's' : ''}
+                  </p>
                 </div>
               </div>
             ))}
           </div>
+        )}
+        {content.length > 6 && (
+          <button
+            type="button"
+            onClick={() => setShowAllContent(!showAllContent)}
+            className="mt-4 w-full rounded-xl border border-slate-200 py-3 text-sm font-bold text-slate-700 transition hover:bg-slate-50"
+          >
+            {showAllContent ? "Show Less" : `Show More Content (${content.length - 6} more)`}
+          </button>
         )}
       </div>
 
@@ -597,9 +1047,9 @@ const QariDashboard: React.FC = () => {
             <div className="flex items-center justify-between p-6 border-b border-gray-200">
               <h2 className="text-2xl font-bold text-gray-800">
                 {studentDetails ? (
-                  `${studentDetails.student.full_name || studentDetails.student.email}'s Details`
+                  `${studentDetails.student.full_name || studentDetails.student.email}'s Coaching Profile`
                 ) : (
-                  "Student Details"
+                  "Student Coaching Profile"
                 )}
               </h2>
               <button
@@ -682,6 +1132,197 @@ const QariDashboard: React.FC = () => {
                     </div>
                   </div>
 
+                  {/* Learning Activity Summary */}
+                  <div className="rounded-2xl border border-emerald-100 bg-gradient-to-br from-emerald-50 to-white p-5">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between mb-4">
+                      <div>
+                        <h3 className="font-bold text-gray-900">Learning Activity Summary</h3>
+                        <p className="text-sm text-gray-600">Tracked practice behavior before and after assessments.</p>
+                      </div>
+                      {studentActivitySummary?.last_practice_at && (
+                        <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-emerald-700 border border-emerald-100">
+                          Last practice: {new Date(studentActivitySummary.last_practice_at).toLocaleDateString()}
+                        </span>
+                      )}
+                    </div>
+
+                    {!studentActivitySummary || studentActivitySummary.recent_activity.length === 0 ? (
+                      <div className="rounded-xl border border-dashed border-emerald-200 bg-white/70 p-5 text-sm text-gray-600">
+                        No tracked practice activity yet. Start with reference listening before assessment.
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                        {[
+                          { label: "Practice Sessions", value: studentActivitySummary.total_practice_sessions },
+                          { label: "Practice Time", value: formatPracticeMinutes(studentActivitySummary.total_practice_minutes) },
+                          { label: "Reference Plays", value: studentActivitySummary.total_reference_plays },
+                          { label: "Recordings Submitted", value: studentActivitySummary.total_recordings_submitted },
+                          { label: "Practice Streak", value: `${studentActivitySummary.practice_streak_days}d` },
+                        ].map((item) => (
+                          <div key={item.label} className="rounded-xl bg-white p-4 shadow-sm border border-white">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">{item.label}</p>
+                            <p className="mt-2 text-2xl font-bold text-gray-900">{item.value}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Coaching Insight */}
+                  <div className="rounded-2xl border border-blue-100 bg-blue-50 p-5">
+                    <div className="flex items-start gap-3">
+                      <Sparkles className="w-5 h-5 text-blue-600 mt-0.5" />
+                      <div>
+                        <h3 className="font-bold text-blue-950">Coaching Insight</h3>
+                        <p className="mt-1 text-sm text-blue-800">{getModalCoachingMessage()}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Practice vs Assessment */}
+                  <div className="rounded-2xl border border-slate-200 bg-white p-5">
+                    <h3 className="font-bold text-gray-900 mb-4">Practice vs Assessment</h3>
+                    {studentActivitySummary ? (
+                      <div className="space-y-4">
+                        {[
+                          {
+                            label: "Practice Sessions",
+                            value: studentActivitySummary.total_practice_sessions,
+                            color: "bg-emerald-500",
+                          },
+                          {
+                            label: "Recordings Submitted",
+                            value: studentActivitySummary.total_recordings_submitted,
+                            color: "bg-blue-500",
+                          },
+                          {
+                            label: "Analysis Completed",
+                            value: studentActivitySummary.total_analysis_completed,
+                            color: "bg-purple-500",
+                          },
+                        ].map((item) => {
+                          const maxValue = Math.max(
+                            studentActivitySummary.total_practice_sessions,
+                            studentActivitySummary.total_recordings_submitted,
+                            studentActivitySummary.total_analysis_completed,
+                            1
+                          );
+                          return (
+                            <div key={item.label}>
+                              <div className="mb-1 flex items-center justify-between text-sm">
+                                <span className="font-medium text-gray-700">{item.label}</span>
+                                <span className="font-bold text-gray-900">{item.value}</span>
+                              </div>
+                              <div className="h-2 rounded-full bg-slate-100">
+                                <div
+                                  className={`h-2 rounded-full ${item.color}`}
+                                  style={{ width: `${Math.max((item.value / maxValue) * 100, item.value > 0 ? 8 : 0)}%` }}
+                                />
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-gray-500">No tracked practice activity yet.</p>
+                    )}
+                  </div>
+
+                  {/* Weekly Activity */}
+                  <div className="rounded-2xl border border-slate-200 bg-white p-5">
+                    <h3 className="font-bold text-gray-900 mb-4">Weekly Activity</h3>
+                    {studentActivitySummary && studentActivitySummary.weekly_activity.length > 0 ? (
+                      <div className="grid grid-cols-7 gap-2">
+                        {studentActivitySummary.weekly_activity.map((day) => {
+                          const maxDayValue = Math.max(
+                            ...studentActivitySummary.weekly_activity.map(
+                              (entry) => entry.practice_sessions + entry.practice_minutes + entry.recordings
+                            ),
+                            1
+                          );
+                          const dayValue = day.practice_sessions + day.practice_minutes + day.recordings;
+                          return (
+                            <div key={day.date} className="flex flex-col items-center gap-2">
+                              <div className="flex h-24 w-full max-w-10 items-end justify-center rounded-lg bg-slate-50 p-1">
+                                <div
+                                  className="w-full rounded-md bg-gradient-to-t from-emerald-500 to-blue-400"
+                                  style={{ height: `${Math.max((dayValue / maxDayValue) * 100, dayValue > 0 ? 10 : 0)}%` }}
+                                  title={`${day.practice_sessions} sessions, ${day.practice_minutes} mins, ${day.recordings} recordings`}
+                                />
+                              </div>
+                              <span className="text-[11px] font-semibold text-gray-500">
+                                {new Date(day.date).toLocaleDateString(undefined, { weekday: "short" })}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-gray-500">No tracked practice activity yet.</p>
+                    )}
+                  </div>
+
+                  {/* Recent Learning Activity */}
+                  <div className="rounded-2xl border border-slate-200 bg-white p-5">
+                    <h3 className="font-bold text-gray-900 mb-4">Recent Learning Activity</h3>
+                    {studentActivitySummary && studentActivitySummary.recent_activity.length > 0 ? (
+                      <div className="space-y-2">
+                        {studentActivitySummary.recent_activity.slice(0, 8).map((event, index) => (
+                          <div key={`${event.event_type}-${event.created_at}-${index}`} className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3 text-sm">
+                            <span className="font-medium text-gray-800">{getActivityLabel(event.event_type)}</span>
+                            <span className="text-gray-500">
+                              {event.created_at ? new Date(event.created_at).toLocaleString() : "Time unavailable"}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-gray-500">No tracked practice activity yet.</p>
+                    )}
+                  </div>
+
+                  {/* Surah / Reference Focus */}
+                  <div className="rounded-2xl border border-slate-200 bg-white p-5">
+                    <h3 className="font-bold text-gray-900 mb-4">Surah / Reference Focus</h3>
+                    {getReferenceFocus().length === 0 ? (
+                      <p className="text-sm text-gray-500">No scored recordings yet.</p>
+                    ) : (
+                      <div className="space-y-3">
+                        {getReferenceFocus().map((item) => (
+                          <div key={item.name} className="rounded-xl border border-slate-100 p-4">
+                            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                              <div>
+                                <p className="font-semibold text-gray-900">{item.name}</p>
+                                <p className="text-xs text-gray-500">{item.count} assessments</p>
+                              </div>
+                              <span
+                                className={`rounded-full px-3 py-1 text-xs font-bold ${
+                                  item.trend === "Up"
+                                    ? "bg-emerald-50 text-emerald-700"
+                                    : item.trend === "Down"
+                                    ? "bg-red-50 text-red-700"
+                                    : "bg-slate-50 text-slate-600"
+                                }`}
+                              >
+                                {item.trend}
+                              </span>
+                            </div>
+                            <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
+                              <div>
+                                <span className="text-gray-500">Average</span>
+                                <p className="font-bold text-gray-900">{Math.round(item.average)}%</p>
+                              </div>
+                              <div>
+                                <span className="text-gray-500">Best</span>
+                                <p className="font-bold text-gray-900">{Math.round(item.best)}%</p>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
                   {/* Recordings */}
                   <div>
                     <h3 className="font-semibold text-gray-800 mb-3">
@@ -690,11 +1331,11 @@ const QariDashboard: React.FC = () => {
                     {studentDetails.recordings.length === 0 ? (
                       <div className="text-center py-8 text-gray-500 bg-gray-50 rounded-lg">
                         <FileAudio className="w-12 h-12 mx-auto mb-2 text-gray-300" />
-                        <p>No recordings yet</p>
+                        <p>No scored recordings yet.</p>
                       </div>
                     ) : (
                       <div className="space-y-3">
-                        {studentDetails.recordings.map((recording) => (
+                        {(showAllRecordings ? studentDetails.recordings : studentDetails.recordings.slice(0, 5)).map((recording) => (
                           <div
                             key={recording.session_id}
                             className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition-colors"
@@ -751,6 +1392,15 @@ const QariDashboard: React.FC = () => {
                             </div>
                           </div>
                         ))}
+                        {studentDetails.recordings.length > 5 && (
+                          <button
+                            type="button"
+                            onClick={() => setShowAllRecordings(!showAllRecordings)}
+                            className="w-full rounded-xl border border-slate-200 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                          >
+                            {showAllRecordings ? "Show Less" : `Show More Recordings (${studentDetails.recordings.length - 5} more)`}
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
@@ -763,11 +1413,11 @@ const QariDashboard: React.FC = () => {
                     {studentDetails.progress.length === 0 ? (
                       <div className="text-center py-8 text-gray-500 bg-gray-50 rounded-lg">
                         <BarChart3 className="w-12 h-12 mx-auto mb-2 text-gray-300" />
-                        <p>No progress records yet</p>
+                        <p>No progress records yet.</p>
                       </div>
                     ) : (
                       <div className="space-y-2">
-                        {studentDetails.progress.slice(0, 20).map((progress) => (
+                        {(showAllProgress ? studentDetails.progress : studentDetails.progress.slice(0, 5)).map((progress) => (
                           <div
                             key={progress.id}
                             className="border border-gray-200 rounded-lg p-3 flex items-center justify-between"
@@ -804,6 +1454,15 @@ const QariDashboard: React.FC = () => {
                             </div>
                           </div>
                         ))}
+                        {studentDetails.progress.length > 5 && (
+                          <button
+                            type="button"
+                            onClick={() => setShowAllProgress(!showAllProgress)}
+                            className="w-full rounded-xl border border-slate-200 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                          >
+                            {showAllProgress ? "Show Less" : `Show More Progress (${studentDetails.progress.length - 5} more)`}
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
