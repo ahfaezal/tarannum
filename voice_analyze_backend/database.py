@@ -65,6 +65,10 @@ class User(Base):
     address = Column(String, nullable=True)  # Address
     phone_number = Column(String, nullable=True)
     avatar_path = Column(String, nullable=True)
+    organization = Column(String, nullable=True)
+    state = Column(String, nullable=True)
+    bio = Column(Text, nullable=True)
+    maqam_specialization = Column(String, nullable=True)
     email_verified = Column(Boolean, default=False, nullable=False)
     email_verified_at = Column(DateTime, nullable=True)
     otp_code_hash = Column(String, nullable=True)
@@ -389,6 +393,10 @@ def ensure_user_profile_columns():
     columns = {
         "phone_number": "VARCHAR",
         "avatar_path": "VARCHAR",
+        "organization": "VARCHAR",
+        "state": "VARCHAR",
+        "bio": "TEXT",
+        "maqam_specialization": "VARCHAR",
     }
 
     with engine.begin() as conn:

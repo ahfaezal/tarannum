@@ -6,6 +6,7 @@ import { logout, fetchCurrentUser } from './store/slices/authSlice';
 import TrainingStudio from './views/TrainingStudio';
 import AdminMode from './views/AdminMode';
 import QariDashboard from './views/QariDashboard';
+import QariProfileView from './views/QariProfile';
 import StudentProgressView from './views/StudentProgress';
 import StudentProfileView from './views/StudentProfile';
 import Login from './components/Login';
@@ -109,13 +110,22 @@ const App: React.FC = () => {
 
           {/* Qari-specific tabs */}
           {userRole === 'qari' && (
-            <Link
-              to="/dashboard"
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${currentPath === '/dashboard' ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
-            >
-              <LayoutDashboard size={20} />
-              <span className="font-medium">My Dashboard</span>
-            </Link>
+            <>
+              <Link
+                to="/dashboard"
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${currentPath === '/dashboard' ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
+              >
+                <LayoutDashboard size={20} />
+                <span className="font-medium">My Dashboard</span>
+              </Link>
+              <Link
+                to="/profile"
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${currentPath === '/profile' ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
+              >
+                <User size={20} />
+                <span className="font-medium">My Profile</span>
+              </Link>
+            </>
           )}
 
           {/* Admin tabs */}
@@ -276,18 +286,32 @@ const App: React.FC = () => {
           )}
 
           {userRole === 'qari' && (
-            <Link
-              to="/dashboard"
-              onClick={() => setMobileMenuOpen(false)}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
-                currentPath === '/dashboard'
-                  ? 'bg-emerald-600 text-white shadow-lg' 
-                  : 'text-slate-400 hover:bg-slate-800 hover:text-white'
-              }`}
-            >
-              <LayoutDashboard size={20} />
-              <span className="font-medium">My Dashboard</span>
-            </Link>
+            <>
+              <Link
+                to="/dashboard"
+                onClick={() => setMobileMenuOpen(false)}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
+                  currentPath === '/dashboard'
+                    ? 'bg-emerald-600 text-white shadow-lg'
+                    : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                }`}
+              >
+                <LayoutDashboard size={20} />
+                <span className="font-medium">My Dashboard</span>
+              </Link>
+              <Link
+                to="/profile"
+                onClick={() => setMobileMenuOpen(false)}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
+                  currentPath === '/profile'
+                    ? 'bg-emerald-600 text-white shadow-lg'
+                    : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                }`}
+              >
+                <User size={20} />
+                <span className="font-medium">My Profile</span>
+              </Link>
+            </>
           )}
 
           {userRole === 'admin' && (
@@ -498,6 +522,8 @@ const App: React.FC = () => {
               element={
                 isAuthenticated && userRole === 'student' ? (
                   <StudentProfileView />
+                ) : isAuthenticated && userRole === 'qari' ? (
+                  <QariProfileView />
                 ) : (
                   <Navigate to="/login" replace />
                 )

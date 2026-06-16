@@ -82,6 +82,10 @@ class UserResponse(BaseModel):
     phone_number: Optional[str] = None
     avatar_path: Optional[str] = None
     avatar_url: Optional[str] = None
+    organization: Optional[str] = None
+    state: Optional[str] = None
+    bio: Optional[str] = None
+    maqam_specialization: Optional[str] = None
     is_active: bool
     is_approved: bool
     created_at: str
@@ -97,6 +101,10 @@ class UserProfileUpdate(BaseModel):
     ic_number: Optional[str] = None
     address: Optional[str] = None
     phone_number: Optional[str] = None
+    organization: Optional[str] = None
+    state: Optional[str] = None
+    bio: Optional[str] = None
+    maqam_specialization: Optional[str] = None
 
     class Config:
         extra = "forbid"
@@ -142,12 +150,12 @@ def _find_valid_qari_by_referral_code(db: Session, referral_code: Optional[str])
     ).first()
 
 
-def _ensure_student(current_user: User):
-    """Restrict profile management endpoints to student users."""
-    if _role_value(current_user.role) != UserRole.STUDENT.value:
+def _ensure_profile_user(current_user: User):
+    """Restrict profile management endpoints to student and Qari users."""
+    if _role_value(current_user.role) not in {UserRole.STUDENT.value, UserRole.QARI.value}:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Student access required.",
+            detail="Student or Qari access required.",
         )
 
 
@@ -205,6 +213,47 @@ def _student_profile_payload(user: User, db: Session) -> dict:
         "assigned_qari": assigned_qari,
         "referral_code": user.pending_referral_code,
     }
+
+
+def _qari_profile_payload(user: User, db: Session) -> dict:
+    from database import QariContent
+
+    total_students = db.query(StudentQariRelationship).filter(
+        and_(
+            StudentQariRelationship.qari_id == user.id,
+            StudentQariRelationship.is_active == True,
+        )
+    ).count()
+    content_library_count = db.query(QariContent).filter(QariContent.qari_id == user.id).count()
+
+    return {
+        "id": str(user.id),
+        "email": user.email,
+        "role": _role_value(user.role),
+        "full_name": user.full_name,
+        "phone_number": getattr(user, "phone_number", None),
+        "organization": getattr(user, "organization", None),
+        "state": getattr(user, "state", None),
+        "bio": getattr(user, "bio", None),
+        "maqam_specialization": getattr(user, "maqam_specialization", None),
+        "avatar_path": getattr(user, "avatar_path", None),
+        "avatar_url": _get_avatar_url(getattr(user, "avatar_path", None)),
+        "is_active": user.is_active,
+        "is_approved": user.is_approved,
+        "email_verified": user.email_verified,
+        "created_at": user.created_at.isoformat() if user.created_at else "",
+        "last_login": user.last_login.isoformat() if user.last_login else None,
+        "referral_code": user.referral_code,
+        "commission_rate": user.commission_rate or 0.0,
+        "total_students": total_students,
+        "content_library_count": content_library_count,
+    }
+
+
+def _profile_payload(user: User, db: Session) -> dict:
+    if _role_value(user.role) == UserRole.QARI.value:
+        return _qari_profile_payload(user, db)
+    return _student_profile_payload(user, db)
 
 
 def _assign_verified_student_to_referral_qari(user: User, db: Session):
@@ -717,6 +766,10 @@ async def get_current_user_info(current_user: User = Depends(get_current_active_
         "phone_number": getattr(current_user, "phone_number", None),
         "avatar_path": getattr(current_user, "avatar_path", None),
         "avatar_url": _get_avatar_url(getattr(current_user, "avatar_path", None)),
+        "organization": getattr(current_user, "organization", None),
+        "state": getattr(current_user, "state", None),
+        "bio": getattr(current_user, "bio", None),
+        "maqam_specialization": getattr(current_user, "maqam_specialization", None),
         "is_active": current_user.is_active,
         "is_approved": current_user.is_approved,
         "created_at": current_user.created_at.isoformat() if current_user.created_at else "",
@@ -725,46 +778,56 @@ async def get_current_user_info(current_user: User = Depends(get_current_active_
 
 
 @router.get("/me/profile")
-async def get_my_student_profile(
+async def get_my_profile(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
-    """Get the authenticated student's profile details."""
-    _ensure_student(current_user)
-    return _student_profile_payload(current_user, db)
+    """Get the authenticated student or Qari profile details."""
+    _ensure_profile_user(current_user)
+    return _profile_payload(current_user, db)
 
 
 @router.put("/me/profile")
-async def update_my_student_profile(
+async def update_my_profile(
     payload: UserProfileUpdate,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
-    """Update safe student profile fields."""
-    _ensure_student(current_user)
+    """Update safe profile fields for student and Qari users."""
+    _ensure_profile_user(current_user)
+    role = _role_value(current_user.role)
 
     if payload.full_name is not None:
         current_user.full_name = _clean_optional_text(payload.full_name)
-    if payload.ic_number is not None:
+    if role == UserRole.STUDENT.value and payload.ic_number is not None:
         current_user.ic_number = _clean_optional_text(payload.ic_number)
-    if payload.address is not None:
+    if role == UserRole.STUDENT.value and payload.address is not None:
         current_user.address = _clean_optional_text(payload.address)
     if payload.phone_number is not None:
         current_user.phone_number = _clean_optional_text(payload.phone_number)
+    if role == UserRole.QARI.value:
+        if payload.organization is not None:
+            current_user.organization = _clean_optional_text(payload.organization)
+        if payload.state is not None:
+            current_user.state = _clean_optional_text(payload.state)
+        if payload.bio is not None:
+            current_user.bio = _clean_optional_text(payload.bio)
+        if payload.maqam_specialization is not None:
+            current_user.maqam_specialization = _clean_optional_text(payload.maqam_specialization)
 
     db.commit()
     db.refresh(current_user)
-    return _student_profile_payload(current_user, db)
+    return _profile_payload(current_user, db)
 
 
 @router.post("/me/avatar")
-async def upload_my_student_avatar(
+async def upload_my_avatar(
     avatar: UploadFile = File(...),
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
-    """Upload or replace the authenticated student's profile avatar."""
-    _ensure_student(current_user)
+    """Upload or replace the authenticated student or Qari profile avatar."""
+    _ensure_profile_user(current_user)
 
     allowed_types = {
         "image/jpeg": ".jpg",
@@ -783,7 +846,8 @@ async def upload_my_student_avatar(
         raise HTTPException(status_code=400, detail="Avatar file is empty.")
 
     suffix = allowed_types[content_type]
-    remote_path = f"student/{current_user.id}/profile/avatar/avatar-{uuid.uuid4().hex}{suffix}"
+    role_prefix = "qari" if _role_value(current_user.role) == UserRole.QARI.value else "student"
+    remote_path = f"{role_prefix}/{current_user.id}/profile/avatar/avatar-{uuid.uuid4().hex}{suffix}"
     temp_path = None
 
     try:
@@ -803,7 +867,7 @@ async def upload_my_student_avatar(
             try:
                 cloud_storage.delete_file(old_avatar_path)
             except Exception as exc:
-                logger.warning("Unable to delete old student avatar: %s", exc)
+                logger.warning("Unable to delete old profile avatar: %s", exc)
 
         return {
             "message": "Avatar uploaded successfully.",
@@ -814,7 +878,7 @@ async def upload_my_student_avatar(
         raise
     except Exception as exc:
         db.rollback()
-        logger.error("Student avatar upload failed: %s", exc, exc_info=True)
+        logger.error("Profile avatar upload failed: %s", exc, exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to upload avatar.")
     finally:
         if temp_path and temp_path.exists():
@@ -825,12 +889,12 @@ async def upload_my_student_avatar(
 
 
 @router.delete("/me/avatar")
-async def delete_my_student_avatar(
+async def delete_my_avatar(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
-    """Remove the authenticated student's profile avatar."""
-    _ensure_student(current_user)
+    """Remove the authenticated student or Qari profile avatar."""
+    _ensure_profile_user(current_user)
     avatar_path = getattr(current_user, "avatar_path", None)
 
     if avatar_path:
@@ -838,7 +902,7 @@ async def delete_my_student_avatar(
             from cloud_storage import cloud_storage
             cloud_storage.delete_file(avatar_path)
         except Exception as exc:
-            logger.warning("Unable to delete student avatar from storage: %s", exc)
+            logger.warning("Unable to delete profile avatar from storage: %s", exc)
 
     current_user.avatar_path = None
     db.commit()
@@ -846,13 +910,13 @@ async def delete_my_student_avatar(
 
 
 @router.post("/me/change-password")
-async def change_my_student_password(
+async def change_my_password(
     payload: ChangePasswordRequest,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
-    """Change the authenticated student's password after verifying the current password."""
-    _ensure_student(current_user)
+    """Change the authenticated student or Qari password after verifying the current password."""
+    _ensure_profile_user(current_user)
 
     if not current_user.hashed_password or not verify_password(payload.current_password, current_user.hashed_password):
         raise HTTPException(status_code=400, detail="Current password is incorrect.")

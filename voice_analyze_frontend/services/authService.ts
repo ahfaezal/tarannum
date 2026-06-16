@@ -47,11 +47,27 @@ export interface StudentProfile extends User {
   referral_code?: string | null;
 }
 
+export interface QariProfile extends User {
+  email_verified?: boolean;
+  organization?: string | null;
+  state?: string | null;
+  bio?: string | null;
+  maqam_specialization?: string | null;
+  referral_code?: string | null;
+  commission_rate?: number;
+  total_students?: number;
+  content_library_count?: number;
+}
+
 export interface ProfileUpdateData {
   full_name?: string | null;
   ic_number?: string | null;
   address?: string | null;
   phone_number?: string | null;
+  organization?: string | null;
+  state?: string | null;
+  bio?: string | null;
+  maqam_specialization?: string | null;
 }
 
 export interface ChangePasswordData {
@@ -275,10 +291,43 @@ export const getStudentProfile = async (): Promise<StudentProfile> => {
   return response.json();
 };
 
+export const getQariProfile = async (): Promise<QariProfile> => {
+  const response = await fetch(`${API_URL}/api/auth/me/profile`, {
+    headers: {
+      ...getAuthHeader(),
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: response.statusText }));
+    throw new Error(error.detail || "Failed to load profile");
+  }
+
+  return response.json();
+};
+
 /**
  * Update authenticated student profile details
  */
 export const updateStudentProfile = async (data: ProfileUpdateData): Promise<StudentProfile> => {
+  const response = await fetch(`${API_URL}/api/auth/me/profile`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      ...getAuthHeader(),
+    },
+    body: JSON.stringify(data),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: response.statusText }));
+    throw new Error(error.detail || "Failed to update profile");
+  }
+
+  return response.json();
+};
+
+export const updateQariProfile = async (data: ProfileUpdateData): Promise<QariProfile> => {
   const response = await fetch(`${API_URL}/api/auth/me/profile`, {
     method: "PUT",
     headers: {
@@ -319,6 +368,8 @@ export const uploadStudentAvatar = async (file: File): Promise<{ message: string
   return response.json();
 };
 
+export const uploadQariAvatar = uploadStudentAvatar;
+
 /**
  * Remove authenticated student avatar
  */
@@ -337,6 +388,8 @@ export const removeStudentAvatar = async (): Promise<MessageResponse> => {
 
   return response.json();
 };
+
+export const removeQariAvatar = removeStudentAvatar;
 
 /**
  * Change authenticated student password
@@ -358,6 +411,8 @@ export const changeStudentPassword = async (data: ChangePasswordData): Promise<M
 
   return response.json();
 };
+
+export const changeQariPassword = changeStudentPassword;
 
 /**
  * Logout current user
