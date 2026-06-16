@@ -1,7 +1,7 @@
 """
 Authentication endpoints for multi-user platform.
 """
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, EmailStr
 from typing import Optional
@@ -19,8 +19,11 @@ import hmac
 import json
 import logging
 import os
+from pathlib import Path
 import secrets
 import re
+import tempfile
+import uuid
 from sqlalchemy import and_, func
 from urllib import request, error
 
@@ -74,6 +77,11 @@ class UserResponse(BaseModel):
     email: str
     role: str
     full_name: Optional[str]
+    ic_number: Optional[str] = None
+    address: Optional[str] = None
+    phone_number: Optional[str] = None
+    avatar_path: Optional[str] = None
+    avatar_url: Optional[str] = None
     is_active: bool
     is_approved: bool
     created_at: str
@@ -82,6 +90,22 @@ class UserResponse(BaseModel):
 
 class MessageResponse(BaseModel):
     message: str
+
+
+class UserProfileUpdate(BaseModel):
+    full_name: Optional[str] = None
+    ic_number: Optional[str] = None
+    address: Optional[str] = None
+    phone_number: Optional[str] = None
+
+    class Config:
+        extra = "forbid"
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+    confirm_password: str
 
 
 def _normalize_email(email: str) -> str:
@@ -116,6 +140,71 @@ def _find_valid_qari_by_referral_code(db: Session, referral_code: Optional[str])
             User.is_approved == True,
         )
     ).first()
+
+
+def _ensure_student(current_user: User):
+    """Restrict profile management endpoints to student users."""
+    if _role_value(current_user.role) != UserRole.STUDENT.value:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Student access required.",
+        )
+
+
+def _clean_optional_text(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    cleaned = value.strip()
+    return cleaned or None
+
+
+def _get_avatar_url(avatar_path: Optional[str]) -> Optional[str]:
+    """Return a short-lived avatar URL without exposing storage credentials."""
+    if not avatar_path:
+        return None
+    try:
+        from cloud_storage import cloud_storage
+        return cloud_storage.get_file_url(avatar_path, expires_in=24 * 60 * 60)
+    except Exception as exc:
+        logger.warning("Unable to generate avatar URL: %s", exc)
+        return None
+
+
+def _student_profile_payload(user: User, db: Session) -> dict:
+    relationship = db.query(StudentQariRelationship).filter(
+        and_(
+            StudentQariRelationship.student_id == user.id,
+            StudentQariRelationship.is_active == True,
+        )
+    ).first()
+
+    assigned_qari = None
+    if relationship:
+        qari = db.query(User).filter(User.id == relationship.qari_id).first()
+        if qari:
+            assigned_qari = {
+                "id": str(qari.id),
+                "name": qari.full_name or qari.email,
+            }
+
+    return {
+        "id": str(user.id),
+        "email": user.email,
+        "role": _role_value(user.role),
+        "full_name": user.full_name,
+        "ic_number": user.ic_number,
+        "address": user.address,
+        "phone_number": getattr(user, "phone_number", None),
+        "avatar_path": getattr(user, "avatar_path", None),
+        "avatar_url": _get_avatar_url(getattr(user, "avatar_path", None)),
+        "is_active": user.is_active,
+        "is_approved": user.is_approved,
+        "email_verified": user.email_verified,
+        "created_at": user.created_at.isoformat() if user.created_at else "",
+        "last_login": user.last_login.isoformat() if user.last_login else None,
+        "assigned_qari": assigned_qari,
+        "referral_code": user.pending_referral_code,
+    }
 
 
 def _assign_verified_student_to_referral_qari(user: User, db: Session):
@@ -623,8 +712,157 @@ async def get_current_user_info(current_user: User = Depends(get_current_active_
         "email": current_user.email,
         "role": current_user.role,
         "full_name": current_user.full_name,
+        "ic_number": current_user.ic_number,
+        "address": current_user.address,
+        "phone_number": getattr(current_user, "phone_number", None),
+        "avatar_path": getattr(current_user, "avatar_path", None),
+        "avatar_url": _get_avatar_url(getattr(current_user, "avatar_path", None)),
         "is_active": current_user.is_active,
         "is_approved": current_user.is_approved,
         "created_at": current_user.created_at.isoformat() if current_user.created_at else "",
         "last_login": current_user.last_login.isoformat() if current_user.last_login else None
     }
+
+
+@router.get("/me/profile")
+async def get_my_student_profile(
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """Get the authenticated student's profile details."""
+    _ensure_student(current_user)
+    return _student_profile_payload(current_user, db)
+
+
+@router.put("/me/profile")
+async def update_my_student_profile(
+    payload: UserProfileUpdate,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """Update safe student profile fields."""
+    _ensure_student(current_user)
+
+    if payload.full_name is not None:
+        current_user.full_name = _clean_optional_text(payload.full_name)
+    if payload.ic_number is not None:
+        current_user.ic_number = _clean_optional_text(payload.ic_number)
+    if payload.address is not None:
+        current_user.address = _clean_optional_text(payload.address)
+    if payload.phone_number is not None:
+        current_user.phone_number = _clean_optional_text(payload.phone_number)
+
+    db.commit()
+    db.refresh(current_user)
+    return _student_profile_payload(current_user, db)
+
+
+@router.post("/me/avatar")
+async def upload_my_student_avatar(
+    avatar: UploadFile = File(...),
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """Upload or replace the authenticated student's profile avatar."""
+    _ensure_student(current_user)
+
+    allowed_types = {
+        "image/jpeg": ".jpg",
+        "image/png": ".png",
+        "image/webp": ".webp",
+    }
+    max_size = 3 * 1024 * 1024
+    content_type = (avatar.content_type or "").lower()
+    if content_type not in allowed_types:
+        raise HTTPException(status_code=400, detail="Avatar must be JPG, PNG, or WEBP.")
+
+    data = await avatar.read()
+    if len(data) > max_size:
+        raise HTTPException(status_code=400, detail="Avatar image must be 3MB or smaller.")
+    if not data:
+        raise HTTPException(status_code=400, detail="Avatar file is empty.")
+
+    suffix = allowed_types[content_type]
+    remote_path = f"student/{current_user.id}/profile/avatar/avatar-{uuid.uuid4().hex}{suffix}"
+    temp_path = None
+
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            tmp.write(data)
+            temp_path = Path(tmp.name)
+
+        from cloud_storage import cloud_storage
+
+        old_avatar_path = getattr(current_user, "avatar_path", None)
+        cloud_storage.upload_file(temp_path, remote_path)
+        current_user.avatar_path = remote_path
+        db.commit()
+        db.refresh(current_user)
+
+        if old_avatar_path and old_avatar_path != remote_path:
+            try:
+                cloud_storage.delete_file(old_avatar_path)
+            except Exception as exc:
+                logger.warning("Unable to delete old student avatar: %s", exc)
+
+        return {
+            "message": "Avatar uploaded successfully.",
+            "avatar_path": current_user.avatar_path,
+            "avatar_url": _get_avatar_url(current_user.avatar_path),
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        db.rollback()
+        logger.error("Student avatar upload failed: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to upload avatar.")
+    finally:
+        if temp_path and temp_path.exists():
+            try:
+                temp_path.unlink()
+            except OSError:
+                pass
+
+
+@router.delete("/me/avatar")
+async def delete_my_student_avatar(
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """Remove the authenticated student's profile avatar."""
+    _ensure_student(current_user)
+    avatar_path = getattr(current_user, "avatar_path", None)
+
+    if avatar_path:
+        try:
+            from cloud_storage import cloud_storage
+            cloud_storage.delete_file(avatar_path)
+        except Exception as exc:
+            logger.warning("Unable to delete student avatar from storage: %s", exc)
+
+    current_user.avatar_path = None
+    db.commit()
+    return {"message": "Avatar removed successfully."}
+
+
+@router.post("/me/change-password")
+async def change_my_student_password(
+    payload: ChangePasswordRequest,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """Change the authenticated student's password after verifying the current password."""
+    _ensure_student(current_user)
+
+    if not current_user.hashed_password or not verify_password(payload.current_password, current_user.hashed_password):
+        raise HTTPException(status_code=400, detail="Current password is incorrect.")
+    if payload.new_password != payload.confirm_password:
+        raise HTTPException(status_code=400, detail="New password and confirmation do not match.")
+    if len(payload.new_password) < 8:
+        raise HTTPException(status_code=400, detail="New password must be at least 8 characters.")
+    if verify_password(payload.new_password, current_user.hashed_password):
+        raise HTTPException(status_code=400, detail="New password must be different from current password.")
+
+    current_user.hashed_password = get_password_hash(payload.new_password)
+    db.commit()
+    return {"message": "Password changed successfully."}

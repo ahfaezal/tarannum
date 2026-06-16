@@ -6,6 +6,11 @@ export interface User {
   email: string;
   role: "admin" | "qari" | "student" | "public";
   full_name?: string;
+  ic_number?: string | null;
+  address?: string | null;
+  phone_number?: string | null;
+  avatar_path?: string | null;
+  avatar_url?: string | null;
   is_active: boolean;
   is_approved: boolean;
   created_at: string;
@@ -29,6 +34,30 @@ export interface RegisterData {
 
 export interface MessageResponse {
   message: string;
+}
+
+export interface AssignedQari {
+  id: string;
+  name: string;
+}
+
+export interface StudentProfile extends User {
+  email_verified?: boolean;
+  assigned_qari?: AssignedQari | null;
+  referral_code?: string | null;
+}
+
+export interface ProfileUpdateData {
+  full_name?: string | null;
+  ic_number?: string | null;
+  address?: string | null;
+  phone_number?: string | null;
+}
+
+export interface ChangePasswordData {
+  current_password: string;
+  new_password: string;
+  confirm_password: string;
 }
 
 export interface AuthToken {
@@ -226,6 +255,108 @@ export const getCurrentUser = async (token?: string): Promise<User> => {
     storeAuth(authToken, user);
   }
   return user;
+};
+
+/**
+ * Get authenticated student profile details
+ */
+export const getStudentProfile = async (): Promise<StudentProfile> => {
+  const response = await fetch(`${API_URL}/api/auth/me/profile`, {
+    headers: {
+      ...getAuthHeader(),
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: response.statusText }));
+    throw new Error(error.detail || "Failed to load profile");
+  }
+
+  return response.json();
+};
+
+/**
+ * Update authenticated student profile details
+ */
+export const updateStudentProfile = async (data: ProfileUpdateData): Promise<StudentProfile> => {
+  const response = await fetch(`${API_URL}/api/auth/me/profile`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      ...getAuthHeader(),
+    },
+    body: JSON.stringify(data),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: response.statusText }));
+    throw new Error(error.detail || "Failed to update profile");
+  }
+
+  return response.json();
+};
+
+/**
+ * Upload authenticated student avatar
+ */
+export const uploadStudentAvatar = async (file: File): Promise<{ message: string; avatar_path?: string; avatar_url?: string }> => {
+  const formData = new FormData();
+  formData.append("avatar", file);
+
+  const response = await fetch(`${API_URL}/api/auth/me/avatar`, {
+    method: "POST",
+    headers: {
+      ...getAuthHeader(),
+    },
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: response.statusText }));
+    throw new Error(error.detail || "Failed to upload avatar");
+  }
+
+  return response.json();
+};
+
+/**
+ * Remove authenticated student avatar
+ */
+export const removeStudentAvatar = async (): Promise<MessageResponse> => {
+  const response = await fetch(`${API_URL}/api/auth/me/avatar`, {
+    method: "DELETE",
+    headers: {
+      ...getAuthHeader(),
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: response.statusText }));
+    throw new Error(error.detail || "Failed to remove avatar");
+  }
+
+  return response.json();
+};
+
+/**
+ * Change authenticated student password
+ */
+export const changeStudentPassword = async (data: ChangePasswordData): Promise<MessageResponse> => {
+  const response = await fetch(`${API_URL}/api/auth/me/change-password`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...getAuthHeader(),
+    },
+    body: JSON.stringify(data),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: response.statusText }));
+    throw new Error(error.detail || "Failed to change password");
+  }
+
+  return response.json();
 };
 
 /**

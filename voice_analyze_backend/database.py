@@ -63,6 +63,8 @@ class User(Base):
     full_name = Column(String, nullable=True)
     ic_number = Column(String, nullable=True)  # IC/Identity Card Number
     address = Column(String, nullable=True)  # Address
+    phone_number = Column(String, nullable=True)
+    avatar_path = Column(String, nullable=True)
     email_verified = Column(Boolean, default=False, nullable=False)
     email_verified_at = Column(DateTime, nullable=True)
     otp_code_hash = Column(String, nullable=True)
@@ -332,6 +334,7 @@ def init_db():
     try:
         Base.metadata.create_all(bind=engine)
         ensure_email_otp_columns()
+        ensure_user_profile_columns()
         ensure_student_activity_events_table()
         logger.info("Database tables created successfully")
     except Exception as e:
@@ -379,6 +382,19 @@ def ensure_email_otp_columns():
                 WHERE email_verified IS TRUE
             """))
             conn.execute(text("ALTER TABLE users ALTER COLUMN email_verified SET DEFAULT FALSE"))
+
+
+def ensure_user_profile_columns():
+    """Safely add profile columns for existing user tables."""
+    columns = {
+        "phone_number": "VARCHAR",
+        "avatar_path": "VARCHAR",
+    }
+
+    with engine.begin() as conn:
+        for column_name, column_def in columns.items():
+            if not _column_exists(conn, "users", column_name):
+                conn.execute(text(f"ALTER TABLE users ADD COLUMN {column_name} {column_def}"))
 
 
 def ensure_student_activity_events_table():
