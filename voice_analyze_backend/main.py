@@ -40,7 +40,7 @@ from db_session_service import db_session_service
 from qari_service import qari_service
 from progress_service import progress_service
 from auth import get_current_user_optional, require_registered_user, get_current_admin_user
-from auth_endpoints import router as auth_router
+from auth_endpoints import router as auth_router, debug_router as auth_debug_router, log_email_config_startup
 from platform_endpoints import router as platform_router
 import librosa
 import logging
@@ -145,6 +145,7 @@ async def lifespan(app: FastAPI):
 
     # Startup
     logger.info("Starting up application...")
+    log_email_config_startup()
 
     # Initialize database
     try:
@@ -199,9 +200,10 @@ app = FastAPI(
 
 # Include routers for authentication and platform features
 try:
-    from auth_endpoints import router as auth_router
+    from auth_endpoints import router as auth_router, debug_router as auth_debug_router
     from platform_endpoints import router as platform_router
     app.include_router(auth_router)
+    app.include_router(auth_debug_router)
     app.include_router(platform_router)
 except ImportError as e:
     logger.warning(f"Could not import routers: {e}")

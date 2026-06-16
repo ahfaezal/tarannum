@@ -9,6 +9,7 @@ import QariDashboard from './views/QariDashboard';
 import StudentProgressView from './views/StudentProgress';
 import Login from './components/Login';
 import Register from './components/Register';
+import VerifyEmail from './components/VerifyEmail';
 import QariSelector from './components/QariSelector';
 import QariContentEditor from './components/QariContentEditor';
 import { Mic2, LayoutDashboard, Users, BookOpen, Settings, LogOut, BarChart3, User, Monitor, Menu, X } from 'lucide-react';
@@ -22,7 +23,7 @@ const App: React.FC = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   
   // Check if we're on login or register page
-  const isAuthPage = location.pathname === '/login' || location.pathname === '/register';
+  const isAuthPage = location.pathname === '/login' || location.pathname === '/register' || location.pathname === '/verify-email';
   
   // Get current route for active state
   const currentPath = location.pathname;
@@ -431,12 +432,22 @@ const App: React.FC = () => {
                 !isAuthenticated ? (
                   <Register
                     onSwitchToLogin={() => navigate('/login')}
-                    onSuccess={() => navigate('/login')}
+                    onSuccess={(registeredEmail) => navigate(`/verify-email?email=${encodeURIComponent(registeredEmail || '')}`)}
                   />
                 ) : (
                   <Navigate to="/" replace />
                 )
               } 
+            />
+            <Route
+              path="/verify-email"
+              element={
+                !isAuthenticated ? (
+                  <VerifyEmail />
+                ) : (
+                  <Navigate to="/" replace />
+                )
+              }
             />
 
             {/* Main App Routes */}

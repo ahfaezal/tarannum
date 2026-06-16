@@ -26,6 +26,10 @@ export interface RegisterData {
   role: "student" | "qari"; // Allow both student and qari registration
 }
 
+export interface MessageResponse {
+  message: string;
+}
+
 export interface AuthToken {
   access_token: string;
   token_type: string;
@@ -101,6 +105,46 @@ export const register = async (data: RegisterData): Promise<User> => {
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: response.statusText }));
     throw new Error(error.detail || "Registration failed");
+  }
+
+  return response.json();
+};
+
+/**
+ * Verify email with a 6-digit OTP code
+ */
+export const verifyEmail = async (email: string, otpCode: string): Promise<MessageResponse> => {
+  const response = await fetch(`${API_URL}/api/auth/verify-email`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ email, otp_code: otpCode }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: response.statusText }));
+    throw new Error(error.detail || "Email verification failed");
+  }
+
+  return response.json();
+};
+
+/**
+ * Request a new email verification OTP
+ */
+export const resendOtp = async (email: string): Promise<MessageResponse> => {
+  const response = await fetch(`${API_URL}/api/auth/resend-otp`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ email }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: response.statusText }));
+    throw new Error(error.detail || "Failed to resend OTP");
   }
 
   return response.json();

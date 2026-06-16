@@ -9,7 +9,7 @@ import { UserPlus, Mail, Lock, User, AlertCircle, Check, X, CheckCircle, Info } 
 
 interface RegisterProps {
   onSwitchToLogin: () => void;
-  onSuccess?: () => void;
+  onSuccess?: (email?: string) => void;
   onClose?: () => void; // Optional: for public users to go back to demo (not used with routing)
 }
 
@@ -58,16 +58,12 @@ const Register: React.FC<RegisterProps> = ({ onSwitchToLogin, onSuccess, onClose
           role: role, // Use selected role (student or qari)
         })
       ).unwrap();
-      // Show success message based on role
-      if (role === "student") {
-        setSuccessMessage("Registered successfully! You can now log in.");
-      } else {
-        setSuccessMessage("Registered successfully! Please wait for approval from admin before logging in.");
-      }
-      // Redirect to login after 3 seconds
+      setSuccessMessage("OTP has been sent to your email.");
+      const normalizedEmail = email.trim().toLowerCase();
+      // Redirect to OTP verification after a short confirmation.
       setTimeout(() => {
-        onSuccess?.();
-      }, 3000);
+        onSuccess?.(normalizedEmail);
+      }, 1200);
     } catch (err) {
       // Error is handled by Redux state
       setSuccessMessage(null);
@@ -91,7 +87,7 @@ const Register: React.FC<RegisterProps> = ({ onSwitchToLogin, onSuccess, onClose
               <div className="font-semibold text-blue-900 mb-1 text-base">Registration Successful!</div>
               <span className="text-sm text-blue-700">{successMessage}</span>
               <div className="mt-2 text-xs text-blue-600">
-                Redirecting to login page...
+                Redirecting to email verification...
               </div>
             </div>
           </div>

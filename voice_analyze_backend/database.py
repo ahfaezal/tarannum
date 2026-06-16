@@ -63,6 +63,14 @@ class User(Base):
     full_name = Column(String, nullable=True)
     ic_number = Column(String, nullable=True)  # IC/Identity Card Number
     address = Column(String, nullable=True)  # Address
+    email_verified = Column(Boolean, default=False, nullable=False)
+    email_verified_at = Column(DateTime, nullable=True)
+    otp_code_hash = Column(String, nullable=True)
+    otp_expires_at = Column(DateTime, nullable=True)
+    otp_consumed_at = Column(DateTime, nullable=True)
+    otp_attempt_count = Column(Integer, default=0, nullable=False)
+    otp_last_sent_at = Column(DateTime, nullable=True)
+    otp_resend_count = Column(Integer, default=0, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     last_login = Column(DateTime, nullable=True)
     
@@ -300,10 +308,52 @@ def init_db():
     """Create all tables in the database."""
     try:
         Base.metadata.create_all(bind=engine)
+        ensure_email_otp_columns()
         logger.info("Database tables created successfully")
     except Exception as e:
         logger.error(f"Error creating database tables: {e}", exc_info=True)
         raise
+
+
+def _column_exists(conn, table_name: str, column_name: str) -> bool:
+    """Check if a column exists using information_schema."""
+    result = conn.execute(text("""
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_name = :table_name
+        AND column_name = :column_name
+    """), {"table_name": table_name, "column_name": column_name})
+    return result.fetchone() is not None
+
+
+def ensure_email_otp_columns():
+    """Safely add email verification columns for existing databases."""
+    columns = {
+        "email_verified": "BOOLEAN DEFAULT TRUE NOT NULL",
+        "email_verified_at": "TIMESTAMP",
+        "otp_code_hash": "VARCHAR",
+        "otp_expires_at": "TIMESTAMP",
+        "otp_consumed_at": "TIMESTAMP",
+        "otp_attempt_count": "INTEGER DEFAULT 0 NOT NULL",
+        "otp_last_sent_at": "TIMESTAMP",
+        "otp_resend_count": "INTEGER DEFAULT 0 NOT NULL",
+    }
+
+    with engine.begin() as conn:
+        added_email_verified = False
+        for column_name, column_def in columns.items():
+            if not _column_exists(conn, "users", column_name):
+                conn.execute(text(f"ALTER TABLE users ADD COLUMN {column_name} {column_def}"))
+                added_email_verified = added_email_verified or column_name == "email_verified"
+
+        if added_email_verified:
+            conn.execute(text("""
+                UPDATE users
+                SET email_verified = TRUE,
+                    email_verified_at = COALESCE(email_verified_at, created_at, NOW())
+                WHERE email_verified IS TRUE
+            """))
+            conn.execute(text("ALTER TABLE users ALTER COLUMN email_verified SET DEFAULT FALSE"))
 
 
 # Health check

@@ -10,6 +10,7 @@ from jose import JWTError, jwt
 import bcrypt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from database import User, UserRole, SessionLocal, get_db
 
@@ -106,7 +107,8 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
 
 def get_user_by_email(db: Session, email: str) -> Optional[User]:
     """Get user by email."""
-    return db.query(User).filter(User.email == email).first()
+    normalized_email = email.strip().lower()
+    return db.query(User).filter(func.lower(User.email) == normalized_email).first()
 
 
 def get_user_by_id(db: Session, user_id: str) -> Optional[User]:
