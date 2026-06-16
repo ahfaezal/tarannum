@@ -137,13 +137,16 @@ async def register(user_data: UserRegister, db: Session = Depends(get_db)):
                 status_code=400,
                 detail=error_msg
             )
+        ic_number = user_data.ic_number.strip() if user_data.ic_number else None
+        address = user_data.address.strip() if user_data.address else None
+
         new_user = User(
             email=user_data.email,
             hashed_password=hashed_password,
             role=user_data.role,
             full_name=user_data.full_name,
-            ic_number=user_data.ic_number,
-            address=user_data.address,
+            ic_number=ic_number or None,
+            address=address or None,
             is_active=True,
             is_approved=is_approved
         )
