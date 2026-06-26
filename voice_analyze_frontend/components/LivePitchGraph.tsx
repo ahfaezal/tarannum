@@ -62,6 +62,14 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
   const [manualPanActive, setManualPanActive] = useState(false); // Track if user manually panned
   const manualPanTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
+  const getCanvasDisplaySize = (canvas: HTMLCanvasElement) => {
+    const dpr = window.devicePixelRatio || 1;
+    return {
+      displayWidth: canvas.width / dpr,
+      displayHeight: canvas.height / dpr,
+    };
+  };
+
   // In full-screen mode, lock auto-follow and disable manual pan
   // Note: Don't reset zoom - allow users to zoom in fullscreen mode
   useEffect(() => {
@@ -240,7 +248,8 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
     const canvas = canvasRef.current;
     if (canvas) {
       const padding = 60;
-      const graphWidth = canvas.width - padding * 2;
+      const { displayWidth } = getCanvasDisplaySize(canvas);
+      const graphWidth = displayWidth - padding * 2;
       // Calculate zoom to show full duration with some padding
       const optimalZoom = Math.max(
         0.5,
@@ -408,7 +417,8 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
     const baseMaxTime = Math.max(audioDuration, liveTime || 0, 10);
 
     const padding = 60;
-    const graphWidth = canvas.width - padding * 2;
+    const { displayWidth } = getCanvasDisplaySize(canvas);
+    const graphWidth = displayWidth - padding * 2;
     const visibleTimeRange = baseMaxTime / effectiveZoomLevel;
 
     const desiredCenterTime = Math.min(liveTime, audioDuration);
@@ -470,7 +480,8 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
       if (isDragging) {
         const deltaX = e.clientX - dragStart.x;
         const padding = 60;
-        const graphWidth = canvas.width - padding * 2;
+        const { displayWidth } = getCanvasDisplaySize(canvas);
+        const graphWidth = displayWidth - padding * 2;
 
         // Calculate max pan based on zoom level
         // When zoomed in, we can pan more
@@ -1483,7 +1494,9 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
     // Calculate scrollbar position (0 to 100)
     const padding = 60;
     const canvas = canvasRef.current;
-    const graphWidth = canvas ? canvas.width - padding * 2 : 800;
+    const graphWidth = canvas
+      ? getCanvasDisplaySize(canvas).displayWidth - padding * 2
+      : 800;
     const pixelsPerSecond = graphWidth / visibleTimeRange;
     const panTime = panOffset / pixelsPerSecond;
 
@@ -1526,7 +1539,9 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
       // Convert pan time to pixels
       const padding = 60;
       const canvas = canvasRef.current;
-      const graphWidth = canvas ? canvas.width - padding * 2 : 800;
+      const graphWidth = canvas
+        ? getCanvasDisplaySize(canvas).displayWidth - padding * 2
+        : 800;
       const pixelsPerSecond = graphWidth / scrollbarValues.visibleTimeRange;
       setPanOffset(panTime * pixelsPerSecond);
     }
