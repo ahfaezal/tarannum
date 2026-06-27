@@ -208,6 +208,8 @@ const TrainingStudio: React.FC = () => {
   const [isRecordingFullScreenOpen, setIsRecordingFullScreenOpen] =
     useState(false);
   const [fullScreenZoomLevel, setFullScreenZoomLevel] = useState(1.0); // Start at 100% to avoid oversized mobile/fullscreen graph
+  const [isRepeatAyahEnabled, setIsRepeatAyahEnabled] = useState(false);
+  const [repeatAyahIndex, setRepeatAyahIndex] = useState<number | null>(null);
 
   // Practice mode state
   const [isPracticeMode, setIsPracticeMode] = useState(false);
@@ -302,6 +304,7 @@ const TrainingStudio: React.FC = () => {
   // Practice audio element ref for volume control
   const practiceAudioRef = useRef<HTMLAudioElement | null>(null);
   const practicePcmRecorderRef = useRef<PracticePcmRecorder | null>(null);
+  const lastRepeatSeekRef = useRef(0);
 
   const clearPracticeGraph = () => {
     setStudentPitchData([]);
@@ -1913,9 +1916,120 @@ const TrainingStudio: React.FC = () => {
     setPlaybackTime(0);
   };
 
+  const getAyahIndexForTime = React.useCallback(
+    (time: number): number | null => {
+      if (!referenceAyahTiming || referenceAyahTiming.length === 0) return null;
+
+      const directIndex = referenceAyahTiming.findIndex(
+        (ayah) =>
+          typeof ayah.start === "number" &&
+          typeof ayah.end === "number" &&
+          time >= ayah.start &&
+          time < ayah.end
+      );
+      if (directIndex >= 0) return directIndex;
+
+      for (let index = referenceAyahTiming.length - 1; index >= 0; index--) {
+        const ayah = referenceAyahTiming[index];
+        if (typeof ayah.start === "number" && time >= ayah.start) {
+          return index;
+        }
+      }
+
+      return referenceAyahTiming.length > 0 ? 0 : null;
+    },
+    [referenceAyahTiming]
+  );
+
+  const seekToAyahStart = React.useCallback(
+    (ayah: any, shouldPlay: boolean) => {
+      if (!refWaveSurfer.current || !referenceDuration || !ayah) return;
+
+      const start = Math.max(0, Math.min(ayah.start || 0, referenceDuration));
+      refWaveSurfer.current.seekTo(start / referenceDuration);
+      setPlaybackTime(start);
+
+      if (isPracticeMode) {
+        setPracticeTime(start);
+        setStudentPitchData([]);
+        const adjustedStartTime = Date.now() - start * 1000;
+        setPracticeStartTime(adjustedStartTime);
+        practiceStartTimeRef.current = adjustedStartTime;
+      }
+
+      if (shouldPlay) {
+        refWaveSurfer.current.play();
+        setIsPlaying(true);
+      }
+    },
+    [isPracticeMode, referenceDuration]
+  );
+
+  const handleRepeatAyahToggle = () => {
+    setIsRepeatAyahEnabled((enabled) => {
+      const nextEnabled = !enabled;
+      if (nextEnabled) {
+        const currentReferenceTime = isPracticeMode ? practiceTime : playbackTime;
+        setRepeatAyahIndex(getAyahIndexForTime(currentReferenceTime));
+      }
+      return nextEnabled;
+    });
+  };
+
+  useEffect(() => {
+    if (
+      !isRepeatAyahEnabled ||
+      !isPlaying ||
+      !refWaveSurfer.current ||
+      referenceAyahTiming.length === 0
+    ) {
+      return;
+    }
+
+    const currentReferenceTime = isPracticeMode ? practiceTime : playbackTime;
+    const activeRepeatIndex =
+      repeatAyahIndex ?? getAyahIndexForTime(currentReferenceTime);
+    if (activeRepeatIndex === null) return;
+
+    const activeAyah = referenceAyahTiming[activeRepeatIndex];
+    if (!activeAyah || typeof activeAyah.end !== "number") return;
+    if (currentReferenceTime < activeAyah.end) return;
+
+    const now = Date.now();
+    if (now - lastRepeatSeekRef.current < 250) return;
+    lastRepeatSeekRef.current = now;
+    seekToAyahStart(activeAyah, true);
+  }, [
+    isRepeatAyahEnabled,
+    isPlaying,
+    isPracticeMode,
+    playbackTime,
+    practiceTime,
+    referenceAyahTiming,
+    repeatAyahIndex,
+    getAyahIndexForTime,
+    seekToAyahStart,
+  ]);
+
   // Full-screen mode handlers
   const handleFullScreenPlay = () => {
     if (refWaveSurfer.current && !refWaveSurfer.current.isPlaying()) {
+      if (isRepeatAyahEnabled && referenceAyahTiming.length > 0) {
+        const currentReferenceTime = isPracticeMode ? practiceTime : playbackTime;
+        const activeRepeatIndex =
+          repeatAyahIndex ?? getAyahIndexForTime(currentReferenceTime);
+        const activeAyah =
+          activeRepeatIndex !== null ? referenceAyahTiming[activeRepeatIndex] : null;
+
+        if (
+          activeAyah &&
+          (currentReferenceTime < activeAyah.start ||
+            currentReferenceTime >= activeAyah.end)
+        ) {
+          seekToAyahStart(activeAyah, false);
+        }
+      }
+
       refWaveSurfer.current.play();
       setIsPlaying(true);
       trackStudentActivity("reference_play", {
@@ -1978,6 +2092,9 @@ const TrainingStudio: React.FC = () => {
         isPlaying || refWaveSurfer.current.isPlaying() || isPracticeMode;
       refWaveSurfer.current.seekTo(progress);
       setPlaybackTime(clampedTime);
+      if (isRepeatAyahEnabled) {
+        setRepeatAyahIndex(getAyahIndexForTime(clampedTime));
+      }
 
       if (isPracticeMode) {
         setPracticeTime(clampedTime);
@@ -4514,7 +4631,11 @@ const TrainingStudio: React.FC = () => {
       {/* Practice Full-Screen Mode (from top/reference practice graph) */}
       <PracticeFullScreenMode
         isOpen={isPracticeFullScreenOpen}
-        onClose={() => setIsPracticeFullScreenOpen(false)}
+        onClose={() => {
+          setIsRepeatAyahEnabled(false);
+          setRepeatAyahIndex(null);
+          setIsPracticeFullScreenOpen(false);
+        }}
         referencePitch={
           // In test mode, prefer analysisResult pitch (from backend scoring)
           // This ensures fullscreen test graph uses the same reference as scoring
@@ -4579,6 +4700,9 @@ const TrainingStudio: React.FC = () => {
             : []
         }
         onSeekToTime={handleFullScreenSeekToTime}
+        isRepeatAyahEnabled={isRepeatAyahEnabled}
+        onRepeatAyahToggle={handleRepeatAyahToggle}
+        canRepeatAyah={selectedRef?.is_preset && referenceAyahTiming.length > 0}
         markers={analysisResult?.pitchData?.markers || []}
         referenceUrl={
           isCustomUploadRefId(selectedRef?.id) && uploadedRefUrl
@@ -4593,7 +4717,11 @@ const TrainingStudio: React.FC = () => {
       {/* Recording Full-Screen Mode (from bottom/comparison graph) */}
       <RecordingFullScreenMode
         isOpen={isRecordingFullScreenOpen}
-        onClose={() => setIsRecordingFullScreenOpen(false)}
+        onClose={() => {
+          setIsRepeatAyahEnabled(false);
+          setRepeatAyahIndex(null);
+          setIsRecordingFullScreenOpen(false);
+        }}
         referencePitch={
           analysisResult?.pitchData?.reference &&
           analysisResult.pitchData.reference.length > 0
@@ -4648,6 +4776,9 @@ const TrainingStudio: React.FC = () => {
             : []
         }
         onSeekToTime={handleFullScreenSeekToTime}
+        isRepeatAyahEnabled={isRepeatAyahEnabled}
+        onRepeatAyahToggle={handleRepeatAyahToggle}
+        canRepeatAyah={selectedRef?.is_preset && referenceAyahTiming.length > 0}
         markers={analysisResult?.pitchData?.markers || []}
         referenceUrl={
           isCustomUploadRefId(selectedRef?.id) && uploadedRefUrl

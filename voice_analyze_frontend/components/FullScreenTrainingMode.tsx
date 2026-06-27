@@ -10,6 +10,7 @@ import {
   Mic,
   MicOff,
   Target,
+  Repeat2,
 } from "lucide-react";
 import { PitchPoint } from "../services/pitchExtractor";
 import { PitchData, AyahTiming } from "../types";
@@ -41,6 +42,9 @@ interface FullScreenTrainingModeProps {
   onVolumeChange?: (volume: number) => void;
   loopMode?: boolean;
   onLoopModeChange?: (enabled: boolean) => void;
+  isRepeatAyahEnabled?: boolean;
+  onRepeatAyahToggle?: () => void;
+  canRepeatAyah?: boolean;
   loopStart?: number;
   loopEnd?: number;
   onLoopRangeChange?: (start: number, end: number) => void;
@@ -104,6 +108,9 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
   onVolumeChange,
   loopMode = false,
   onLoopModeChange,
+  isRepeatAyahEnabled = false,
+  onRepeatAyahToggle,
+  canRepeatAyah = false,
   loopStart,
   loopEnd,
   onLoopRangeChange,
@@ -838,6 +845,39 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
               >
                 <RefreshCw size={14} />
               </button>
+
+              {onRepeatAyahToggle && (
+                <button
+                  type='button'
+                  onClick={onRepeatAyahToggle}
+                  disabled={!canRepeatAyah}
+                  className={`${isClassroomLayout ? "h-8 px-2" : "h-9 px-3"} flex items-center gap-1 rounded-full border text-xs font-semibold transition-colors shadow-md focus:outline-none focus:ring-2 focus:ring-emerald-400 ${
+                    isRepeatAyahEnabled && canRepeatAyah
+                      ? "border-emerald-400/70 bg-emerald-500/25 text-emerald-100"
+                      : canRepeatAyah
+                      ? "border-slate-600/60 bg-slate-700/50 text-slate-200 hover:bg-slate-600/60"
+                      : "border-slate-700/50 bg-slate-800/40 text-slate-500 opacity-50"
+                  }`}
+                  title={
+                    canRepeatAyah
+                      ? isRepeatAyahEnabled
+                        ? "Disable repeat current ayah"
+                        : "Repeat current ayah"
+                      : "Repeat ayah unavailable"
+                  }
+                  aria-label={
+                    canRepeatAyah
+                      ? isRepeatAyahEnabled
+                        ? "Disable repeat current ayah"
+                        : "Repeat current ayah"
+                      : "Repeat ayah unavailable"
+                  }
+                  aria-pressed={isRepeatAyahEnabled && canRepeatAyah}
+                >
+                  <Repeat2 size={14} />
+                  {!isClassroomLayout && <span>Repeat</span>}
+                </button>
+              )}
             </div>
           )}
 
