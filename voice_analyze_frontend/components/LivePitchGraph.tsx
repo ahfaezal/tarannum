@@ -55,6 +55,9 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
   const [panOffset, setPanOffset] = useState(0); // Horizontal pan offset in pixels
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, pan: 0 });
+  const isDraggingRef = useRef(false);
+  const dragStartRef = useRef({ x: 0, pan: 0 });
+  const activePointerIdRef = useRef<number | null>(null);
   const zoomCenterRef = useRef(0.5); // Zoom center point (0-1)
 
   // Auto-follow state
@@ -459,14 +462,16 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
     manualPanActive,
   ]);
 
-  // Mouse drag for panning
+  // Mouse and pointer drag for panning
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || effectiveZoomLevel <= 1.0) return;
 
-    const handleMouseDown = (e: MouseEvent) => {
+    const beginPan = (clientX: number) => {
+      isDraggingRef.current = true;
+      dragStartRef.current = { x: clientX, pan: panOffset };
       setIsDragging(true);
-      setDragStart({ x: e.clientX, pan: panOffset });
+      setDragStart({ x: clientX, pan: panOffset });
       setManualPanActive(true); // User is manually panning
       setAutoFollow(false); // Disable auto-follow during manual pan
 
@@ -476,27 +481,27 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
       }
     };
 
-    const handleMouseMove = (e: MouseEvent) => {
-      if (isDragging) {
-        const deltaX = e.clientX - dragStart.x;
-        const padding = 60;
-        const { displayWidth } = getCanvasDisplaySize(canvas);
-        const graphWidth = displayWidth - padding * 2;
+    const updatePan = (clientX: number) => {
+      const currentDragStart = dragStartRef.current;
+      const deltaX = clientX - currentDragStart.x;
+      const padding = 60;
+      const { displayWidth } = getCanvasDisplaySize(canvas);
+      const graphWidth = displayWidth - padding * 2;
 
-        // Calculate max pan based on zoom level
-        // When zoomed in, we can pan more
-        const visibleTimeRange = (referenceDuration || 10) / effectiveZoomLevel;
-        const pixelsPerSecond = graphWidth / visibleTimeRange;
-        const maxPanTime = (referenceDuration || 10) - visibleTimeRange;
-        const maxPan = maxPanTime * pixelsPerSecond;
+      // Calculate max pan based on zoom level
+      // When zoomed in, we can pan more
+      const visibleTimeRange = (referenceDuration || 10) / effectiveZoomLevel;
+      const pixelsPerSecond = graphWidth / visibleTimeRange;
+      const maxPanTime = (referenceDuration || 10) - visibleTimeRange;
+      const maxPan = maxPanTime * pixelsPerSecond;
 
-        setPanOffset(
-          Math.max(-maxPan, Math.min(maxPan, dragStart.pan + deltaX))
-        );
-      }
+      setPanOffset(
+        Math.max(-maxPan, Math.min(maxPan, currentDragStart.pan - deltaX))
+      );
     };
 
-    const handleMouseUp = () => {
+    const endPan = () => {
+      isDraggingRef.current = false;
       setIsDragging(false);
       // Re-enable auto-follow after a delay (user can manually pan again if needed)
       if (manualPanTimeoutRef.current) {
@@ -508,14 +513,61 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
       }, 2000); // Re-enable after 2 seconds of no manual panning
     };
 
+    const handleMouseDown = (e: MouseEvent) => {
+      beginPan(e.clientX);
+    };
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (isDraggingRef.current) {
+        updatePan(e.clientX);
+      }
+    };
+
+    const handleMouseUp = () => {
+      endPan();
+    };
+
+    const handlePointerDown = (e: PointerEvent) => {
+      if (e.pointerType !== "touch" && e.pointerType !== "pen") return;
+      e.preventDefault();
+      activePointerIdRef.current = e.pointerId;
+      canvas.setPointerCapture?.(e.pointerId);
+      beginPan(e.clientX);
+    };
+
+    const handlePointerMove = (e: PointerEvent) => {
+      if (activePointerIdRef.current !== e.pointerId || !isDraggingRef.current) return;
+      e.preventDefault();
+      updatePan(e.clientX);
+    };
+
+    const handlePointerEnd = (e: PointerEvent) => {
+      if (activePointerIdRef.current !== e.pointerId) return;
+      e.preventDefault();
+      canvas.releasePointerCapture?.(e.pointerId);
+      activePointerIdRef.current = null;
+      endPan();
+    };
+
+    const previousTouchAction = canvas.style.touchAction;
+    canvas.style.touchAction = "pan-y";
     canvas.addEventListener("mousedown", handleMouseDown);
     window.addEventListener("mousemove", handleMouseMove);
     window.addEventListener("mouseup", handleMouseUp);
+    canvas.addEventListener("pointerdown", handlePointerDown);
+    canvas.addEventListener("pointermove", handlePointerMove);
+    canvas.addEventListener("pointerup", handlePointerEnd);
+    canvas.addEventListener("pointercancel", handlePointerEnd);
 
     return () => {
+      canvas.style.touchAction = previousTouchAction;
       canvas.removeEventListener("mousedown", handleMouseDown);
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
+      canvas.removeEventListener("pointerdown", handlePointerDown);
+      canvas.removeEventListener("pointermove", handlePointerMove);
+      canvas.removeEventListener("pointerup", handlePointerEnd);
+      canvas.removeEventListener("pointercancel", handlePointerEnd);
       if (manualPanTimeoutRef.current) {
         clearTimeout(manualPanTimeoutRef.current);
       }

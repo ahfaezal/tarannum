@@ -170,12 +170,19 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
     const w = window.innerWidth;
     const h = window.innerHeight;
     const isLandscape = w > h;
+    const isTouchTablet =
+      typeof navigator !== "undefined" && navigator.maxTouchPoints > 1;
 
     // Phone
     if (w < 640) {
       return isLandscape
         ? clamp(Math.floor(h * 0.46), 180, 260)
         : clamp(Math.floor(h * 0.34), 180, 280);
+    }
+
+    // Tablet / classroom landscape: leave room for current and next ayah panels.
+    if (isTouchTablet && w >= 768 && w <= 1400 && isLandscape) {
+      return clamp(Math.floor(h * 0.54), 360, 480);
     }
 
     // Tablet
@@ -360,7 +367,14 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
   const isMobile = viewport.width < 640;
   const isTablet = viewport.width >= 640 && viewport.width < 1024;
   const isLandscape = viewport.width > viewport.height;
-  const compactControls = isMobile || (isTablet && isLandscape);
+  const isTouchTablet =
+    typeof navigator !== "undefined" && navigator.maxTouchPoints > 1;
+  const isClassroomLayout =
+    isTouchTablet &&
+    viewport.width >= 768 &&
+    viewport.width <= 1400 &&
+    isLandscape;
+  const compactControls = isMobile || isClassroomLayout || (isTablet && isLandscape);
 
   return (
     <div
@@ -372,7 +386,7 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
       aria-label='Full-screen training mode'
     >
       {/* ENHANCEMENT: Top Right Controls - Theme, Practice Stats, and Zoom Status */}
-      <div className='absolute top-2 right-2 z-10 flex items-center gap-2 max-w-[calc(100%-1rem)] overflow-x-auto'>
+      <div className={`${isClassroomLayout ? "hidden" : "absolute top-2 right-2 z-10 flex"} items-center gap-2 max-w-[calc(100%-1rem)] overflow-x-auto`}>
         {/* Zoom Status Display */}
         {onZoomChange && (
           <div className={`hidden sm:block px-3 py-1.5 rounded ${currentTheme.controlsBg} border ${currentTheme.border} ${currentTheme.text} text-sm font-medium backdrop-blur-sm`}>
@@ -448,18 +462,50 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
       )}
 
       {/* Main Pitch Graph Area - Optimized for exact fit */}
-      <div className='flex-1 flex flex-col w-full px-2 sm:px-4 pt-10 sm:pt-12 pb-2 overflow-hidden'>
+      <div className={`flex-1 flex flex-col w-full px-2 sm:px-4 ${isClassroomLayout ? "pt-2 pb-1" : "pt-10 sm:pt-12 pb-2"} overflow-hidden`}>
         {/* ENHANCEMENT: Live Hz Display with Timeline - Smaller in full-screen */}
-        <div className='mb-1 sm:mb-2 w-full max-w-[96%] sm:max-w-[90%] mx-auto'>
-          <LiveHzDisplay
-            pitchData={studentPitch}
-            isFullScreen={true}
-            currentTime={currentTime}
-            referenceDuration={referenceDuration}
-            progressPercent={progressPercent}
-            formatTime={formatTime}
-            theme={currentTheme}
-          />
+        <div className={`${isClassroomLayout ? "mb-1 flex w-full max-w-[98%] items-center gap-2 mx-auto" : "mb-1 sm:mb-2 w-full max-w-[96%] sm:max-w-[90%] mx-auto"}`}>
+          <div className='min-w-0 flex-1'>
+            <LiveHzDisplay
+              pitchData={studentPitch}
+              isFullScreen={true}
+              currentTime={currentTime}
+              referenceDuration={referenceDuration}
+              progressPercent={progressPercent}
+              formatTime={formatTime}
+              theme={currentTheme}
+            />
+          </div>
+          {isClassroomLayout && (
+            <div
+              className={`flex flex-shrink-0 items-center gap-1 rounded-lg border ${currentTheme.border} ${currentTheme.controlsBg} px-2 py-1 text-xs font-medium ${currentTheme.text}`}
+              aria-label='Zoom controls'
+            >
+              <button
+                type='button'
+                onClick={() => onZoomChange?.(Math.max(0.5, zoomLevel - 0.1))}
+                disabled={!onZoomChange}
+                className='flex h-7 w-7 items-center justify-center rounded bg-slate-700/50 text-slate-300 opacity-70'
+                title='Zoom out'
+                aria-label='Zoom out'
+              >
+                <ZoomOut size={14} />
+              </button>
+              <span className='min-w-[48px] text-center'>
+                {Math.round((zoomLevel || 1.0) * 100)}%
+              </span>
+              <button
+                type='button'
+                onClick={() => onZoomChange?.(Math.min(2.0, zoomLevel + 0.1))}
+                disabled={!onZoomChange}
+                className='flex h-7 w-7 items-center justify-center rounded bg-slate-700/50 text-slate-300 opacity-70'
+                title='Zoom in'
+                aria-label='Zoom in'
+              >
+                <ZoomIn size={14} />
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Graph Container - Full width for exact fit */}
@@ -502,24 +548,50 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
 
         {/* Enhanced Quranic Text Display - Below Graph (Full-Screen Optimized) */}
         {ayatTiming && ayatTiming.length > 0 && referenceDuration > 0 && (
-          <FullScreenAyahTextDisplay
-            ayatTiming={ayatTiming}
-            currentTime={currentTime}
-            duration={referenceDuration}
-            onSeek={(time) => {
-              if (onSeekToTime) {
-                onSeekToTime(time);
-              }
-            }}
-            theme={currentTheme}
-          />
+          <>
+            <FullScreenAyahTextDisplay
+              ayatTiming={ayatTiming}
+              currentTime={currentTime}
+              duration={referenceDuration}
+              onSeek={(time) => {
+                if (onSeekToTime) {
+                  onSeekToTime(time);
+                }
+              }}
+              theme={currentTheme}
+              compact={isClassroomLayout}
+            />
+            {isClassroomLayout && (
+              <div
+                className={`mt-1 flex w-full max-w-6xl flex-shrink-0 items-center justify-center gap-2 self-center rounded-lg border ${currentTheme.border} ${currentTheme.controlsBg} px-3 py-1.5 text-xs ${currentTheme.text}`}
+                aria-label='Ayah selector placeholder'
+              >
+                <span className={`font-semibold ${currentTheme.textMuted}`}>
+                  Ayah
+                </span>
+                <div className='flex items-center gap-1'>
+                  {Array.from({ length: 8 }).map((_, index) => (
+                    <button
+                      key={index}
+                      type='button'
+                      disabled
+                      className='flex h-7 w-7 items-center justify-center rounded border border-slate-600/60 bg-slate-700/40 text-xs font-semibold text-slate-200 opacity-80'
+                      title='Ayah selector placeholder'
+                    >
+                      {index + 1}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
 
       <div
-        className={`w-full ${currentTheme.controlsBg} border-t ${currentTheme.border} px-2 sm:px-4 ${compactControls ? "py-2" : "py-3"} backdrop-blur-sm flex-shrink-0 z-10`}
+        className={`w-full ${currentTheme.controlsBg} border-t ${currentTheme.border} px-2 sm:px-4 ${isClassroomLayout ? "py-1" : compactControls ? "py-1.5" : "py-3"} backdrop-blur-sm flex-shrink-0 z-10`}
       >
-        <div className={`flex items-center justify-start sm:justify-center gap-2 sm:gap-3 flex-wrap sm:flex-nowrap min-h-[44px] overflow-x-visible sm:overflow-visible ${compactControls ? "pb-0.5" : "pb-1"}`}>
+        <div className={`flex items-center justify-start sm:justify-center ${isClassroomLayout ? "gap-1.5 min-h-[38px]" : "gap-2 sm:gap-3 min-h-[44px]"} flex-wrap overflow-x-visible sm:overflow-visible ${compactControls ? "pb-0" : "pb-1"}`}>
           {/* Practice Controls Group */}
           <div className='flex items-center gap-2'>
             {/* Practice Mode Toggle */}
@@ -531,11 +603,10 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
                   if (isPracticeMode) {
                     onPracticeStop();
                   } else {
-                    // Show countdown before starting practice
-                    setShowCountdown(true);
+                    onPracticeStart();
                   }
                 }}
-                className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 text-xs font-medium transition-all ${
+                className={`${isClassroomLayout ? "px-2.5 py-1" : "px-3 py-1.5"} rounded-lg flex items-center gap-1.5 text-xs font-medium transition-all ${
                   isPracticeMode
                     ? "bg-red-600 hover:bg-red-700 text-white"
                     : "bg-emerald-600 hover:bg-emerald-700 text-white"
@@ -572,7 +643,7 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
             )}
 
             {/* Practice Mode Controls */}
-            {isPracticeMode && (
+            {isPracticeMode && !isClassroomLayout && (
               <>
                 {onPracticeStop && (
                   <button
@@ -701,7 +772,7 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
               {/* Play/Pause Button */}
               <button
                 onClick={isPlaying ? onPause : onPlay}
-                className='flex items-center justify-center w-10 h-10 rounded-full bg-blue-600 hover:bg-blue-700 text-white transition-colors shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-1'
+                className={`${isClassroomLayout ? "h-9 w-9" : "w-10 h-10"} flex items-center justify-center rounded-full bg-blue-600 hover:bg-blue-700 text-white transition-colors shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-1`}
                 title={
                   isPlaying
                     ? "Pause Reference (Space)"
@@ -723,7 +794,7 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
               {/* Stop Button */}
               <button
                 onClick={onStop}
-                className='flex items-center justify-center w-9 h-9 rounded-full bg-slate-600 hover:bg-slate-700 text-white transition-colors shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-slate-400'
+                className={`${isClassroomLayout ? "h-8 w-8" : "w-9 h-9"} flex items-center justify-center rounded-full bg-slate-600 hover:bg-slate-700 text-white transition-colors shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-slate-400`}
                 title='Stop Reference (S)'
                 aria-label='Stop reference playback'
               >
@@ -733,7 +804,7 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
               {/* Restart Button */}
               <button
                 onClick={onRestart}
-                className='flex items-center justify-center w-9 h-9 rounded-full bg-slate-600 hover:bg-slate-700 text-white transition-colors shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-slate-400'
+                className={`${isClassroomLayout ? "h-8 w-8" : "w-9 h-9"} flex items-center justify-center rounded-full bg-slate-600 hover:bg-slate-700 text-white transition-colors shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-slate-400`}
                 title='Restart Reference (R)'
                 aria-label='Restart reference from beginning'
               >
@@ -742,11 +813,35 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
             </div>
           )}
 
+          {isClassroomLayout && (
+            <div className='flex items-center gap-1 rounded-lg border border-slate-600/40 bg-slate-700/30 px-1.5 py-1'>
+              <button
+                type='button'
+                disabled
+                className='rounded bg-slate-700/60 px-2 py-1 text-xs font-medium text-slate-300 opacity-70'
+                title='Slow speed placeholder'
+              >
+                Slow
+              </button>
+              <span className='min-w-[38px] text-center text-xs font-semibold text-slate-200'>
+                1.0x
+              </span>
+              <button
+                type='button'
+                disabled
+                className='rounded bg-slate-700/60 px-2 py-1 text-xs font-medium text-slate-300 opacity-70'
+                title='Fast speed placeholder'
+              >
+                Fast
+              </button>
+            </div>
+          )}
+
           {/* Exit Full-Screen Button */}
-          <div className='ml-2 sm:ml-4 pl-2 sm:pl-4 border-l border-slate-600/50'>
+          <div className={`${isClassroomLayout ? "ml-1 pl-2" : "ml-2 sm:ml-4 pl-2 sm:pl-4"} border-l border-slate-600/50`}>
             <button
               onClick={onClose}
-              className='flex items-center justify-center w-11 h-11 min-h-[44px] min-w-[44px] rounded-full bg-red-600 hover:bg-red-700 text-white transition-colors shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-red-400'
+              className={`${isClassroomLayout ? "h-10 w-10 min-h-[40px] min-w-[40px]" : "w-11 h-11 min-h-[44px] min-w-[44px]"} flex items-center justify-center rounded-full bg-red-600 hover:bg-red-700 text-white transition-colors shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-red-400`}
               title='Exit Full-Screen (ESC)'
               aria-label='Exit full-screen mode'
             >
@@ -756,6 +851,7 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
         </div>
 
         {/* ENHANCEMENT: Enhanced Keyboard Shortcuts Hint - Improved */}
+        {!isClassroomLayout && (
         <div
           className={`hidden sm:flex mt-2 pt-2 border-t border-slate-600/30 text-center text-[10px] ${currentTheme.textMuted} items-center justify-center gap-3 flex-wrap`}
         >
@@ -800,6 +896,7 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
             <span>Exit</span>
           </span>
         </div>
+        )}
       </div>
 
       {/* Countdown Overlay - Shows before practice mode starts */}

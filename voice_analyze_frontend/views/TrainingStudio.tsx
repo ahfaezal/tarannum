@@ -1464,6 +1464,22 @@ const TrainingStudio: React.FC = () => {
       // Practice mode should only do live pitch extraction, not save audio.
       let filteredStream: MediaStream | null = null;
       try {
+        if (typeof window !== "undefined" && !window.isSecureContext) {
+          const insecureContextError = new Error(
+            "Microphone access requires a secure context."
+          );
+          insecureContextError.name = "InsecureContextError";
+          throw insecureContextError;
+        }
+
+        if (!navigator.mediaDevices?.getUserMedia) {
+          const unsupportedError = new Error(
+            "Microphone API is not available in this browser context."
+          );
+          unsupportedError.name = "MediaDevicesUnavailableError";
+          throw unsupportedError;
+        }
+
         filteredStream = await navigator.mediaDevices.getUserMedia({
           audio: {
             echoCancellation: true, // Keep for feedback prevention
@@ -1559,7 +1575,17 @@ const TrainingStudio: React.FC = () => {
 
       // Set user-friendly error message
       let errorMessage = "Could not start practice mode. ";
-      if (
+      const insecureContext =
+        error.name === "InsecureContextError" ||
+        (typeof window !== "undefined" && !window.isSecureContext);
+
+      if (insecureContext) {
+        errorMessage +=
+          "Microphone requires HTTPS on iPad/Safari. Please use an HTTPS dev tunnel or production domain. Local IP over HTTP is okay for UI testing, but not for microphone testing.";
+      } else if (error.name === "MediaDevicesUnavailableError") {
+        errorMessage +=
+          "Microphone access is not available in this browser context. Please use Safari/Chrome over HTTPS or a production domain.";
+      } else if (
         error.name === "NotAllowedError" ||
         error.name === "PermissionDeniedError"
       ) {

@@ -12,6 +12,7 @@ interface FullScreenAyahTextDisplayProps {
     bg: string;
     border: string;
   };
+  compact?: boolean;
 }
 
 /**
@@ -30,6 +31,7 @@ const FullScreenAyahTextDisplay: React.FC<FullScreenAyahTextDisplayProps> = ({
     bg: "bg-slate-900",
     border: "border-slate-700",
   },
+  compact = false,
 }) => {
   if (!ayatTiming || ayatTiming.length === 0) {
     return null;
@@ -60,16 +62,16 @@ const FullScreenAyahTextDisplay: React.FC<FullScreenAyahTextDisplayProps> = ({
 
   return (
     <div
-      className={`w-full px-3 sm:px-6 py-3 sm:py-4 ${theme.bg} border-t ${theme.border} mt-2 sm:mt-3 max-h-[30vh] overflow-y-auto`}
+      className={`w-full flex-shrink-0 px-3 sm:px-6 ${compact ? "py-1 mt-1 max-h-none overflow-visible" : "py-3 sm:py-4 mt-2 sm:mt-3 max-h-[30vh] overflow-y-auto"} ${theme.bg} border-t ${theme.border}`}
       role="region"
       aria-label="Quranic text display"
       dir="rtl"
     >
       <div className="max-w-6xl mx-auto">
         {/* Current Verse - Large and Highlighted */}
-        <div className="mb-3 sm:mb-4">
+        <div className={compact ? "mb-1" : "mb-3 sm:mb-4"}>
           <div
-            className={`text-2xl sm:text-3xl lg:text-4xl font-medium ${theme.text} leading-relaxed text-center py-3 sm:py-4 px-3 sm:px-6 rounded-lg bg-emerald-900/30 border-2 border-emerald-500/50 shadow-lg`}
+            className={`${compact ? "text-lg sm:text-xl lg:text-2xl py-1.5 px-3 sm:px-5 leading-normal" : "text-2xl sm:text-3xl lg:text-4xl py-3 sm:py-4 px-3 sm:px-6 leading-relaxed"} font-medium ${theme.text} text-center rounded-lg bg-emerald-900/30 border-2 border-emerald-500/50 shadow-lg`}
             style={{
               fontFamily:
                 'Arial, "Arabic Typesetting", "Traditional Arabic", sans-serif',
@@ -91,9 +93,9 @@ const FullScreenAyahTextDisplay: React.FC<FullScreenAyahTextDisplayProps> = ({
 
         {/* Next Verse - Preview (Smaller) */}
         {displayNextVerse && displayNextVerse !== displayCurrentVerse && (
-          <div className="mt-2 sm:mt-3">
+          <div className={compact ? "mt-1" : "mt-2 sm:mt-3"}>
             <div
-              className={`text-xl sm:text-2xl lg:text-3xl font-medium ${theme.textMuted} leading-relaxed text-center py-2.5 sm:py-3 px-3 sm:px-5 rounded-lg bg-slate-800/30 border border-slate-600/30`}
+              className={`${compact ? "text-base sm:text-lg lg:text-xl py-1.5 px-3 sm:px-4 leading-normal" : "text-xl sm:text-2xl lg:text-3xl py-2.5 sm:py-3 px-3 sm:px-5 leading-relaxed"} font-medium ${theme.textMuted} text-center rounded-lg bg-slate-800/30 border border-slate-600/30`}
               style={{
                 fontFamily:
                   'Arial, "Arabic Typesetting", "Traditional Arabic", sans-serif',
