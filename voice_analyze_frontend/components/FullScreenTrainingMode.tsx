@@ -996,7 +996,7 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
         onComplete={handleCountdownComplete}
         onCancel={handleCountdownCancel}
         duration={5}
-        showAudioCue={false}
+        showAudioCue={true}
       />
     </div>
   );

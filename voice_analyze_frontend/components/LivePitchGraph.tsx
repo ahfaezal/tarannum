@@ -779,6 +779,12 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
       // In fullscreen mode, ensure reference pitch is fully visible
       let minVisibleTime: number;
       let maxVisibleTime: number;
+      const isAutoFollowingPlayback =
+        isFullScreen &&
+        isPlaying &&
+        autoFollow &&
+        !manualPanActive &&
+        currentTime > 0;
 
       if (
         isFullScreen &&
@@ -801,14 +807,13 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
         // This ensures zoom level is always respected in fullscreen mode
         const effectiveRange = visibleTimeRange;
 
-        // Center on pitch data, but respect zoom level
-        // Allow center to reach audioDuration (graph finishes at tracking line)
-        const centerTime = (minTime + maxTime) / 2;
-        const startTime = centerTime - effectiveRange / 2 + panTime;
         const maxStartForCenterAtEnd = Math.max(
           0,
           audioDuration - effectiveRange * AUTO_FOLLOW_PLAYHEAD_RATIO
         );
+        const startTime = isAutoFollowingPlayback
+          ? currentTime - effectiveRange * AUTO_FOLLOW_PLAYHEAD_RATIO
+          : (minTime + maxTime) / 2 - effectiveRange / 2 + panTime;
         minVisibleTime = Math.max(
           0,
           Math.min(startTime, maxStartForCenterAtEnd)
