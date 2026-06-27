@@ -161,6 +161,34 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
     return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
 
+  const handlePracticeToggle = React.useCallback(() => {
+    if (isPracticeMode) {
+      setShowCountdown(false);
+      onPracticeStop?.();
+    } else {
+      setShowCountdown(true);
+    }
+  }, [isPracticeMode, onPracticeStop]);
+
+  const handleStopWithCountdownCancel = React.useCallback(() => {
+    setShowCountdown(false);
+    onStop();
+  }, [onStop]);
+
+  const handleCloseWithCountdownCancel = React.useCallback(() => {
+    setShowCountdown(false);
+    onClose();
+  }, [onClose]);
+
+  const handleCountdownComplete = React.useCallback(() => {
+    setShowCountdown(false);
+    onPracticeStart?.();
+  }, [onPracticeStart]);
+
+  const handleCountdownCancel = React.useCallback(() => {
+    setShowCountdown(false);
+  }, []);
+
   // Calculate progress percentage
   const progressPercent =
     referenceDuration > 0 ? (currentTime / referenceDuration) * 100 : 0;
@@ -270,7 +298,7 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
 
       if (e.key === "Escape") {
         e.preventDefault();
-        onClose();
+        handleCloseWithCountdownCancel();
       } else if (e.key === " " || e.key === "Enter") {
         e.preventDefault();
         if (isPlaying) {
@@ -283,7 +311,7 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
         onRestart();
       } else if (e.key === "s" || e.key === "S") {
         e.preventDefault();
-        onStop();
+        handleStopWithCountdownCancel();
       } else if (e.key === "+" || e.key === "=") {
         e.preventDefault();
         if (onZoomChange) {
@@ -312,11 +340,7 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
         }
       } else if (e.key === "p" || e.key === "P") {
         e.preventDefault();
-        if (isPracticeMode && onPracticeStop) {
-          onPracticeStop();
-        } else if (!isPracticeMode && onPracticeStart) {
-          onPracticeStart();
-        }
+        handlePracticeToggle();
       }
     };
 
@@ -325,10 +349,10 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
   }, [
     isOpen,
     isPlaying,
-    onClose,
+    handleCloseWithCountdownCancel,
     onPlay,
     onPause,
-    onStop,
+    handleStopWithCountdownCancel,
     onRestart,
     zoomLevel,
     onZoomChange,
@@ -336,9 +360,7 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
     onMetronomeToggle,
     loopMode,
     onLoopModeChange,
-    isPracticeMode,
-    onPracticeStart,
-    onPracticeStop,
+    handlePracticeToggle,
   ]);
 
   // Note: Wheel zoom is handled by LivePitchGraph component for consistency with regular mode
@@ -634,13 +656,7 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
               onPracticeStart &&
               onPracticeStop && (
               <button
-                onClick={() => {
-                  if (isPracticeMode) {
-                    onPracticeStop();
-                  } else {
-                    onPracticeStart();
-                  }
-                }}
+                onClick={handlePracticeToggle}
                 className={`${isClassroomLayout ? "px-2.5 py-1" : "px-3 py-1.5"} rounded-lg flex items-center gap-1.5 text-xs font-medium transition-all ${
                   isPracticeMode
                     ? "bg-red-600 hover:bg-red-700 text-white"
@@ -828,7 +844,7 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
 
               {/* Stop Button */}
               <button
-                onClick={onStop}
+                onClick={handleStopWithCountdownCancel}
                 className={`${isClassroomLayout ? "h-8 w-8" : "w-9 h-9"} flex items-center justify-center rounded-full bg-slate-600 hover:bg-slate-700 text-white transition-colors shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-slate-400`}
                 title='Stop Reference (S)'
                 aria-label='Stop reference playback'
@@ -915,7 +931,7 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
           {/* Exit Full-Screen Button */}
           <div className={`${isClassroomLayout ? "ml-1 pl-2" : "ml-2 sm:ml-4 pl-2 sm:pl-4"} border-l border-slate-600/50`}>
             <button
-              onClick={onClose}
+              onClick={handleCloseWithCountdownCancel}
               className={`${isClassroomLayout ? "h-10 w-10 min-h-[40px] min-w-[40px]" : "w-11 h-11 min-h-[44px] min-w-[44px]"} flex items-center justify-center rounded-full bg-red-600 hover:bg-red-700 text-white transition-colors shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-red-400`}
               title='Exit Full-Screen (ESC)'
               aria-label='Exit full-screen mode'
@@ -977,17 +993,10 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
       {/* Countdown Overlay - Shows before practice mode starts */}
       <Countdown
         isActive={showCountdown}
-        onComplete={() => {
-          setShowCountdown(false);
-          if (onPracticeStart) {
-            onPracticeStart();
-          }
-        }}
-        onCancel={() => {
-          setShowCountdown(false);
-        }}
+        onComplete={handleCountdownComplete}
+        onCancel={handleCountdownCancel}
         duration={5}
-        showAudioCue={true}
+        showAudioCue={false}
       />
     </div>
   );

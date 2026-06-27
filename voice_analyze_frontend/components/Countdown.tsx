@@ -31,6 +31,7 @@ const Countdown: React.FC<CountdownProps> = ({
   const audioContextRef = useRef<AudioContext | null>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const beepTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const completeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Initialize audio context for beep sound
   useEffect(() => {
@@ -93,6 +94,10 @@ const Countdown: React.FC<CountdownProps> = ({
         clearTimeout(beepTimeoutRef.current);
         beepTimeoutRef.current = null;
       }
+      if (completeTimeoutRef.current) {
+        clearTimeout(completeTimeoutRef.current);
+        completeTimeoutRef.current = null;
+      }
       return;
     }
 
@@ -124,7 +129,7 @@ const Countdown: React.FC<CountdownProps> = ({
           }
 
           // Small delay before completing to show "GO!"
-          setTimeout(() => {
+          completeTimeoutRef.current = setTimeout(() => {
             setIsVisible(false);
             onComplete();
           }, 500); // Slightly longer to see "GO!"
@@ -150,6 +155,10 @@ const Countdown: React.FC<CountdownProps> = ({
       if (beepTimeoutRef.current) {
         clearTimeout(beepTimeoutRef.current);
         beepTimeoutRef.current = null;
+      }
+      if (completeTimeoutRef.current) {
+        clearTimeout(completeTimeoutRef.current);
+        completeTimeoutRef.current = null;
       }
     };
   }, [isActive, duration, onComplete, showAudioCue]);

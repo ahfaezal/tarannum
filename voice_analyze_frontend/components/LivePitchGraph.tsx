@@ -703,19 +703,62 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
     alpha: number = 0.8,
     medianWindow: number = 3
   ): PitchPoint[] => {
+    const OUTLIER_THRESHOLD_HZ = 120;
+    const NEIGHBOUR_SIMILARITY_HZ = 80;
     let lastFrequency: number | null = null;
+    const studentPitchForRender = pitchData.map((point, index) => {
+      if (
+        index === 0 ||
+        index === pitchData.length - 1 ||
+        point.frequency === null ||
+        point.frequency === undefined
+      ) {
+        return { ...point };
+      }
 
-    return pitchData.map((point, index) => {
+      const previousFrequency = pitchData[index - 1].frequency;
+      const nextFrequency = pitchData[index + 1].frequency;
+      if (
+        previousFrequency === null ||
+        previousFrequency === undefined ||
+        nextFrequency === null ||
+        nextFrequency === undefined
+      ) {
+        return { ...point };
+      }
+
+      const isIsolatedOutlier =
+        Math.abs(point.frequency - previousFrequency) > OUTLIER_THRESHOLD_HZ &&
+        Math.abs(point.frequency - nextFrequency) > OUTLIER_THRESHOLD_HZ &&
+        Math.abs(previousFrequency - nextFrequency) < NEIGHBOUR_SIMILARITY_HZ;
+
+      if (!isIsolatedOutlier) {
+        return { ...point };
+      }
+
+      const replacementFrequency = [
+        previousFrequency,
+        point.frequency,
+        nextFrequency,
+      ].sort((a, b) => a - b)[1];
+
+      return {
+        ...point,
+        frequency: replacementFrequency,
+      };
+    });
+
+    return studentPitchForRender.map((point, index) => {
       if (point.frequency === null || point.frequency === undefined) {
         lastFrequency = null;
         return { ...point };
       }
 
       const halfWindow = Math.floor(medianWindow / 2);
-      const nearbyFrequencies = pitchData
+      const nearbyFrequencies = studentPitchForRender
         .slice(
           Math.max(0, index - halfWindow),
-          Math.min(pitchData.length, index + halfWindow + 1)
+          Math.min(studentPitchForRender.length, index + halfWindow + 1)
         )
         .map((nearbyPoint) => nearbyPoint.frequency)
         .filter(
