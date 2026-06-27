@@ -700,32 +700,42 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
 
   const smoothStudentPitchForRender = (
     pitchData: PitchPoint[],
-    alpha: number = 0.35,
-    maxHzPerSecond: number = 320
+    alpha: number = 0.8,
+    medianWindow: number = 3
   ): PitchPoint[] => {
     let lastFrequency: number | null = null;
-    let lastVoicedTime: number | null = null;
 
-    return pitchData.map((point) => {
+    return pitchData.map((point, index) => {
       if (point.frequency === null || point.frequency === undefined) {
         lastFrequency = null;
-        lastVoicedTime = null;
         return { ...point };
       }
 
-      let smoothedFrequency = point.frequency;
-      if (lastFrequency !== null && lastVoicedTime !== null) {
-        const deltaSec = Math.max(point.time - lastVoicedTime, 0.001);
-        const maxDelta = maxHzPerSecond * deltaSec;
-        const targetFrequency =
-          lastFrequency + (point.frequency - lastFrequency) * alpha;
-        const delta = targetFrequency - lastFrequency;
+      const halfWindow = Math.floor(medianWindow / 2);
+      const nearbyFrequencies = pitchData
+        .slice(
+          Math.max(0, index - halfWindow),
+          Math.min(pitchData.length, index + halfWindow + 1)
+        )
+        .map((nearbyPoint) => nearbyPoint.frequency)
+        .filter(
+          (frequency): frequency is number =>
+            frequency !== null && frequency !== undefined
+        )
+        .sort((a, b) => a - b);
+
+      const medianFrequency =
+        nearbyFrequencies.length > 0
+          ? nearbyFrequencies[Math.floor(nearbyFrequencies.length / 2)]
+          : point.frequency;
+
+      let smoothedFrequency = medianFrequency;
+      if (lastFrequency !== null) {
         smoothedFrequency =
-          lastFrequency + Math.max(-maxDelta, Math.min(maxDelta, delta));
+          lastFrequency + (medianFrequency - lastFrequency) * alpha;
       }
 
       lastFrequency = smoothedFrequency;
-      lastVoicedTime = point.time;
 
       return {
         ...point,
