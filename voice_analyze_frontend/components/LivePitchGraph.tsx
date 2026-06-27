@@ -4,6 +4,9 @@ import { PitchData, PitchMarker } from "../types";
 import { ZoomIn, ZoomOut, RotateCcw, Maximize2 } from "lucide-react";
 
 const AUTO_FOLLOW_PLAYHEAD_RATIO = 0.425;
+const DOUBLE_TAP_MAX_DELAY_MS = 300;
+const DOUBLE_TAP_MAX_DISTANCE_PX = 24;
+const TAP_MOVE_THRESHOLD_PX = 8;
 
 interface LivePitchGraphProps {
   referencePitch: PitchData[]; // Pre-extracted from backend (accurate)
@@ -60,6 +63,10 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
   const isDraggingRef = useRef(false);
   const dragStartRef = useRef({ x: 0, pan: 0 });
   const activePointerIdRef = useRef<number | null>(null);
+  const pointerStartRef = useRef<{ x: number; y: number } | null>(null);
+  const pointerMovedRef = useRef(false);
+  const lastTapTimeRef = useRef(0);
+  const lastTapPositionRef = useRef<{ x: number; y: number } | null>(null);
   const zoomCenterRef = useRef(0.5); // Zoom center point (0-1)
 
   // Auto-follow state
@@ -228,13 +235,23 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
     }
   };
 
-  const handleZoomReset = () => {
+  const resetViewport = React.useCallback(() => {
     if (onZoomChange) {
       onZoomChange(1.0);
     } else {
       setInternalZoomLevel(1.0);
     }
     setPanOffset(0);
+    setManualPanActive(false);
+    setAutoFollow(true);
+    if (manualPanTimeoutRef.current) {
+      clearTimeout(manualPanTimeoutRef.current);
+      manualPanTimeoutRef.current = null;
+    }
+  }, [onZoomChange]);
+
+  const handleZoomReset = () => {
+    resetViewport();
   };
 
   const handleZoomFit = () => {
@@ -531,6 +548,8 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
       if (e.pointerType !== "touch" && e.pointerType !== "pen") return;
       e.preventDefault();
       activePointerIdRef.current = e.pointerId;
+      pointerStartRef.current = { x: e.clientX, y: e.clientY };
+      pointerMovedRef.current = false;
       canvas.setPointerCapture?.(e.pointerId);
       beginPan(e.clientX);
     };
@@ -538,6 +557,15 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
     const handlePointerMove = (e: PointerEvent) => {
       if (activePointerIdRef.current !== e.pointerId || !isDraggingRef.current) return;
       e.preventDefault();
+      if (pointerStartRef.current) {
+        const moveDistance = Math.hypot(
+          e.clientX - pointerStartRef.current.x,
+          e.clientY - pointerStartRef.current.y
+        );
+        if (moveDistance > TAP_MOVE_THRESHOLD_PX) {
+          pointerMovedRef.current = true;
+        }
+      }
       updatePan(e.clientX);
     };
 
@@ -546,14 +574,41 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
       e.preventDefault();
       canvas.releasePointerCapture?.(e.pointerId);
       activePointerIdRef.current = null;
+      const wasTap = !pointerMovedRef.current;
       endPan();
+      if (wasTap) {
+        const now = Date.now();
+        const lastTapPosition = lastTapPositionRef.current;
+        const tapDistance = lastTapPosition
+          ? Math.hypot(e.clientX - lastTapPosition.x, e.clientY - lastTapPosition.y)
+          : Infinity;
+        if (
+          now - lastTapTimeRef.current <= DOUBLE_TAP_MAX_DELAY_MS &&
+          tapDistance <= DOUBLE_TAP_MAX_DISTANCE_PX
+        ) {
+          resetViewport();
+          lastTapTimeRef.current = 0;
+          lastTapPositionRef.current = null;
+        } else {
+          lastTapTimeRef.current = now;
+          lastTapPositionRef.current = { x: e.clientX, y: e.clientY };
+        }
+      }
+      pointerStartRef.current = null;
+      pointerMovedRef.current = false;
+    };
+
+    const handleDoubleClick = (e: MouseEvent) => {
+      e.preventDefault();
+      resetViewport();
     };
 
     const previousTouchAction = canvas.style.touchAction;
-    canvas.style.touchAction = "pan-y";
+    canvas.style.touchAction = "none";
     canvas.addEventListener("mousedown", handleMouseDown);
     window.addEventListener("mousemove", handleMouseMove);
     window.addEventListener("mouseup", handleMouseUp);
+    canvas.addEventListener("dblclick", handleDoubleClick);
     canvas.addEventListener("pointerdown", handlePointerDown);
     canvas.addEventListener("pointermove", handlePointerMove);
     canvas.addEventListener("pointerup", handlePointerEnd);
@@ -564,6 +619,7 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
       canvas.removeEventListener("mousedown", handleMouseDown);
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
+      canvas.removeEventListener("dblclick", handleDoubleClick);
       canvas.removeEventListener("pointerdown", handlePointerDown);
       canvas.removeEventListener("pointermove", handlePointerMove);
       canvas.removeEventListener("pointerup", handlePointerEnd);
@@ -572,7 +628,7 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
         clearTimeout(manualPanTimeoutRef.current);
       }
     };
-  }, [isDragging, dragStart, effectiveZoomLevel, panOffset, referenceDuration]);
+  }, [isDragging, dragStart, effectiveZoomLevel, panOffset, referenceDuration, resetViewport]);
 
   // Smooth reference pitch data using multi-pass tension-based interpolation
   // Enhanced for tarannum training to match requirement for very smooth melodic flow
@@ -640,6 +696,42 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
     }
 
     return currentPoints;
+  };
+
+  const smoothStudentPitchForRender = (
+    pitchData: PitchPoint[],
+    alpha: number = 0.35,
+    maxHzPerSecond: number = 320
+  ): PitchPoint[] => {
+    let lastFrequency: number | null = null;
+    let lastVoicedTime: number | null = null;
+
+    return pitchData.map((point) => {
+      if (point.frequency === null || point.frequency === undefined) {
+        lastFrequency = null;
+        lastVoicedTime = null;
+        return { ...point };
+      }
+
+      let smoothedFrequency = point.frequency;
+      if (lastFrequency !== null && lastVoicedTime !== null) {
+        const deltaSec = Math.max(point.time - lastVoicedTime, 0.001);
+        const maxDelta = maxHzPerSecond * deltaSec;
+        const targetFrequency =
+          lastFrequency + (point.frequency - lastFrequency) * alpha;
+        const delta = targetFrequency - lastFrequency;
+        smoothedFrequency =
+          lastFrequency + Math.max(-maxDelta, Math.min(maxDelta, delta));
+      }
+
+      lastFrequency = smoothedFrequency;
+      lastVoicedTime = point.time;
+
+      return {
+        ...point,
+        frequency: smoothedFrequency,
+      };
+    });
   };
 
   // Draw graph with continuous animation loop
@@ -1100,27 +1192,20 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
           (p) => p.time <= maxRenderTime
         );
 
-        // Use raw live stream points to keep mode parity and avoid graph-side spike artifacts.
-        const sortedPitch = [...visibleStudentPitch].sort(
-          (a, b) => a.time - b.time
+        const smoothedStudentPitchForRender = smoothStudentPitchForRender(
+          [...visibleStudentPitch].sort((a, b) => a.time - b.time)
         );
 
         // Debug: Count points in visible range
-        const pointsInRange = sortedPitch.filter(
+        const pointsInRange = smoothedStudentPitchForRender.filter(
           (p) => p.time >= minVisibleTime && p.time <= maxVisibleTime
         ).length;
         console.log(
-          `[Graph] Student pitch points in visible range: ${pointsInRange} / ${sortedPitch.length}`
+          `[Graph] Student pitch points in visible range: ${pointsInRange} / ${smoothedStudentPitchForRender.length}`
         );
 
         // Draw connected line while suppressing spike artifacts.
-        let lastVoicedTime: number | null = null;
-        let lastSmoothedY: number | null = null;
-        let hadUnvoicedGap = false;
-        const MAX_HZ_PER_SEC = 260;
-        const EMA_ALPHA = 0.22;
-        const RECONNECT_RAMP_SECONDS = 0.12;
-        for (const point of sortedPitch) {
+        for (const point of smoothedStudentPitchForRender) {
           // Skip points outside visible range
           if (point.time < minVisibleTime || point.time > maxVisibleTime)
             continue;
@@ -1140,49 +1225,23 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
             if (lastValidPoint !== null) {
               ctx.lineTo(clippedX, lastValidPoint.y);
               lastValidPoint = { x: clippedX, y: lastValidPoint.y };
-              hadUnvoicedGap = true;
             }
-            lastSmoothedY = null;
             continue;
           }
 
-          const rawY =
+          let y =
             displayHeight -
             padding -
             ((point.frequency - finalMinFreq) / freqRange) * graphHeight;
-          let y = rawY;
-
-          // Display-only smoothing for natural contour without mutating source pitch.
-          if (lastSmoothedY !== null) {
-            y = lastSmoothedY + (rawY - lastSmoothedY) * EMA_ALPHA;
-          }
 
           if (firstPoint || lastValidPoint === null) {
             ctx.moveTo(clippedX, y);
             firstPoint = false;
           } else {
-            // Slope limiter: suppress impossible jump spikes while keeping continuity.
-            const rawDeltaSec = Math.max(
-              point.time - (lastVoicedTime || point.time),
-              0.001
-            );
-            const deltaSec = hadUnvoicedGap
-              ? Math.min(rawDeltaSec, RECONNECT_RAMP_SECONDS)
-              : rawDeltaSec;
-            const maxDeltaY = (MAX_HZ_PER_SEC * deltaSec * graphHeight) / freqRange;
-            const rawDeltaY = y - lastValidPoint.y;
-            if (Math.abs(rawDeltaY) > maxDeltaY) {
-              y =
-                lastValidPoint.y +
-                Math.sign(rawDeltaY) * maxDeltaY;
-            }
             ctx.lineTo(clippedX, y);
           }
 
           lastValidPoint = { x: clippedX, y };
-          lastVoicedTime = point.time;
-          lastSmoothedY = y;
-          hadUnvoicedGap = false;
         }
         ctx.stroke();
       }
