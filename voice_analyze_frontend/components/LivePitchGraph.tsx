@@ -3,6 +3,8 @@ import { PitchPoint } from "../services/pitchExtractor";
 import { PitchData, PitchMarker } from "../types";
 import { ZoomIn, ZoomOut, RotateCcw, Maximize2 } from "lucide-react";
 
+const AUTO_FOLLOW_PLAYHEAD_RATIO = 0.425;
+
 interface LivePitchGraphProps {
   referencePitch: PitchData[]; // Pre-extracted from backend (accurate)
   studentPitch: PitchPoint[]; // Real-time from frontend (growing array)
@@ -390,24 +392,20 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
     }
   }, [effectiveZoomLevel, panOffset, referencePitch, referenceDuration, currentTime, onZoomChange, isFullScreen]);
 
-  // Auto-follow: Auto-pan during playback/recording
-  // Behaviour: auto-pan only until the tracking line reaches the center of the visible window.
-  // After that, the viewport stays fixed (graph no longer scrolls under the fixed tracking line).
+  // Auto-follow: in zoomed playback, scroll the timeline under a stable playhead.
   useEffect(() => {
-    // Only auto-pan if auto-follow is enabled and user hasn't manually panned
-    if (!autoFollow || manualPanActive || (!isPlaying && !isRecording)) {
+    // Keep 100% zoom behaviour unchanged and only auto-scroll during playback.
+    if (
+      effectiveZoomLevel <= 1.0 ||
+      !isPlaying ||
+      !autoFollow ||
+      manualPanActive
+    ) {
       return;
     }
 
     const canvas = canvasRef.current;
     if (!canvas || currentTime <= 0) return;
-
-    // During live recording/practice, use the latest red-point time so
-    // auto-follow scrolling stays locked to the red line (same as blue cursor).
-    const liveTime =
-      isRecording && studentPitch.length > 0
-        ? studentPitch[studentPitch.length - 1].time
-        : currentTime;
 
     const refMaxTime =
       referencePitch.length > 0
@@ -417,25 +415,33 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
       referenceDuration && referenceDuration > 0
         ? referenceDuration
         : refMaxTime;
-    const baseMaxTime = Math.max(audioDuration, liveTime || 0, 10);
+    const playheadTime = Math.min(currentTime, audioDuration || currentTime);
+    const baseMaxTime = Math.max(audioDuration, playheadTime || 0, 10);
 
     const padding = 60;
     const { displayWidth } = getCanvasDisplaySize(canvas);
     const graphWidth = displayWidth - padding * 2;
     const visibleTimeRange = baseMaxTime / effectiveZoomLevel;
 
-    const desiredCenterTime = Math.min(liveTime, audioDuration);
+    const refMinTime =
+      referencePitch.length > 0
+        ? Math.min(...referencePitch.map((p) => p.time))
+        : 0;
+    const viewportCenterTime = (refMinTime + refMaxTime) / 2;
+    const defaultStartTime = viewportCenterTime - visibleTimeRange / 2;
+    const desiredStartTime =
+      playheadTime - visibleTimeRange * AUTO_FOLLOW_PLAYHEAD_RATIO;
 
-    const currentCenterTime = baseMaxTime / 2;
-    const panTimeNeeded = desiredCenterTime - currentCenterTime;
-
-    // Allow pan so center can reach audioDuration (graph finishes at tracking line)
-    const maxPanTime = Math.max(0, baseMaxTime - visibleTimeRange);
-    const maxRightPan = Math.max(maxPanTime / 2, audioDuration - baseMaxTime / 2);
-    const clampedPanTime = Math.max(
-      -maxPanTime / 2,
-      Math.min(maxRightPan, panTimeNeeded)
+    const maxStartTime = Math.max(
+      0,
+      audioDuration - visibleTimeRange * AUTO_FOLLOW_PLAYHEAD_RATIO,
+      baseMaxTime - visibleTimeRange
     );
+    const clampedStartTime = Math.max(
+      0,
+      Math.min(maxStartTime, desiredStartTime)
+    );
+    const clampedPanTime = clampedStartTime - defaultStartTime;
 
     // Convert to pixels
     const pixelsPerSecond = graphWidth / visibleTimeRange;
@@ -444,20 +450,14 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
     setPanOffset((prev) => {
       const diff = Math.abs(newPanOffset - prev);
       if (diff < 1) return newPanOffset;
-      // During live recording/practice, snap viewport instantly so
-      // the blue cursor and red line tip stay aligned at center.
-      // During playback, use smooth interpolation for polished feel.
-      if (isRecording) return newPanOffset;
-      return prev + (newPanOffset - prev) * 0.15;
+      return prev + (newPanOffset - prev) * 0.35;
     });
   }, [
     currentTime,
     isPlaying,
-    isRecording,
     effectiveZoomLevel,
     referenceDuration,
     referencePitch,
-    studentPitch,
     autoFollow,
     manualPanActive,
   ]);
@@ -758,7 +758,7 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
         const startTime = centerTime - effectiveRange / 2 + panTime;
         const maxStartForCenterAtEnd = Math.max(
           effectiveMaxTime - effectiveRange,
-          audioDuration - effectiveRange / 2
+          audioDuration - effectiveRange * AUTO_FOLLOW_PLAYHEAD_RATIO
         );
         minVisibleTime = Math.max(
           0,
@@ -1187,10 +1187,8 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
         ctx.stroke();
       }
 
-      // Draw current time cursor (blue vertical line) - shows during recording and playback
-      // The line moves from start until it reaches the center of the visible viewport,
-      // then remains fixed at center while the graph scrolls, allowing future pitch data to appear on the right
-      //
+      // Draw current time cursor (blue vertical line) - shows during recording and playback.
+      // Auto-follow moves the viewport; the cursor itself is rendered at its timeline position.
       const effectiveCursorTime = renderCursorTime;
 
       if (effectiveCursorTime > 0 && baseMaxTime > 0) {
@@ -1198,17 +1196,10 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
         ctx.lineWidth = 2.5;
 
         const actualVisibleRange = maxVisibleTime - minVisibleTime;
-        const centerTime = (minVisibleTime + maxVisibleTime) / 2;
-        const centerX = padding + graphWidth / 2;
-
-        let cursorX: number;
-
-        if (effectiveCursorTime < centerTime) {
-          cursorX = padding + ((effectiveCursorTime - minVisibleTime) / actualVisibleRange) * graphWidth;
-          cursorX = Math.min(cursorX, centerX);
-        } else {
-          cursorX = centerX;
-        }
+        const cursorX =
+          padding +
+          ((effectiveCursorTime - minVisibleTime) / actualVisibleRange) *
+            graphWidth;
 
         // Ensure cursor is within visible area
         if (cursorX >= padding && cursorX <= displayWidth - padding) {
