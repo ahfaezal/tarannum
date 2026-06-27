@@ -698,163 +698,6 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
     return currentPoints;
   };
 
-  const smoothStudentPitchForRender = (
-    pitchData: PitchPoint[],
-    alpha: number = 0.8,
-    medianWindow: number = 3
-  ): PitchPoint[] => {
-    const STUDENT_RENDER_MAX_HZ = 500;
-    const OUTLIER_HIGH_JUMP_HZ = 140;
-    const OUTLIER_CLUSTER_MAX_POINTS = 3;
-    const OUTLIER_THRESHOLD_HZ = 120;
-    const NEIGHBOUR_SIMILARITY_HZ = 80;
-    const OUTLIER_CLUSTER_NEIGHBOUR_SIMILARITY_HZ = 90;
-
-    const toRenderPitch = (point: PitchPoint): PitchPoint => {
-      const frequency = point.frequency;
-      if (
-        frequency === null ||
-        frequency === undefined ||
-        !isFinite(frequency) ||
-        frequency <= 0 ||
-        frequency > STUDENT_RENDER_MAX_HZ
-      ) {
-        return { ...point, frequency: null, midi: null };
-      }
-
-      return { ...point };
-    };
-
-    let lastFrequency: number | null = null;
-    const rangeFilteredPitch = pitchData.map(toRenderPitch);
-    const clusterFilteredPitch = rangeFilteredPitch.map((point) => ({
-      ...point,
-    }));
-
-    for (let index = 1; index < rangeFilteredPitch.length - 1; index++) {
-      const point = rangeFilteredPitch[index];
-      if (point.frequency === null || point.frequency === undefined) {
-        continue;
-      }
-
-      const previousFrequency = rangeFilteredPitch[index - 1].frequency;
-      if (previousFrequency === null || previousFrequency === undefined) {
-        continue;
-      }
-
-      if (Math.abs(point.frequency - previousFrequency) <= OUTLIER_HIGH_JUMP_HZ) {
-        continue;
-      }
-
-      let clusterEnd = index;
-      while (
-        clusterEnd + 1 < rangeFilteredPitch.length &&
-        rangeFilteredPitch[clusterEnd + 1].frequency !== null &&
-        rangeFilteredPitch[clusterEnd + 1].frequency !== undefined &&
-        Math.abs(
-          (rangeFilteredPitch[clusterEnd + 1].frequency as number) -
-            previousFrequency
-        ) > OUTLIER_HIGH_JUMP_HZ &&
-        clusterEnd - index + 1 < OUTLIER_CLUSTER_MAX_POINTS
-      ) {
-        clusterEnd++;
-      }
-
-      const clusterLength = clusterEnd - index + 1;
-      const nextFrequency = rangeFilteredPitch[clusterEnd + 1]?.frequency;
-      const isShortFalseCluster =
-        clusterLength <= OUTLIER_CLUSTER_MAX_POINTS &&
-        nextFrequency !== null &&
-        nextFrequency !== undefined &&
-        Math.abs(previousFrequency - nextFrequency) <
-          OUTLIER_CLUSTER_NEIGHBOUR_SIMILARITY_HZ;
-
-      if (!isShortFalseCluster) {
-        continue;
-      }
-
-      for (let invalidIndex = index; invalidIndex <= clusterEnd; invalidIndex++) {
-        clusterFilteredPitch[invalidIndex] = {
-          ...clusterFilteredPitch[invalidIndex],
-          frequency: null,
-          midi: null,
-        };
-      }
-      index = clusterEnd;
-    }
-
-    const studentPitchForRender = clusterFilteredPitch.map((point, index) => {
-      if (
-        index === 0 ||
-        index === clusterFilteredPitch.length - 1 ||
-        point.frequency === null ||
-        point.frequency === undefined
-      ) {
-        return { ...point };
-      }
-
-      const previousFrequency = clusterFilteredPitch[index - 1].frequency;
-      const nextFrequency = clusterFilteredPitch[index + 1].frequency;
-      if (
-        previousFrequency === null ||
-        previousFrequency === undefined ||
-        nextFrequency === null ||
-        nextFrequency === undefined
-      ) {
-        return { ...point };
-      }
-
-      const isIsolatedOutlier =
-        Math.abs(point.frequency - previousFrequency) > OUTLIER_THRESHOLD_HZ &&
-        Math.abs(point.frequency - nextFrequency) > OUTLIER_THRESHOLD_HZ &&
-        Math.abs(previousFrequency - nextFrequency) < NEIGHBOUR_SIMILARITY_HZ;
-
-      if (!isIsolatedOutlier) {
-        return { ...point };
-      }
-
-      return { ...point, frequency: null, midi: null };
-    });
-
-    return studentPitchForRender.map((point, index) => {
-      if (point.frequency === null || point.frequency === undefined) {
-        lastFrequency = null;
-        return { ...point };
-      }
-
-      const halfWindow = Math.floor(medianWindow / 2);
-      const nearbyFrequencies = studentPitchForRender
-        .slice(
-          Math.max(0, index - halfWindow),
-          Math.min(studentPitchForRender.length, index + halfWindow + 1)
-        )
-        .map((nearbyPoint) => nearbyPoint.frequency)
-        .filter(
-          (frequency): frequency is number =>
-            frequency !== null && frequency !== undefined
-        )
-        .sort((a, b) => a - b);
-
-      const medianFrequency =
-        nearbyFrequencies.length > 0
-          ? nearbyFrequencies[Math.floor(nearbyFrequencies.length / 2)]
-          : point.frequency;
-
-      let smoothedFrequency = medianFrequency;
-      if (lastFrequency !== null) {
-        smoothedFrequency =
-          lastFrequency + (medianFrequency - lastFrequency) * alpha;
-      }
-
-      lastFrequency = smoothedFrequency;
-
-      return {
-        ...point,
-        frequency: smoothedFrequency,
-      };
-    });
-  };
-
   // Draw graph with continuous animation loop
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -1313,20 +1156,26 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
           (p) => p.time <= maxRenderTime
         );
 
-        const smoothedStudentPitchForRender = smoothStudentPitchForRender(
-          [...visibleStudentPitch].sort((a, b) => a.time - b.time)
+        const sortedPitch = [...visibleStudentPitch].sort(
+          (a, b) => a.time - b.time
         );
 
         // Debug: Count points in visible range
-        const pointsInRange = smoothedStudentPitchForRender.filter(
+        const pointsInRange = sortedPitch.filter(
           (p) => p.time >= minVisibleTime && p.time <= maxVisibleTime
         ).length;
         console.log(
-          `[Graph] Student pitch points in visible range: ${pointsInRange} / ${smoothedStudentPitchForRender.length}`
+          `[Graph] Student pitch points in visible range: ${pointsInRange} / ${sortedPitch.length}`
         );
 
         // Draw connected line while suppressing spike artifacts.
-        for (const point of smoothedStudentPitchForRender) {
+        let lastVoicedTime: number | null = null;
+        let lastSmoothedY: number | null = null;
+        let hadUnvoicedGap = false;
+        const MAX_HZ_PER_SEC = 260;
+        const EMA_ALPHA = 0.22;
+        const RECONNECT_RAMP_SECONDS = 0.12;
+        for (const point of sortedPitch) {
           // Skip points outside visible range
           if (point.time < minVisibleTime || point.time > maxVisibleTime)
             continue;
@@ -1340,25 +1189,57 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
           // CRITICAL: Clip x coordinate to canvas bounds to prevent drawing outside graph area
           const clippedX = Math.max(padding, Math.min(displayWidth - padding, x));
 
-          if (point.frequency === null || point.frequency === undefined) {
-            firstPoint = true;
-            lastValidPoint = null;
+          if (
+            point.frequency === null ||
+            point.frequency === undefined ||
+            !isFinite(point.frequency) ||
+            point.frequency <= 0
+          ) {
+            if (lastValidPoint !== null) {
+              ctx.lineTo(clippedX, lastValidPoint.y);
+              lastValidPoint = { x: clippedX, y: lastValidPoint.y };
+              hadUnvoicedGap = true;
+            }
+            lastSmoothedY = null;
             continue;
           }
 
-          let y =
+          const rawY =
             displayHeight -
             padding -
             ((point.frequency - finalMinFreq) / freqRange) * graphHeight;
+          let y = rawY;
+
+          // Display-only smoothing for natural contour without mutating source pitch.
+          if (lastSmoothedY !== null) {
+            y = lastSmoothedY + (rawY - lastSmoothedY) * EMA_ALPHA;
+          }
 
           if (firstPoint || lastValidPoint === null) {
             ctx.moveTo(clippedX, y);
             firstPoint = false;
           } else {
+            const rawDeltaSec = Math.max(
+              point.time - (lastVoicedTime ?? point.time),
+              0.001
+            );
+            const deltaSec = hadUnvoicedGap
+              ? Math.min(rawDeltaSec, RECONNECT_RAMP_SECONDS)
+              : rawDeltaSec;
+            const maxDeltaY = (MAX_HZ_PER_SEC * deltaSec * graphHeight) / freqRange;
+            const rawDeltaY = y - lastValidPoint.y;
+            if (Math.abs(rawDeltaY) > maxDeltaY) {
+              y =
+                lastValidPoint.y +
+                Math.sign(rawDeltaY) * maxDeltaY;
+            }
             ctx.lineTo(clippedX, y);
           }
 
           lastValidPoint = { x: clippedX, y };
+          lastVoicedTime = point.time;
+          lastSmoothedY = y;
+          hadUnvoicedGap = false;
         }
         ctx.stroke();
       }
