@@ -703,21 +703,98 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
     alpha: number = 0.8,
     medianWindow: number = 3
   ): PitchPoint[] => {
+    const STUDENT_RENDER_MAX_HZ = 500;
+    const OUTLIER_HIGH_JUMP_HZ = 140;
+    const OUTLIER_CLUSTER_MAX_POINTS = 3;
     const OUTLIER_THRESHOLD_HZ = 120;
     const NEIGHBOUR_SIMILARITY_HZ = 80;
+    const OUTLIER_CLUSTER_NEIGHBOUR_SIMILARITY_HZ = 90;
+
+    const toRenderPitch = (point: PitchPoint): PitchPoint => {
+      const frequency = point.frequency;
+      if (
+        frequency === null ||
+        frequency === undefined ||
+        !isFinite(frequency) ||
+        frequency <= 0 ||
+        frequency > STUDENT_RENDER_MAX_HZ
+      ) {
+        return { ...point, frequency: null, midi: null };
+      }
+
+      return { ...point };
+    };
+
     let lastFrequency: number | null = null;
-    const studentPitchForRender = pitchData.map((point, index) => {
+    const rangeFilteredPitch = pitchData.map(toRenderPitch);
+    const clusterFilteredPitch = rangeFilteredPitch.map((point) => ({
+      ...point,
+    }));
+
+    for (let index = 1; index < rangeFilteredPitch.length - 1; index++) {
+      const point = rangeFilteredPitch[index];
+      if (point.frequency === null || point.frequency === undefined) {
+        continue;
+      }
+
+      const previousFrequency = rangeFilteredPitch[index - 1].frequency;
+      if (previousFrequency === null || previousFrequency === undefined) {
+        continue;
+      }
+
+      if (Math.abs(point.frequency - previousFrequency) <= OUTLIER_HIGH_JUMP_HZ) {
+        continue;
+      }
+
+      let clusterEnd = index;
+      while (
+        clusterEnd + 1 < rangeFilteredPitch.length &&
+        rangeFilteredPitch[clusterEnd + 1].frequency !== null &&
+        rangeFilteredPitch[clusterEnd + 1].frequency !== undefined &&
+        Math.abs(
+          (rangeFilteredPitch[clusterEnd + 1].frequency as number) -
+            previousFrequency
+        ) > OUTLIER_HIGH_JUMP_HZ &&
+        clusterEnd - index + 1 < OUTLIER_CLUSTER_MAX_POINTS
+      ) {
+        clusterEnd++;
+      }
+
+      const clusterLength = clusterEnd - index + 1;
+      const nextFrequency = rangeFilteredPitch[clusterEnd + 1]?.frequency;
+      const isShortFalseCluster =
+        clusterLength <= OUTLIER_CLUSTER_MAX_POINTS &&
+        nextFrequency !== null &&
+        nextFrequency !== undefined &&
+        Math.abs(previousFrequency - nextFrequency) <
+          OUTLIER_CLUSTER_NEIGHBOUR_SIMILARITY_HZ;
+
+      if (!isShortFalseCluster) {
+        continue;
+      }
+
+      for (let invalidIndex = index; invalidIndex <= clusterEnd; invalidIndex++) {
+        clusterFilteredPitch[invalidIndex] = {
+          ...clusterFilteredPitch[invalidIndex],
+          frequency: null,
+          midi: null,
+        };
+      }
+      index = clusterEnd;
+    }
+
+    const studentPitchForRender = clusterFilteredPitch.map((point, index) => {
       if (
         index === 0 ||
-        index === pitchData.length - 1 ||
+        index === clusterFilteredPitch.length - 1 ||
         point.frequency === null ||
         point.frequency === undefined
       ) {
         return { ...point };
       }
 
-      const previousFrequency = pitchData[index - 1].frequency;
-      const nextFrequency = pitchData[index + 1].frequency;
+      const previousFrequency = clusterFilteredPitch[index - 1].frequency;
+      const nextFrequency = clusterFilteredPitch[index + 1].frequency;
       if (
         previousFrequency === null ||
         previousFrequency === undefined ||
@@ -736,16 +813,7 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
         return { ...point };
       }
 
-      const replacementFrequency = [
-        previousFrequency,
-        point.frequency,
-        nextFrequency,
-      ].sort((a, b) => a - b)[1];
-
-      return {
-        ...point,
-        frequency: replacementFrequency,
-      };
+      return { ...point, frequency: null, midi: null };
     });
 
     return studentPitchForRender.map((point, index) => {
@@ -1273,12 +1341,8 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
           const clippedX = Math.max(padding, Math.min(displayWidth - padding, x));
 
           if (point.frequency === null || point.frequency === undefined) {
-            // Keep a continuous contour by carrying the last voiced level
-            // across unvoiced gaps.
-            if (lastValidPoint !== null) {
-              ctx.lineTo(clippedX, lastValidPoint.y);
-              lastValidPoint = { x: clippedX, y: lastValidPoint.y };
-            }
+            firstPoint = true;
+            lastValidPoint = null;
             continue;
           }
 
