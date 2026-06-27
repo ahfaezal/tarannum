@@ -883,25 +883,32 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
 
           {isClassroomLayout && (
             <div className='flex items-center gap-1 rounded-lg border border-slate-600/40 bg-slate-700/30 px-1.5 py-1'>
-              <button
-                type='button'
-                disabled
-                className='rounded bg-slate-700/60 px-2 py-1 text-xs font-medium text-slate-300 opacity-70'
-                title='Slow speed placeholder'
-              >
-                Slow
-              </button>
-              <span className='min-w-[38px] text-center text-xs font-semibold text-slate-200'>
-                1.0x
-              </span>
-              <button
-                type='button'
-                disabled
-                className='rounded bg-slate-700/60 px-2 py-1 text-xs font-medium text-slate-300 opacity-70'
-                title='Fast speed placeholder'
-              >
-                Fast
-              </button>
+              {[
+                { label: "Slow", value: 0.75 },
+                { label: "1.0x", value: 1.0 },
+                { label: "Fast", value: 1.25 },
+              ].map((speedOption) => {
+                const isActiveSpeed =
+                  Math.abs(playbackSpeed - speedOption.value) < 0.01;
+                return (
+                  <button
+                    key={speedOption.value}
+                    type='button'
+                    disabled={!onPlaybackSpeedChange}
+                    onClick={() => onPlaybackSpeedChange?.(speedOption.value)}
+                    className={`rounded px-2 py-1 text-xs font-medium transition-colors ${
+                      isActiveSpeed
+                        ? "bg-blue-600 text-white shadow-sm"
+                        : "bg-slate-700/60 text-slate-300 hover:bg-slate-600/70"
+                    } ${!onPlaybackSpeedChange ? "cursor-not-allowed opacity-50" : ""}`}
+                    title={`Set reference speed to ${speedOption.value}x`}
+                    aria-label={`Set reference speed to ${speedOption.value}x`}
+                    aria-pressed={isActiveSpeed}
+                  >
+                    {speedOption.label}
+                  </button>
+                );
+              })}
             </div>
           )}
 

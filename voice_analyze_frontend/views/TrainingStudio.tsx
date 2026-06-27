@@ -1976,6 +1976,13 @@ const TrainingStudio: React.FC = () => {
     });
   };
 
+  const handleReferencePlaybackSpeedChange = (speed: number) => {
+    setPlaybackSpeed(speed);
+    if (refWaveSurfer.current && !refWaveSurfer.current.isDestroyed) {
+      refWaveSurfer.current.setPlaybackRate(speed);
+    }
+  };
+
   useEffect(() => {
     if (
       !isRepeatAyahEnabled ||
@@ -4677,6 +4684,8 @@ const TrainingStudio: React.FC = () => {
         onPause={handleFullScreenPause}
         onStop={handleFullScreenStop}
         onRestart={handleFullScreenRestart}
+        playbackSpeed={playbackSpeed}
+        onPlaybackSpeedChange={handleReferencePlaybackSpeedChange}
         isPracticeMode={isPracticeMode}
         onPracticeStart={handlePracticeStart}
         onPracticeStop={handlePracticeStop}
@@ -4754,6 +4763,8 @@ const TrainingStudio: React.FC = () => {
         onPause={handleFullScreenPause}
         onStop={handleFullScreenStop}
         onRestart={handleFullScreenRestart}
+        playbackSpeed={playbackSpeed}
+        onPlaybackSpeedChange={handleReferencePlaybackSpeedChange}
         isPracticeMode={isPracticeMode}
         onPracticeStart={handlePracticeStart}
         onPracticeStop={handlePracticeStop}
