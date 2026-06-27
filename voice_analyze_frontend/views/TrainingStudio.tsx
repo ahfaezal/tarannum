@@ -1972,11 +1972,24 @@ const TrainingStudio: React.FC = () => {
   // Handle seek to time in fullscreen mode (for Quran text display)
   const handleFullScreenSeekToTime = (time: number) => {
     if (refWaveSurfer.current && referenceDuration > 0) {
-      const progress = time / referenceDuration;
+      const clampedTime = Math.max(0, Math.min(time, referenceDuration));
+      const progress = clampedTime / referenceDuration;
+      const shouldContinuePlaying =
+        isPlaying || refWaveSurfer.current.isPlaying() || isPracticeMode;
       refWaveSurfer.current.seekTo(progress);
-      // If not playing, start playback
-      if (!isPlaying) {
+      setPlaybackTime(clampedTime);
+
+      if (isPracticeMode) {
+        setPracticeTime(clampedTime);
+        setStudentPitchData([]);
+        const adjustedStartTime = Date.now() - clampedTime * 1000;
+        setPracticeStartTime(adjustedStartTime);
+        practiceStartTimeRef.current = adjustedStartTime;
+      }
+
+      if (shouldContinuePlaying) {
         refWaveSurfer.current.play();
+        setIsPlaying(true);
       }
     }
   };

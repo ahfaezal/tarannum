@@ -375,6 +375,15 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
     viewport.width <= 1400 &&
     isLandscape;
   const compactControls = isMobile || isClassroomLayout || (isTablet && isLandscape);
+  const activeAyahIndex = ayatTiming.reduce((activeIndex, ayah, index) => {
+    if (currentTime >= ayah.start && currentTime < ayah.end) {
+      return index;
+    }
+    if (currentTime >= ayah.start) {
+      return index;
+    }
+    return activeIndex;
+  }, ayatTiming.length > 0 ? 0 : -1);
 
   return (
     <div
@@ -571,15 +580,34 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
                 </span>
                 <div className='flex items-center gap-1'>
                   {Array.from({ length: 8 }).map((_, index) => (
-                    <button
-                      key={index}
-                      type='button'
-                      disabled
-                      className='flex h-7 w-7 items-center justify-center rounded border border-slate-600/60 bg-slate-700/40 text-xs font-semibold text-slate-200 opacity-80'
-                      title='Ayah selector placeholder'
-                    >
-                      {index + 1}
-                    </button>
+                    (() => {
+                      const ayah = ayatTiming[index];
+                      const isActive = index === activeAyahIndex;
+                      return (
+                        <button
+                          key={index}
+                          type='button'
+                          disabled={!ayah}
+                          onClick={() => {
+                            if (ayah && onSeekToTime) {
+                              onSeekToTime(ayah.start);
+                            }
+                          }}
+                          className={`flex h-7 w-7 items-center justify-center rounded border text-xs font-semibold transition-colors ${
+                            isActive && ayah
+                              ? "border-emerald-400/70 bg-emerald-500/25 text-emerald-100 opacity-100"
+                              : ayah
+                              ? "border-slate-600/60 bg-slate-700/40 text-slate-200 opacity-90 hover:bg-slate-600/50"
+                              : "border-slate-700/40 bg-slate-800/30 text-slate-500 opacity-40"
+                          }`}
+                          title={ayah ? `Select ayah ${index + 1}` : `Ayah ${index + 1} unavailable`}
+                          aria-label={ayah ? `Select ayah ${index + 1}` : `Ayah ${index + 1} unavailable`}
+                          aria-pressed={isActive && !!ayah}
+                        >
+                          {index + 1}
+                        </button>
+                      );
+                    })()
                   ))}
                 </div>
               </div>
