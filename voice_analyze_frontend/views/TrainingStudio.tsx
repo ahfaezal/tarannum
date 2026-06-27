@@ -2057,6 +2057,45 @@ const TrainingStudio: React.FC = () => {
     }
   };
 
+  const handlePrimeReferenceAudio = () => {
+    const ws = refWaveSurfer.current;
+    if (!ws || ws.isDestroyed || ws.isPlaying()) return;
+
+    const wsWithVolume = ws as typeof ws & {
+      getVolume?: () => number;
+      setVolume?: (volume: number) => void;
+    };
+    const restoreTime = ws.getCurrentTime();
+    const restoreVolume = wsWithVolume.getVolume?.() ?? 1;
+
+    try {
+      wsWithVolume.setVolume?.(0);
+      const playResult = ws.play();
+
+      Promise.resolve(playResult)
+        .then(() => {
+          if (!refWaveSurfer.current || refWaveSurfer.current !== ws || ws.isDestroyed) {
+            return;
+          }
+
+          ws.pause();
+          if (referenceDuration > 0) {
+            ws.seekTo(Math.max(0, Math.min(1, restoreTime / referenceDuration)));
+          }
+          wsWithVolume.setVolume?.(restoreVolume);
+          setIsPlaying(false);
+          setPlaybackTime(restoreTime);
+        })
+        .catch((error) => {
+          wsWithVolume.setVolume?.(restoreVolume);
+          console.warn("[Practice] Reference audio priming failed:", error);
+        });
+    } catch (error) {
+      wsWithVolume.setVolume?.(restoreVolume);
+      console.warn("[Practice] Reference audio priming failed:", error);
+    }
+  };
+
   const handleFullScreenStop = () => {
     setIsPlaying(false);
     if (refWaveSurfer.current) refWaveSurfer.current.stop();
@@ -4674,7 +4713,9 @@ const TrainingStudio: React.FC = () => {
         isPlaying={isPlaying}
         currentTime={
           isPracticeMode
-            ? practiceTime
+            ? isPlaying && playbackTime > 0
+              ? playbackTime
+              : practiceTime
             : isRecording
             ? recordingTime
             : playbackTime || 0
@@ -4687,6 +4728,7 @@ const TrainingStudio: React.FC = () => {
         playbackSpeed={playbackSpeed}
         onPlaybackSpeedChange={handleReferencePlaybackSpeedChange}
         isPracticeMode={isPracticeMode}
+        onPrimeReferenceAudio={handlePrimeReferenceAudio}
         onPracticeStart={handlePracticeStart}
         onPracticeStop={handlePracticeStop}
         onPracticeRestart={handlePracticeStart}

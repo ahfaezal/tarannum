@@ -58,6 +58,7 @@ interface FullScreenTrainingModeProps {
   onReferenceOverlayToggle?: (enabled: boolean) => void;
   // Practice mode props
   isPracticeMode?: boolean;
+  onPrimeReferenceAudio?: () => void;
   onPracticeStart?: () => void;
   onPracticeStop?: () => void;
   onPracticeRestart?: () => void;
@@ -123,6 +124,7 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
   showReferenceOverlay = true,
   onReferenceOverlayToggle,
   isPracticeMode = false,
+  onPrimeReferenceAudio,
   onPracticeStart,
   onPracticeStop,
   onPracticeRestart,
@@ -166,9 +168,10 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
       setShowCountdown(false);
       onPracticeStop?.();
     } else {
+      onPrimeReferenceAudio?.();
       setShowCountdown(true);
     }
-  }, [isPracticeMode, onPracticeStop]);
+  }, [isPracticeMode, onPracticeStop, onPrimeReferenceAudio]);
 
   const handleStopWithCountdownCancel = React.useCallback(() => {
     setShowCountdown(false);
