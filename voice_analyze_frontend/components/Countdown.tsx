@@ -53,11 +53,15 @@ const Countdown: React.FC<CountdownProps> = ({
   }, [showAudioCue]);
 
   // Play beep sound
-  const playBeep = (frequency: number = 800, duration: number = 100) => {
+  const playBeep = async (frequency: number = 800, duration: number = 100) => {
     if (!showAudioCue || !audioContextRef.current) return;
 
     try {
       const audioContext = audioContextRef.current;
+      if (audioContext.state === "suspended") {
+        await audioContext.resume();
+      }
+
       const oscillator = audioContext.createOscillator();
       const gainNode = audioContext.createGain();
 

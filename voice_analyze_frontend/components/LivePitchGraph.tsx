@@ -409,15 +409,9 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
     }
   }, [effectiveZoomLevel, panOffset, referencePitch, referenceDuration, currentTime, onZoomChange, isFullScreen]);
 
-  // Auto-follow: in zoomed playback, scroll the timeline under a stable playhead.
+  // Auto-follow: during playback, scroll the timeline under a stable playhead.
   useEffect(() => {
-    // Keep 100% zoom behaviour unchanged and only auto-scroll during playback.
-    if (
-      effectiveZoomLevel <= 1.0 ||
-      !isPlaying ||
-      !autoFollow ||
-      manualPanActive
-    ) {
+    if (!isPlaying || !autoFollow || manualPanActive) {
       return;
     }
 
@@ -451,8 +445,7 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
 
     const maxStartTime = Math.max(
       0,
-      audioDuration - visibleTimeRange * AUTO_FOLLOW_PLAYHEAD_RATIO,
-      baseMaxTime - visibleTimeRange
+      audioDuration - visibleTimeRange * AUTO_FOLLOW_PLAYHEAD_RATIO
     );
     const clampedStartTime = Math.max(
       0,
@@ -813,7 +806,7 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
         const centerTime = (minTime + maxTime) / 2;
         const startTime = centerTime - effectiveRange / 2 + panTime;
         const maxStartForCenterAtEnd = Math.max(
-          effectiveMaxTime - effectiveRange,
+          0,
           audioDuration - effectiveRange * AUTO_FOLLOW_PLAYHEAD_RATIO
         );
         minVisibleTime = Math.max(
@@ -832,8 +825,8 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
         const centerTime = baseMaxTime / 2;
         const startTime = centerTime - visibleTimeRange / 2 + panTime;
         const maxStartForCenterAtEnd = Math.max(
-          baseMaxTime - visibleTimeRange,
-          audioDuration - visibleTimeRange / 2
+          0,
+          audioDuration - visibleTimeRange * AUTO_FOLLOW_PLAYHEAD_RATIO
         );
         minVisibleTime = Math.max(
           0,
@@ -876,8 +869,8 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
             const centerTime = baseMaxTime / 2;
             const startTime = centerTime - visibleTimeRange / 2 + panTime;
             const maxStartForCenterAtEnd = Math.max(
-              baseMaxTime - visibleTimeRange,
-              audioDuration - visibleTimeRange / 2
+              0,
+              audioDuration - visibleTimeRange * AUTO_FOLLOW_PLAYHEAD_RATIO
             );
             minVisibleTime = Math.max(
               0,
@@ -912,8 +905,8 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
             const centerTime = baseMaxTime / 2;
             const startTime = centerTime - visibleTimeRange / 2 + panTime;
             const maxStartForCenterAtEnd = Math.max(
-              baseMaxTime - visibleTimeRange,
-              audioDuration - visibleTimeRange / 2
+              0,
+              audioDuration - visibleTimeRange * AUTO_FOLLOW_PLAYHEAD_RATIO
             );
             minVisibleTime = Math.max(
               0,
@@ -929,8 +922,8 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
           const centerTime = baseMaxTime / 2;
           const startTime = centerTime - visibleTimeRange / 2 + panTime;
           const maxStartForCenterAtEnd = Math.max(
-            baseMaxTime - visibleTimeRange,
-            audioDuration - visibleTimeRange / 2
+            0,
+            audioDuration - visibleTimeRange * AUTO_FOLLOW_PLAYHEAD_RATIO
           );
           minVisibleTime = Math.max(
             0,
