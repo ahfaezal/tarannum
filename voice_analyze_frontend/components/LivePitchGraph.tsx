@@ -4,6 +4,7 @@ import { PitchData, PitchMarker } from "../types";
 import { ZoomIn, ZoomOut, RotateCcw, Maximize2 } from "lucide-react";
 
 const AUTO_FOLLOW_PLAYHEAD_RATIO = 0.425;
+const STUDENT_OVERLAY_START_GRACE_SECONDS = 1.5;
 const DOUBLE_TAP_MAX_DELAY_MS = 300;
 const DOUBLE_TAP_MAX_DISTANCE_PX = 24;
 const TAP_MOVE_THRESHOLD_PX = 8;
@@ -1157,6 +1158,18 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
         const sortedPitch = [...visibleStudentPitch].sort(
           (a, b) => a.time - b.time
         );
+        const firstRenderableStudentTime =
+          sortedPitch.find(
+            (point) =>
+              point.frequency !== null &&
+              point.frequency !== undefined &&
+              isFinite(point.frequency) &&
+              point.frequency > 0
+          )?.time ?? null;
+        const studentRenderStartTime =
+          firstRenderableStudentTime !== null
+            ? firstRenderableStudentTime + STUDENT_OVERLAY_START_GRACE_SECONDS
+            : null;
 
         // Debug: Count points in visible range
         const pointsInRange = sortedPitch.filter(
@@ -1174,6 +1187,13 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
         const EMA_ALPHA = 0.22;
         const RECONNECT_RAMP_SECONDS = 0.12;
         for (const point of sortedPitch) {
+          if (
+            studentRenderStartTime !== null &&
+            point.time < studentRenderStartTime
+          ) {
+            continue;
+          }
+
           // Skip points outside visible range
           if (point.time < minVisibleTime || point.time > maxVisibleTime)
             continue;
