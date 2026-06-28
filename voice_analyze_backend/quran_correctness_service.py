@@ -290,12 +290,7 @@ def build_ai_recitation_notes(
             practice_advice.append("Dengar reference audio sekali pada kelajuan perlahan, kemudian ulang ayat yang sama tanpa mengejar alunan dahulu.")
 
         if critical_errors:
-            shown_errors = []
-            for error in critical_errors[:4]:
-                expected = error.get("expected", "?")
-                actual = error.get("actual", "?")
-                shown_errors.append(f"{expected}/{actual}")
-            corrections.append("Semak kemungkinan pertukaran huruf kritikal: " + ", ".join(shown_errors) + ".")
+            corrections.append("Semak kemungkinan pertukaran huruf atau makhraj kritikal pada beberapa tempat bacaan.")
             practice_advice.append("Latih makhraj huruf kritikal secara perlahan sebelum membaca dengan tarannum penuh.")
     elif status == "skipped":
         summary = "Nota AI belum lengkap kerana teks rujukan atau konfigurasi AI tidak tersedia untuk sesi ini. Feedback di bawah masih berdasarkan analisis audio biasa."

@@ -4,7 +4,7 @@ import { PitchData, PitchMarker } from "../types";
 import { ZoomIn, ZoomOut, RotateCcw, Maximize2 } from "lucide-react";
 
 const AUTO_FOLLOW_PLAYHEAD_RATIO = 0.425;
-const STUDENT_OVERLAY_START_GRACE_SECONDS = 1.5;
+const STUDENT_OVERLAY_START_GRACE_SECONDS = 1.0;
 const DOUBLE_TAP_MAX_DELAY_MS = 300;
 const DOUBLE_TAP_MAX_DISTANCE_PX = 24;
 const TAP_MOVE_THRESHOLD_PX = 8;
