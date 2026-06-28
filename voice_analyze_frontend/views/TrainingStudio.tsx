@@ -17,6 +17,7 @@ import AlertModal from "../components/AlertModal";
 import {
   analyzeRecitation,
   extractReferencePitch,
+  generateAIRecitationNotes,
 } from "../services/apiService";
 import { progressService, ProgressData } from "../services/progressService";
 import { useSelector } from "react-redux";
@@ -179,6 +180,8 @@ const TrainingStudio: React.FC = () => {
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(
     null
   );
+  const [isGeneratingAiNotes, setIsGeneratingAiNotes] = useState(false);
+  const [aiNotesError, setAiNotesError] = useState<string | null>(null);
   const [uploadedRefUrl, setUploadedRefUrl] = useState<string | null>(null);
   const [progressData, setProgressData] = useState<ProgressData | null>(null);
   const [syncProgress, setSyncProgress] = useState<number | null>(null);
@@ -1750,6 +1753,7 @@ const TrainingStudio: React.FC = () => {
   const handleAnalyze = async () => {
     if (!studentBlob) return;
     setIsAnalyzing(true);
+    setAiNotesError(null);
     trackStudentActivity("recording_submitted", {
       duration_seconds: recordingTime || undefined,
       playback_position: playbackTime,
@@ -1859,6 +1863,7 @@ const TrainingStudio: React.FC = () => {
     });
 
     setAnalysisResult(result);
+    setAiNotesError(null);
 
     // Force a small delay to ensure state updates before graph renders
     setTimeout(() => {
@@ -1875,6 +1880,32 @@ const TrainingStudio: React.FC = () => {
     }
 
     setIsAnalyzing(false);
+  };
+
+  const handleGenerateAiNotes = async () => {
+    if (!analysisResult?.analysisResultId) {
+      setAiNotesError("Nota AI hanya tersedia selepas keputusan score disimpan.");
+      return;
+    }
+
+    setIsGeneratingAiNotes(true);
+    setAiNotesError(null);
+    try {
+      const aiResult = await generateAIRecitationNotes(analysisResult.analysisResultId);
+      setAnalysisResult((current) =>
+        current
+          ? {
+              ...current,
+              quranCorrectness: aiResult.quranCorrectness,
+              aiNotes: aiResult.aiNotes,
+            }
+          : current
+      );
+    } catch (error: any) {
+      setAiNotesError(error?.message || "Nota AI tidak dapat dijana buat masa ini.");
+    } finally {
+      setIsGeneratingAiNotes(false);
+    }
   };
 
   const handleSyncPlay = () => {
@@ -3041,6 +3072,13 @@ const TrainingStudio: React.FC = () => {
                           if (animationFrameId) {
                             cancelAnimationFrame(animationFrameId);
                             animationFrameId = null;
+                          }
+
+                          if (isRecordingRef.current) {
+                            console.log(
+                              "[Recording] Reference audio finished - auto-stopping recording"
+                            );
+                            handleRecordingStop();
                           }
 
                           // Stop practice mode when reference audio finishes
@@ -4381,51 +4419,72 @@ const TrainingStudio: React.FC = () => {
               </div>
 
               <div className='space-y-6 flex-grow'>
-                {analysisResult.aiNotes && (
-                  <div className='bg-cyan-50 p-4 rounded-xl border border-cyan-200'>
-                    <div className='flex items-center gap-2 mb-3'>
-                      <Info className='w-4 h-4 text-cyan-700' />
-                      <h4 className='text-xs font-bold text-cyan-800 uppercase tracking-wider'>
-                        {analysisResult.aiNotes.title || "Nota Bimbingan AI"}
-                      </h4>
-                    </div>
-                    <p className='text-sm text-slate-700 leading-relaxed'>
-                      {analysisResult.aiNotes.summary}
-                    </p>
-
-                    {analysisResult.aiNotes.corrections &&
-                      analysisResult.aiNotes.corrections.length > 0 && (
-                        <div className='mt-3'>
-                          <h6 className='text-xs font-semibold text-cyan-900 uppercase mb-2'>
-                            Perkara untuk disemak
-                          </h6>
-                          <ul className='list-disc list-inside space-y-1 text-sm text-slate-600 ml-2'>
-                            {analysisResult.aiNotes.corrections.map(
-                              (item, idx) => (
-                                <li key={idx}>{item}</li>
-                              )
-                            )}
-                          </ul>
-                        </div>
-                      )}
-
-                    {analysisResult.aiNotes.practiceAdvice &&
-                      analysisResult.aiNotes.practiceAdvice.length > 0 && (
-                        <div className='mt-3'>
-                          <h6 className='text-xs font-semibold text-cyan-900 uppercase mb-2'>
-                            Cadangan latihan
-                          </h6>
-                          <ul className='list-disc list-inside space-y-1 text-sm text-slate-600 ml-2'>
-                            {analysisResult.aiNotes.practiceAdvice.map(
-                              (item, idx) => (
-                                <li key={idx}>{item}</li>
-                              )
-                            )}
-                          </ul>
-                        </div>
-                      )}
+                <div className='bg-cyan-50 p-4 rounded-xl border border-cyan-200'>
+                  <div className='flex items-center gap-2 mb-3'>
+                    <Info className='w-4 h-4 text-cyan-700' />
+                    <h4 className='text-xs font-bold text-cyan-800 uppercase tracking-wider'>
+                      {analysisResult.aiNotes?.title || "Nota Bimbingan AI"}
+                    </h4>
                   </div>
-                )}
+
+                  {analysisResult.aiNotes ? (
+                    <>
+                      <p className='text-sm text-slate-700 leading-relaxed'>
+                        {analysisResult.aiNotes.summary}
+                      </p>
+
+                      {analysisResult.aiNotes.corrections &&
+                        analysisResult.aiNotes.corrections.length > 0 && (
+                          <div className='mt-3'>
+                            <h6 className='text-xs font-semibold text-cyan-900 uppercase mb-2'>
+                              Perkara untuk disemak
+                            </h6>
+                            <ul className='list-disc list-inside space-y-1 text-sm text-slate-600 ml-2'>
+                              {analysisResult.aiNotes.corrections.map(
+                                (item, idx) => (
+                                  <li key={idx}>{item}</li>
+                                )
+                              )}
+                            </ul>
+                          </div>
+                        )}
+
+                      {analysisResult.aiNotes.practiceAdvice &&
+                        analysisResult.aiNotes.practiceAdvice.length > 0 && (
+                          <div className='mt-3'>
+                            <h6 className='text-xs font-semibold text-cyan-900 uppercase mb-2'>
+                              Cadangan latihan
+                            </h6>
+                            <ul className='list-disc list-inside space-y-1 text-sm text-slate-600 ml-2'>
+                              {analysisResult.aiNotes.practiceAdvice.map(
+                                (item, idx) => (
+                                  <li key={idx}>{item}</li>
+                                )
+                              )}
+                            </ul>
+                          </div>
+                        )}
+                    </>
+                  ) : (
+                    <div className='space-y-3'>
+                      <p className='text-sm text-slate-700 leading-relaxed'>
+                        Score telah dijana. Klik butang di bawah jika mahu analisis AI tambahan tentang bacaan.
+                      </p>
+                      <button
+                        type='button'
+                        onClick={handleGenerateAiNotes}
+                        disabled={isGeneratingAiNotes || !analysisResult.analysisResultId}
+                        className='inline-flex items-center gap-2 rounded-lg bg-cyan-700 px-3 py-2 text-sm font-semibold text-white transition hover:bg-cyan-800 disabled:cursor-not-allowed disabled:opacity-60'
+                      >
+                        <RefreshCw className={`h-4 w-4 ${isGeneratingAiNotes ? "animate-spin" : ""}`} />
+                        {isGeneratingAiNotes ? "Menjana Nota AI..." : "Jana Nota AI"}
+                      </button>
+                      {aiNotesError && (
+                        <p className='text-xs text-red-600'>{aiNotesError}</p>
+                      )}
+                    </div>
+                  )}
+                </div>
                 <div className='bg-slate-50 p-4 rounded-xl border border-slate-200'>
                   <h4 className='text-xs font-bold text-slate-500 uppercase mb-3 tracking-wider'>
                     Performance Feedback

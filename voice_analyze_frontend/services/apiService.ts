@@ -306,6 +306,29 @@ export const analyzeRecitation = async (
   }
 };
 
+export const generateAIRecitationNotes = async (
+  analysisResultId: string
+): Promise<Pick<AnalysisResult, "quranCorrectness" | "aiNotes">> => {
+  const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+  const response = await fetch(`${API_URL}/api/analysis/${analysisResultId}/ai-notes`, {
+    method: "POST",
+    headers: {
+      ...getAuthHeader(),
+    },
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => response.statusText);
+    throw new Error(`AI notes error ${response.status}: ${errorText}`);
+  }
+
+  const data = await response.json();
+  return {
+    quranCorrectness: data.quranCorrectness || undefined,
+    aiNotes: data.aiNotes || undefined,
+  };
+};
+
 /**
  * Extract pitch data from reference audio (backend extraction)
  * This provides accurate pitch data using librosa.pyin

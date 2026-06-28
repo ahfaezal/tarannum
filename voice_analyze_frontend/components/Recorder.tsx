@@ -36,6 +36,7 @@ const Recorder: React.FC<RecorderProps> = ({
   viewMode = "pitch", // Default to pitch view
   triggerRecordingStart = false, // Trigger to start recording after countdown
   triggerRecordingStop = false,
+  onError,
 }) => {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const pitchExtractorRef = useRef<RealTimePitchExtractor | null>(null);
@@ -44,23 +45,38 @@ const Recorder: React.FC<RecorderProps> = ({
   const timerIntervalRef = useRef<number | null>(null);
   const hasStartedRef = useRef<boolean>(false); // Track if recording has been started
 
+  const getMicrophoneStream = async () => {
+    const preferredConstraints: MediaStreamConstraints = {
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+        sampleRate: 44100,
+        channelCount: 1,
+      },
+    };
+
+    try {
+      return await navigator.mediaDevices.getUserMedia(preferredConstraints);
+    } catch (primaryError) {
+      console.warn(
+        "Preferred recording constraints failed, retrying with basic audio constraints:",
+        primaryError
+      );
+      return navigator.mediaDevices.getUserMedia({ audio: true });
+    }
+  };
+
   const startRecording = async () => {
     try {
       // Get microphone stream for recording with balanced settings
       // Enabled noiseSuppression and autoGainControl for clear, audible recordings
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true, // Keep for feedback prevention
-          noiseSuppression: true, // ENABLED - improves voice clarity
-          autoGainControl: true, // ENABLED - boosts quiet audio (not filtering, just volume adjustment)
-          sampleRate: 44100, // Keep high quality
-          channelCount: 1, // Mono
-        },
-      });
+      const stream = await getMicrophoneStream();
       streamRef.current = stream;
 
       // Prefer formats that decode reliably in browser for later WAV conversion.
       const preferredMimeTypes = [
+        "audio/mp4",
         "audio/webm;codecs=opus",
         "audio/webm",
         "audio/ogg;codecs=opus",
@@ -75,7 +91,7 @@ const Recorder: React.FC<RecorderProps> = ({
 
       const mediaRecorder = new MediaRecorder(stream, {
         mimeType,
-        audioBitsPerSecond: 128000, // Higher bitrate for better quality
+        audioBitsPerSecond: 96000,
       });
       mediaRecorderRef.current = mediaRecorder;
       const chunks: BlobPart[] = [];

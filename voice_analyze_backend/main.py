@@ -844,31 +844,6 @@ async def score_performance(
             normalized_overall = max(0.0, min(100.0, float(final_score)))
             normalized_overall = round(normalized_overall, 2)
 
-            # Quran correctness gate runs after the existing audio similarity score.
-            # It must never modify raw audio, pitch data, segment data, or scoring engine internals.
-            quran_correctness = evaluate_quran_correctness(
-                user_path,
-                text_segments_for_scoring,
-                normalized_overall,
-            )
-            if quran_correctness.get("applied") and quran_correctness.get("adjustedScore") is not None:
-                normalized_overall = max(0.0, min(100.0, float(quran_correctness["adjustedScore"])))
-                normalized_overall = round(normalized_overall, 2)
-                final_score = normalized_overall
-                logger.info(
-                    "Quran correctness score cap applied: original=%s adjusted=%s reason=%s",
-                    quran_correctness.get("originalScore"),
-                    quran_correctness.get("adjustedScore"),
-                    quran_correctness.get("message"),
-                )
-
-            ai_notes = build_ai_recitation_notes(
-                quran_correctness,
-                normalized_overall,
-                score_breakdown,
-                validated_segments,
-            )
-
             # Prepare response
             response_data = {
                 "score": normalized_overall,
@@ -881,8 +856,6 @@ async def score_performance(
                 "ayatTiming": ayah_timing,
                 "feedback": training_feedback,
                 "scoreBreakdown": score_breakdown,
-                "quranCorrectness": quran_correctness,
-                "aiNotes": ai_notes
             }
 
             # Log final response structure for debugging
@@ -2338,6 +2311,110 @@ async def get_analysis_result(session_id: str):
         raise
     except Exception as e:
         logger.error(f"Error getting analysis result: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/analysis/{analysis_result_id}/ai-notes")
+async def generate_analysis_ai_notes(
+    analysis_result_id: str,
+    current_user: Optional[User] = Depends(get_current_user_optional),
+    db: Session = Depends(get_db)
+):
+    """Generate Quran correctness and AI guidance on demand for a saved analysis."""
+    try:
+        from database import AnalysisResult, StudentQariRelationship, UserSession
+        from uuid import UUID
+
+        analysis_uuid = UUID(analysis_result_id) if isinstance(analysis_result_id, str) else analysis_result_id
+        analysis = db.query(AnalysisResult).filter(AnalysisResult.id == analysis_uuid).first()
+        if not analysis:
+            raise HTTPException(status_code=404, detail="Analysis result not found")
+
+        session = db.query(UserSession).filter(UserSession.id == analysis.user_session_id).first()
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+        user_role = current_user.role if current_user else UserRole.PUBLIC
+        user_id = str(current_user.id) if current_user else None
+
+        if user_role == UserRole.PUBLIC:
+            raise HTTPException(status_code=403, detail="Authentication required to generate AI notes")
+
+        if user_role == UserRole.STUDENT:
+            if not session.user_id or str(session.user_id) != user_id:
+                raise HTTPException(status_code=403, detail="Access denied: Can only analyze your own recordings")
+        elif user_role == UserRole.QARI:
+            if not session.user_id:
+                raise HTTPException(status_code=403, detail="Access denied: Cannot analyze public sessions")
+            relationship = db.query(StudentQariRelationship).filter(
+                and_(
+                    StudentQariRelationship.student_id == session.user_id,
+                    StudentQariRelationship.qari_id == current_user.id,
+                    StudentQariRelationship.is_active == True
+                )
+            ).first()
+            if not relationship:
+                raise HTTPException(status_code=403, detail="Access denied: Recording does not belong to your students")
+        elif user_role != UserRole.ADMIN:
+            raise HTTPException(status_code=403, detail="Access denied")
+
+        session_path = session.cloud_storage_path or session.file_path
+        if not session_path:
+            raise HTTPException(status_code=404, detail="Recording file not found for this session")
+
+        temp_audio_path: Optional[Path] = None
+        audio_path: Path
+        if str(session_path).startswith("s3://"):
+            from cloud_storage import cloud_storage
+            import time
+
+            file_ext = Path(session.file_path or session_path).suffix or ".webm"
+            temp_audio_path = TEMP_DIR / f"ai_notes_{analysis_result_id}_{int(time.time() * 1000)}{file_ext}"
+            if not cloud_storage.download_file(str(session_path), temp_audio_path) or not temp_audio_path.exists():
+                raise HTTPException(status_code=404, detail="Recording file not found in S3")
+            audio_path = temp_audio_path
+        else:
+            candidate_path = Path(str(session_path))
+            if not candidate_path.is_absolute():
+                potential_paths = [
+                    UPLOADS_DIR / "temp_audio" / candidate_path.name,
+                    TEMP_DIR / candidate_path.name,
+                    candidate_path,
+                ]
+                candidate_path = next((p for p in potential_paths if p.exists()), candidate_path)
+            if not candidate_path.exists():
+                raise HTTPException(status_code=404, detail="Recording file not found on server")
+            audio_path = candidate_path
+
+        try:
+            text_segments = analysis.ayat_timing if isinstance(analysis.ayat_timing, list) else analysis.segments
+            quran_correctness = evaluate_quran_correctness(
+                audio_path,
+                text_segments,
+                float(analysis.score),
+            )
+            ai_notes = build_ai_recitation_notes(
+                quran_correctness,
+                float(analysis.score),
+                analysis.score_breakdown,
+                analysis.segments,
+            )
+            return {
+                "analysis_result_id": str(analysis.id),
+                "session_id": str(session.id),
+                "quranCorrectness": quran_correctness,
+                "aiNotes": ai_notes,
+            }
+        finally:
+            if temp_audio_path:
+                try:
+                    temp_audio_path.unlink(missing_ok=True)
+                except Exception as cleanup_error:
+                    logger.warning("Could not delete AI notes temp audio: %s", cleanup_error)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error generating analysis AI notes: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 

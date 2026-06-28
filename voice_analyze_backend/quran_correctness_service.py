@@ -100,9 +100,9 @@ def should_apply_score_cap() -> bool:
 
 def get_quran_correctness_timeout_seconds() -> float:
     try:
-        return max(1.0, float(os.getenv("QURAN_CORRECTNESS_TIMEOUT_SECONDS", "6")))
+        return max(1.0, float(os.getenv("QURAN_CORRECTNESS_TIMEOUT_SECONDS", "3")))
     except ValueError:
-        return 6.0
+        return 3.0
 
 
 def build_expected_text(text_segments: Optional[Sequence[Dict[str, Any]]]) -> str:
