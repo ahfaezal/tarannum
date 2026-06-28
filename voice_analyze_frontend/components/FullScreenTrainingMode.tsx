@@ -183,6 +183,14 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
     onClose();
   }, [onClose]);
 
+  const handleRecordingCancel = React.useCallback(() => {
+    setShowCountdown(false);
+    if (isRecordingSession) {
+      onRecordingStop?.();
+    }
+    onClose();
+  }, [isRecordingSession, onClose, onRecordingStop]);
+
   const handleCountdownComplete = React.useCallback(() => {
     setShowCountdown(false);
     onPracticeStart?.();
@@ -407,6 +415,8 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
     viewport.width <= 1400 &&
     isLandscape;
   const compactControls = isMobile || isClassroomLayout || (isTablet && isLandscape);
+  const isPracticeContext = fullscreenContext === "practice";
+  const isRecordingContext = fullscreenContext === "recording";
   const activeAyahIndex = ayatTiming.reduce((activeIndex, ayah, index) => {
     if (currentTime >= ayah.start && currentTime < ayah.end) {
       return index;
@@ -602,7 +612,7 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
               theme={currentTheme}
               compact={isClassroomLayout}
             />
-            {isClassroomLayout && (
+            {isClassroomLayout && isPracticeContext && (
               <div
                 className={`mt-1 flex w-full max-w-6xl flex-shrink-0 items-center justify-center gap-2 self-center rounded-lg border ${currentTheme.border} ${currentTheme.controlsBg} px-3 py-1.5 text-xs ${currentTheme.text}`}
                 aria-label='Ayah selector placeholder'
@@ -655,7 +665,7 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
           {/* Practice Controls Group */}
           <div className='flex items-center gap-2'>
             {/* Practice Mode Toggle */}
-            {fullscreenContext === "practice" &&
+            {isPracticeContext &&
               onPracticeStart &&
               onPracticeStop && (
               <button
@@ -724,7 +734,7 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
           </div>
 
           {/* Recording Controls Group */}
-          {fullscreenContext === "recording" &&
+          {isRecordingContext &&
             (onRecordingStart || onRecordingStop) && (
             <div className='flex items-center gap-2'>
               <button
@@ -759,12 +769,13 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
           )}
 
           {/* Divider */}
-          {(isPracticeMode || practiceAudioUrl || isRecordingSession) && (
+          {((isPracticeContext && (isPracticeMode || practiceAudioUrl)) ||
+            (isRecordingContext && isRecordingSession)) && (
             <div className='h-8 w-px bg-slate-600/50'></div>
           )}
 
           {/* Recorded Student Voice Audio Controls */}
-          {practiceAudioUrl && !isPracticeMode && (
+          {isPracticeContext && practiceAudioUrl && !isPracticeMode && (
             <div className='flex items-center gap-2'>
               <div className='flex items-center gap-1 px-2 py-1 rounded bg-purple-600/20 border border-purple-500/30'>
                 <span className='text-xs text-purple-300 font-medium'>
@@ -811,12 +822,12 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
           )}
 
           {/* Divider for Reference Audio */}
-          {referencePitch.length > 0 && (
+          {isPracticeContext && referencePitch.length > 0 && (
             <div className='h-8 w-px bg-slate-600/50'></div>
           )}
 
           {/* Reference Audio Playback Controls - Always Available */}
-          {referencePitch.length > 0 && (
+          {isPracticeContext && referencePitch.length > 0 && (
             <div className='flex items-center gap-2'>
               <div className='flex items-center gap-1 px-2 py-1 rounded bg-blue-600/20 border border-blue-500/30'>
                 <span className='text-xs text-blue-300 font-medium'>
@@ -900,7 +911,7 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
             </div>
           )}
 
-          {isClassroomLayout && (
+          {isClassroomLayout && isPracticeContext && (
             <div className='flex items-center gap-1 rounded-lg border border-slate-600/40 bg-slate-700/30 px-1.5 py-1'>
               {[
                 { label: "Slow", value: 0.75 },
@@ -931,16 +942,28 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
             </div>
           )}
 
-          {/* Exit Full-Screen Button */}
+          {/* Exit / Cancel Button */}
           <div className={`${isClassroomLayout ? "ml-1 pl-2" : "ml-2 sm:ml-4 pl-2 sm:pl-4"} border-l border-slate-600/50`}>
-            <button
-              onClick={handleCloseWithCountdownCancel}
-              className={`${isClassroomLayout ? "h-10 w-10 min-h-[40px] min-w-[40px]" : "w-11 h-11 min-h-[44px] min-w-[44px]"} flex items-center justify-center rounded-full bg-red-600 hover:bg-red-700 text-white transition-colors shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-red-400`}
-              title='Exit Full-Screen (ESC)'
-              aria-label='Exit full-screen mode'
-            >
-              <X size={18} />
-            </button>
+            {isRecordingContext ? (
+              <button
+                type='button'
+                onClick={handleRecordingCancel}
+                className={`${isClassroomLayout ? "h-9 px-3" : "h-10 px-4"} flex items-center justify-center rounded-lg bg-red-600 hover:bg-red-700 text-sm font-semibold text-white transition-colors shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-red-400`}
+                title='Cancel recording'
+                aria-label='Cancel recording fullscreen'
+              >
+                Cancel
+              </button>
+            ) : (
+              <button
+                onClick={handleCloseWithCountdownCancel}
+                className={`${isClassroomLayout ? "h-10 w-10 min-h-[40px] min-w-[40px]" : "w-11 h-11 min-h-[44px] min-w-[44px]"} flex items-center justify-center rounded-full bg-red-600 hover:bg-red-700 text-white transition-colors shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-red-400`}
+                title='Exit Full-Screen (ESC)'
+                aria-label='Exit full-screen mode'
+              >
+                <X size={18} />
+              </button>
+            )}
           </div>
         </div>
 
