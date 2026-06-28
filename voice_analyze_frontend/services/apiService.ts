@@ -223,9 +223,7 @@ export const analyzeRecitation = async (
           start: typeof seg.start === "number" ? seg.start : 0,
           end: typeof seg.end === "number" ? seg.end : 0,
           score: normalized,
-          accuracy:
-            seg.accuracy ||
-            (normalized >= 80 ? "high" : normalized >= 50 ? "medium" : "low"),
+          accuracy: normalized >= 80 ? "high" : normalized >= 50 ? "medium" : "low",
         };
         if (seg.segmentId != null) result.segmentId = String(seg.segmentId);
         if (seg.normalized != null) result.normalized = normalized;
@@ -243,7 +241,7 @@ export const analyzeRecitation = async (
           start: 0,
           end: 0, // 0 indicates full duration in some UI logic, or we can leave it vague
           score: score,
-          accuracy: score > 80 ? "high" : score > 50 ? "medium" : "low",
+          accuracy: score >= 80 ? "high" : score >= 50 ? "medium" : "low",
         },
       ];
     }

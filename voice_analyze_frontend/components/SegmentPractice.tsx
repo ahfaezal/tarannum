@@ -17,6 +17,12 @@ interface SegmentPracticeProps {
   onSegmentComplete?: (segmentIndex: number) => void;
 }
 
+const getSegmentStatusLabel = (accuracy: "high" | "medium" | "low") => {
+  if (accuracy === "high") return "Strong";
+  if (accuracy === "medium") return "Developing";
+  return "Needs focus";
+};
+
 const SegmentPractice: React.FC<SegmentPracticeProps> = ({
   referenceUrl,
   studentBlob,
@@ -268,11 +274,11 @@ const SegmentPractice: React.FC<SegmentPracticeProps> = ({
       <div className='bg-amber-50 border border-amber-200 rounded-lg p-3'>
         <h3 className='font-semibold text-amber-800 mb-2 flex items-center gap-2'>
           <Target size={18} />
-          Adaptive Learning - Practice Low-Score Segments
+          Adaptive Learning - Focus Practice Segments
         </h3>
         <p className='text-sm text-amber-700 mb-4'>
-          Focus on segments that need improvement. Practice them individually to
-          master the recitation.
+          Focus on selected segments that can be improved. Practice them
+          individually to strengthen the recitation.
         </p>
 
         <button
@@ -322,8 +328,7 @@ const SegmentPractice: React.FC<SegmentPracticeProps> = ({
                     Segment {idx + 1} ({formatSegmentRange(segment)})
                   </div>
                   <div className='text-xs text-slate-500'>
-                    Score: {displayScore}% | {segment.accuracy.toUpperCase()}{" "}
-                    accuracy
+                    Score: {displayScore}% | {getSegmentStatusLabel(segment.accuracy)}
                   </div>
                 </div>
               </div>
