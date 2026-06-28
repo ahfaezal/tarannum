@@ -4446,8 +4446,8 @@ const TrainingStudio: React.FC = () => {
               </div>
 
               <div className='space-y-6 flex-grow'>
-                <div className='bg-cyan-50 p-4 rounded-xl border border-cyan-200'>
-                  <div className='flex items-center gap-2 mb-3'>
+                <div className='bg-cyan-50 p-4 sm:p-5 rounded-xl border border-cyan-200'>
+                  <div className='flex items-center gap-2 mb-4'>
                     <Info className='w-4 h-4 text-cyan-700' />
                     <h4 className='text-xs font-bold text-cyan-800 uppercase tracking-wider'>
                       {analysisResult.aiNotes?.title || "Nota Bimbingan AI"}
@@ -4456,17 +4456,17 @@ const TrainingStudio: React.FC = () => {
 
                   {analysisResult.aiNotes ? (
                     <>
-                      <p className='text-sm text-slate-700 leading-relaxed'>
+                      <p className='text-sm text-slate-700 leading-7'>
                         {analysisResult.aiNotes.summary}
                       </p>
 
                       {analysisResult.aiNotes.corrections &&
                         analysisResult.aiNotes.corrections.length > 0 && (
-                          <div className='mt-3'>
-                            <h6 className='text-xs font-semibold text-cyan-900 uppercase mb-2'>
+                          <div className='mt-4'>
+                            <h6 className='text-xs font-semibold text-cyan-900 uppercase mb-2.5'>
                               Perkara untuk disemak
                             </h6>
-                            <ul className='list-disc list-inside space-y-1 text-sm text-slate-600 ml-2'>
+                            <ul className='list-disc space-y-2 pl-5 text-sm text-slate-600 leading-6'>
                               {analysisResult.aiNotes.corrections.map(
                                 (item, idx) => (
                                   <li key={idx}>{item}</li>
@@ -4478,11 +4478,11 @@ const TrainingStudio: React.FC = () => {
 
                       {analysisResult.aiNotes.practiceAdvice &&
                         analysisResult.aiNotes.practiceAdvice.length > 0 && (
-                          <div className='mt-3'>
-                            <h6 className='text-xs font-semibold text-cyan-900 uppercase mb-2'>
+                          <div className='mt-4'>
+                            <h6 className='text-xs font-semibold text-cyan-900 uppercase mb-2.5'>
                               Cadangan latihan
                             </h6>
-                            <ul className='list-disc list-inside space-y-1 text-sm text-slate-600 ml-2'>
+                            <ul className='list-disc space-y-2 pl-5 text-sm text-slate-600 leading-6'>
                               {analysisResult.aiNotes.practiceAdvice.map(
                                 (item, idx) => (
                                   <li key={idx}>{item}</li>

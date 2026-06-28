@@ -286,7 +286,7 @@ def build_ai_recitation_notes(
             summary = "Semakan AI mengesan beberapa perbezaan pada bacaan. Gunakan nota ini sebagai panduan awal sebelum ulang latihan."
 
         if isinstance(match_score, (int, float)) and match_score < 80:
-            corrections.append("Pastikan ayat yang dibaca sama dengan ayat rujukan sebelum menekan Score Mimic.")
+            corrections.append("Pastikan ayat yang dibaca sama dengan ayat rujukan sebelum menekan butang skor.")
             practice_advice.append("Dengar reference audio sekali pada kelajuan perlahan, kemudian ulang ayat yang sama tanpa mengejar alunan dahulu.")
 
         if critical_errors:
