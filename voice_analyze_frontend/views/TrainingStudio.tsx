@@ -4491,6 +4491,23 @@ const TrainingStudio: React.FC = () => {
                             </ul>
                           </div>
                         )}
+
+                      {analysisResult.quranCorrectness?.status === "error" && (
+                        <div className='mt-4 space-y-2'>
+                          <button
+                            type='button'
+                            onClick={handleGenerateAiNotes}
+                            disabled={isGeneratingAiNotes || !analysisResult.analysisResultId}
+                            className='inline-flex items-center gap-2 rounded-lg bg-cyan-700 px-3 py-2 text-sm font-semibold text-white transition hover:bg-cyan-800 disabled:cursor-not-allowed disabled:opacity-60'
+                          >
+                            <RefreshCw className={`h-4 w-4 ${isGeneratingAiNotes ? "animate-spin" : ""}`} />
+                            {isGeneratingAiNotes ? "Menjana Semula..." : "Cuba Jana Semula"}
+                          </button>
+                          {aiNotesError && (
+                            <p className='text-xs text-red-600'>{aiNotesError}</p>
+                          )}
+                        </div>
+                      )}
                     </>
                   ) : (
                     <div className='space-y-3'>

@@ -100,9 +100,25 @@ def should_apply_score_cap() -> bool:
 
 def get_quran_correctness_timeout_seconds() -> float:
     try:
-        return max(1.0, float(os.getenv("QURAN_CORRECTNESS_TIMEOUT_SECONDS", "3")))
+        return max(5.0, float(os.getenv("QURAN_CORRECTNESS_TIMEOUT_SECONDS", "20")))
     except ValueError:
-        return 3.0
+        return 20.0
+
+
+def get_transcription_model_candidates() -> List[str]:
+    primary_model = os.getenv("OPENAI_TRANSCRIPTION_MODEL", "gpt-4o-transcribe").strip()
+    fallback_models = os.getenv(
+        "OPENAI_TRANSCRIPTION_FALLBACK_MODELS",
+        "gpt-4o-mini-transcribe,whisper-1",
+    )
+    candidates = [primary_model]
+    candidates.extend(model.strip() for model in fallback_models.split(",") if model.strip())
+
+    unique_candidates: List[str] = []
+    for model in candidates:
+        if model and model not in unique_candidates:
+            unique_candidates.append(model)
+    return unique_candidates
 
 
 def build_expected_text(text_segments: Optional[Sequence[Dict[str, Any]]]) -> str:
@@ -143,7 +159,6 @@ def transcribe_arabic_audio(audio_path: Path) -> str:
     if OpenAI is None:
         raise RuntimeError("openai package is not installed")
 
-    model = os.getenv("OPENAI_TRANSCRIPTION_MODEL", "gpt-4o-transcribe")
     client = OpenAI(
         api_key=os.getenv("OPENAI_API_KEY"),
         timeout=get_quran_correctness_timeout_seconds(),
@@ -154,18 +169,37 @@ def transcribe_arabic_audio(audio_path: Path) -> str:
         "that were recited. Do not translate. Do not add commentary."
     )
 
-    with audio_path.open("rb") as audio_file:
-        transcription = client.audio.transcriptions.create(
-            model=model,
-            file=audio_file,
-            language="ar",
-            prompt=prompt,
-            response_format="text",
-        )
+    last_error: Optional[Exception] = None
+    for model in get_transcription_model_candidates():
+        try:
+            logger.info(
+                "Starting Quran transcription with model=%s file_size=%s timeout=%ss",
+                model,
+                audio_path.stat().st_size if audio_path.exists() else "unknown",
+                get_quran_correctness_timeout_seconds(),
+            )
+            with audio_path.open("rb") as audio_file:
+                transcription = client.audio.transcriptions.create(
+                    model=model,
+                    file=audio_file,
+                    language="ar",
+                    prompt=prompt,
+                    response_format="text",
+                )
 
-    if isinstance(transcription, str):
-        return transcription.strip()
-    return str(transcription).strip()
+            if isinstance(transcription, str):
+                return transcription.strip()
+            return str(transcription).strip()
+        except Exception as exc:
+            last_error = exc
+            logger.warning(
+                "Quran transcription failed with model=%s: %s",
+                model,
+                exc,
+                exc_info=True,
+            )
+
+    raise RuntimeError(f"OpenAI transcription failed for all configured models: {last_error}")
 
 
 def detect_critical_letter_errors(expected: str, actual: str, limit: int = 12) -> List[Dict[str, Any]]:
