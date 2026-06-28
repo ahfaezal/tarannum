@@ -2388,6 +2388,43 @@ async def generate_analysis_ai_notes(
 
         try:
             text_segments = analysis.ayat_timing if isinstance(analysis.ayat_timing, list) else analysis.segments
+            text_source = "analysis"
+            has_text_segments = bool(
+                text_segments
+                and any(
+                    isinstance(segment, dict)
+                    and str(segment.get("text", "")).strip()
+                    for segment in text_segments
+                )
+            )
+
+            if not has_text_segments and session.reference_id:
+                from database import TextSegment
+
+                db_text_segments = (
+                    db.query(TextSegment)
+                    .filter(TextSegment.reference_id == session.reference_id)
+                    .order_by(TextSegment.start.asc())
+                    .all()
+                )
+                text_segments = [
+                    {
+                        "text": segment.text,
+                        "start": segment.start,
+                        "end": segment.end,
+                    }
+                    for segment in db_text_segments
+                    if segment.text and segment.text.strip()
+                ]
+                text_source = "reference.text_segments"
+
+            logger.info(
+                "AI notes text source=%s reference_id=%s segment_count=%d",
+                text_source,
+                session.reference_id,
+                len(text_segments or []),
+            )
+
             quran_correctness = evaluate_quran_correctness(
                 audio_path,
                 text_segments,
