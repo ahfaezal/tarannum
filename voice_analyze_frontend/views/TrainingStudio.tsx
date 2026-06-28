@@ -1922,7 +1922,14 @@ const TrainingStudio: React.FC = () => {
           : current
       );
     } catch (error: any) {
-      setAiNotesError(error?.message || "Nota AI tidak dapat dijana buat masa ini.");
+      const message = String(error?.message || "");
+      setAiNotesError(
+        message.includes("403")
+          ? "Nota AI memerlukan akaun yang dibenarkan untuk melihat rakaman ini."
+          : message.includes("404")
+          ? "Rakaman atau keputusan analisis tidak ditemui untuk jana Nota AI."
+          : "Nota AI tidak dapat dijana buat masa ini. Score utama masih sah dan boleh digunakan."
+      );
     } finally {
       setIsGeneratingAiNotes(false);
     }
@@ -4487,9 +4494,17 @@ const TrainingStudio: React.FC = () => {
                     </>
                   ) : (
                     <div className='space-y-3'>
-                      <p className='text-sm text-slate-700 leading-relaxed'>
-                        Score telah dijana. Klik butang di bawah jika mahu analisis AI tambahan tentang bacaan.
-                      </p>
+                      <div className='text-sm text-slate-700 leading-relaxed'>
+                        <p>Analisis skor telah tersedia.</p>
+                        <p className='mt-2'>
+                          Tekan Jana Nota AI untuk mendapatkan ulasan terperinci mengenai:
+                        </p>
+                        <ul className='mt-2 list-disc space-y-1 pl-5'>
+                          <li>Ketepatan bacaan</li>
+                          <li>Kekuatan dan kelemahan bacaan</li>
+                          <li>Cadangan latihan yang sesuai</li>
+                        </ul>
+                      </div>
                       <button
                         type='button'
                         onClick={handleGenerateAiNotes}
@@ -4499,6 +4514,11 @@ const TrainingStudio: React.FC = () => {
                         <RefreshCw className={`h-4 w-4 ${isGeneratingAiNotes ? "animate-spin" : ""}`} />
                         {isGeneratingAiNotes ? "Menjana Nota AI..." : "Jana Nota AI"}
                       </button>
+                      {isGeneratingAiNotes && (
+                        <p className='text-xs text-cyan-800'>
+                          Sedang menyemak rakaman. Score utama tidak berubah semasa proses ini.
+                        </p>
+                      )}
                       {aiNotesError && (
                         <p className='text-xs text-red-600'>{aiNotesError}</p>
                       )}
