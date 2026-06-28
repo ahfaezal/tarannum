@@ -5,6 +5,7 @@ import { ZoomIn, ZoomOut, RotateCcw, Maximize2 } from "lucide-react";
 
 const AUTO_FOLLOW_PLAYHEAD_RATIO = 0.425;
 const STUDENT_OVERLAY_START_GRACE_SECONDS = 1.0;
+const STUDENT_OVERLAY_END_GRACE_SECONDS = 0.9;
 const DOUBLE_TAP_MAX_DELAY_MS = 300;
 const DOUBLE_TAP_MAX_DISTANCE_PX = 24;
 const TAP_MOVE_THRESHOLD_PX = 8;
@@ -1147,10 +1148,15 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
             : isRecording
             ? latestStudentTime
             : currentTime || 0;
-        const maxRenderTime =
+        const rawMaxRenderTime =
           renderCursorTime && isFinite(renderCursorTime)
             ? renderCursorTime + 0.03
             : Infinity;
+        const studentRenderEndTime =
+          referenceDuration && isFinite(referenceDuration)
+            ? Math.max(0, referenceDuration - STUDENT_OVERLAY_END_GRACE_SECONDS)
+            : Infinity;
+        const maxRenderTime = Math.min(rawMaxRenderTime, studentRenderEndTime);
         const visibleStudentPitch = studentPitch.filter(
           (p) => p.time <= maxRenderTime
         );
