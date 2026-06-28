@@ -1750,6 +1750,26 @@ const TrainingStudio: React.FC = () => {
     }, 400);
   };
 
+  useEffect(() => {
+    if (!isRecording || !isRecordingRef.current) {
+      return;
+    }
+
+    const duration = referenceDurationRef.current || referenceDuration;
+    if (!duration || duration <= 0 || recordingTime <= 0) {
+      return;
+    }
+
+    const stopThreshold = Math.max(0, duration - 0.15);
+    if (recordingTime >= stopThreshold) {
+      console.log(
+        "[Recording] Reference duration reached - auto-stopping recording",
+        { recordingTime, duration }
+      );
+      handleRecordingStop();
+    }
+  }, [isRecording, recordingTime, referenceDuration]);
+
   const handleAnalyze = async () => {
     if (!studentBlob) return;
     setIsAnalyzing(true);
