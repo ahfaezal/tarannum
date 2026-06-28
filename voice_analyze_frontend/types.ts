@@ -98,6 +98,36 @@ export interface TrainingFeedback {
   suggestions?: string[]; // NEW: Specific improvement suggestions
 }
 
+export interface AIRecitationNotes {
+  title?: string;
+  summary: string;
+  positives?: string[];
+  corrections?: string[];
+  practiceAdvice?: string[];
+}
+
+export interface QuranCorrectnessResult {
+  enabled: boolean;
+  status: string;
+  expectedText?: string;
+  transcript?: string;
+  normalizedExpected?: string;
+  normalizedTranscript?: string;
+  matchScore?: number | null;
+  criticalLetterErrors?: {
+    expected?: string;
+    actual?: string;
+    expectedIndex?: number;
+    actualIndex?: number;
+    type?: string;
+  }[];
+  scoreCap?: number | null;
+  originalScore?: number | null;
+  adjustedScore?: number | null;
+  applied?: boolean;
+  message?: string;
+}
+
 export interface PronunciationAlert {
   time: number;
   expected: string; // Expected Arabic character
@@ -130,6 +160,8 @@ export interface AnalysisResult {
   pitchData?: PitchDataResponse; // Optional pitch data from backend
   ayatTiming?: AyahTiming[]; // Optional ayah text with timing
   pronunciationAlerts?: PronunciationAlert[]; // Beta: Pronunciation confusion alerts
+  quranCorrectness?: QuranCorrectnessResult;
+  aiNotes?: AIRecitationNotes;
   scoreBreakdown?: {
     pitch: number; // Pitch accuracy (0-100)
     timing: number; // Timing/rhythm (0-100)

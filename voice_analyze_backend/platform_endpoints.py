@@ -16,6 +16,7 @@ from qari_service import qari_service
 from progress_service import progress_service
 from db_reference_library import db_reference_library
 from db_session_service import db_session_service
+from selected_recording_service import selected_recording_service
 import logging
 
 logger = logging.getLogger(__name__)
@@ -296,6 +297,78 @@ async def get_student_details(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/qari/students/{student_id}/selected-recordings")
+async def get_qari_student_selected_recordings(
+    student_id: str,
+    reference_id: Optional[str] = None,
+    current_user: User = Depends(get_current_qari_user),
+    db: Session = Depends(get_db)
+):
+    """Get curated lowest/median/highest recordings for one assigned student."""
+    try:
+        from database import StudentQariRelationship
+        from uuid import UUID
+
+        student_uuid = UUID(student_id) if isinstance(student_id, str) else student_id
+        relationship = db.query(StudentQariRelationship).filter(
+            and_(
+                StudentQariRelationship.student_id == student_uuid,
+                StudentQariRelationship.qari_id == current_user.id,
+                StudentQariRelationship.is_active == True
+            )
+        ).first()
+
+        if not relationship:
+            raise HTTPException(status_code=403, detail="Student not found or not assigned to this Qari")
+
+        return selected_recording_service.get_student_selected_recordings(
+            student_id=student_id,
+            reference_id=reference_id,
+            db=db,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting Qari selected recordings: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/qari/students/{student_id}/selected-recordings/rebuild")
+async def rebuild_qari_student_selected_recordings(
+    student_id: str,
+    reference_id: Optional[str] = None,
+    current_user: User = Depends(get_current_qari_user),
+    db: Session = Depends(get_db)
+):
+    """Rebuild selected recording slots for one assigned student from existing scoring history."""
+    try:
+        from database import StudentQariRelationship
+        from uuid import UUID
+
+        student_uuid = UUID(student_id) if isinstance(student_id, str) else student_id
+        relationship = db.query(StudentQariRelationship).filter(
+            and_(
+                StudentQariRelationship.student_id == student_uuid,
+                StudentQariRelationship.qari_id == current_user.id,
+                StudentQariRelationship.is_active == True
+            )
+        ).first()
+
+        if not relationship:
+            raise HTTPException(status_code=403, detail="Student not found or not assigned to this Qari")
+
+        return selected_recording_service.rebuild_student_selected_recordings(
+            student_id=student_id,
+            reference_id=reference_id,
+            db=db,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error rebuilding Qari selected recordings: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/qari/students/{student_id}/activity-summary")
 async def get_qari_student_activity_summary(
     student_id: str,
@@ -337,6 +410,42 @@ async def get_qari_student_activity_summary(
 
 
 # Student Endpoints
+@router.get("/student/selected-recordings")
+async def get_my_selected_recordings(
+    reference_id: Optional[str] = None,
+    current_user: User = Depends(get_current_student_user),
+    db: Session = Depends(get_db)
+):
+    """Get the current student's curated lowest/median/highest recordings."""
+    try:
+        return selected_recording_service.get_student_selected_recordings(
+            student_id=str(current_user.id),
+            reference_id=reference_id,
+            db=db,
+        )
+    except Exception as e:
+        logger.error(f"Error getting student selected recordings: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/student/selected-recordings/rebuild")
+async def rebuild_my_selected_recordings(
+    reference_id: Optional[str] = None,
+    current_user: User = Depends(get_current_student_user),
+    db: Session = Depends(get_db)
+):
+    """Rebuild the current student's selected recordings from existing scoring history."""
+    try:
+        return selected_recording_service.rebuild_student_selected_recordings(
+            student_id=str(current_user.id),
+            reference_id=reference_id,
+            db=db,
+        )
+    except Exception as e:
+        logger.error(f"Error rebuilding student selected recordings: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/student/assign-qari")
 async def assign_student_to_qari(
     request: AssignQariRequest,
@@ -643,6 +752,23 @@ async def get_qari_referral_info(
 
 
 # Admin Endpoints
+@router.post("/admin/selected-recordings/backfill")
+async def admin_backfill_selected_recordings(
+    limit_students: Optional[int] = None,
+    current_user: User = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Admin maintenance endpoint to rebuild selected recording slots for existing data."""
+    try:
+        return selected_recording_service.rebuild_all_selected_recordings(
+            db=db,
+            limit_students=limit_students,
+        )
+    except Exception as e:
+        logger.error(f"Error backfilling selected recordings: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/admin/approve-qari/{qari_id}")
 async def approve_qari(
     qari_id: str,

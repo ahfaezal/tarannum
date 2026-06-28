@@ -36,9 +36,12 @@ from reference_library import reference_library
 from db_reference_library import db_reference_library
 from database import init_db, check_db_connection, get_db, User, UserRole
 from sqlalchemy.orm import Session
+from sqlalchemy import and_
 from db_session_service import db_session_service
 from qari_service import qari_service
+from quran_correctness_service import build_ai_recitation_notes, evaluate_quran_correctness
 from progress_service import progress_service
+from selected_recording_service import selected_recording_service
 from auth import get_current_user_optional, require_registered_user, get_current_admin_user
 from auth_endpoints import router as auth_router, debug_router as auth_debug_router, log_email_config_startup
 from platform_endpoints import router as platform_router
@@ -841,6 +844,31 @@ async def score_performance(
             normalized_overall = max(0.0, min(100.0, float(final_score)))
             normalized_overall = round(normalized_overall, 2)
 
+            # Quran correctness gate runs after the existing audio similarity score.
+            # It must never modify raw audio, pitch data, segment data, or scoring engine internals.
+            quran_correctness = evaluate_quran_correctness(
+                user_path,
+                text_segments_for_scoring,
+                normalized_overall,
+            )
+            if quran_correctness.get("applied") and quran_correctness.get("adjustedScore") is not None:
+                normalized_overall = max(0.0, min(100.0, float(quran_correctness["adjustedScore"])))
+                normalized_overall = round(normalized_overall, 2)
+                final_score = normalized_overall
+                logger.info(
+                    "Quran correctness score cap applied: original=%s adjusted=%s reason=%s",
+                    quran_correctness.get("originalScore"),
+                    quran_correctness.get("adjustedScore"),
+                    quran_correctness.get("message"),
+                )
+
+            ai_notes = build_ai_recitation_notes(
+                quran_correctness,
+                normalized_overall,
+                score_breakdown,
+                validated_segments,
+            )
+
             # Prepare response
             response_data = {
                 "score": normalized_overall,
@@ -852,7 +880,9 @@ async def score_performance(
                 "regions": regions,
                 "ayatTiming": ayah_timing,
                 "feedback": training_feedback,
-                "scoreBreakdown": score_breakdown
+                "scoreBreakdown": score_breakdown,
+                "quranCorrectness": quran_correctness,
+                "aiNotes": ai_notes
             }
 
             # Log final response structure for debugging
@@ -930,6 +960,19 @@ async def score_performance(
                             db=db
                         )
                         logger.info(f"✓ Saved analysis result to analysis_results table (ID: {analysis_result.id}, Session: {user_session.id})")
+
+                        # Maintain the curated lowest/median/highest student recording slots.
+                        try:
+                            selected_recording_service.update_selected_recordings_for_session(
+                                session_id=str(user_session.id),
+                                analysis_result_id=str(analysis_result.id),
+                                db=db,
+                            )
+                        except Exception as selected_recording_error:
+                            logger.error(
+                                f"Error updating selected recordings (non-fatal): {selected_recording_error}",
+                                exc_info=True,
+                            )
 
                         # Save student progress (only for students)
                         if user_role == UserRole.STUDENT and user_id:
@@ -2205,20 +2248,36 @@ async def get_session_audio(
         elif user_role != UserRole.ADMIN:
             raise HTTPException(status_code=403, detail="Access denied")
 
-        # Construct file path
-        file_path = Path(session.file_path)
-        if not file_path.is_absolute():
-            # If relative path, assume it's in UPLOADS_DIR or TEMP_DIR
-            from main import UPLOADS_DIR, TEMP_DIR
-            potential_paths = [
-                UPLOADS_DIR / "temp_audio" / file_path.name,
-                TEMP_DIR / file_path.name,
-                file_path
-            ]
-            file_path = next((p for p in potential_paths if p.exists()), file_path)
+        # Construct file path. If the recording lives in S3, download a temporary
+        # copy after access control has passed. This keeps the audio endpoint as
+        # the single protected playback URL for Student/Qari/Admin.
+        session_path = session.cloud_storage_path or session.file_path
+        if not session_path:
+            raise HTTPException(status_code=404, detail="Recording file not found for this session")
 
-        if not file_path.exists():
-            raise HTTPException(status_code=404, detail="Recording file not found on server")
+        is_temp_session_audio = False
+        if str(session_path).startswith("s3://"):
+            from cloud_storage import cloud_storage
+            import time
+
+            file_ext = Path(session.file_path or session_path).suffix or ".webm"
+            file_path = TEMP_DIR / f"session_audio_{session_id}_{int(time.time() * 1000)}{file_ext}"
+            if not cloud_storage.download_file(str(session_path), file_path) or not file_path.exists():
+                raise HTTPException(status_code=404, detail="Recording file not found in S3")
+            is_temp_session_audio = True
+        else:
+            file_path = Path(session_path)
+            if not file_path.is_absolute():
+                # If relative path, assume it's in UPLOADS_DIR or TEMP_DIR
+                potential_paths = [
+                    UPLOADS_DIR / "temp_audio" / file_path.name,
+                    TEMP_DIR / file_path.name,
+                    file_path
+                ]
+                file_path = next((p for p in potential_paths if p.exists()), file_path)
+
+            if not file_path.exists():
+                raise HTTPException(status_code=404, detail="Recording file not found on server")
 
         # Determine media type from file extension
         ext = file_path.suffix.lower()
@@ -2230,6 +2289,16 @@ async def get_session_audio(
             '.webm': 'audio/webm'
         }
         media_type = media_type_map.get(ext, 'audio/mpeg')
+
+        if is_temp_session_audio:
+            from starlette.background import BackgroundTask
+
+            return FileResponse(
+                path=str(file_path),
+                media_type=media_type,
+                filename=file_path.name,
+                background=BackgroundTask(lambda p=file_path: p.unlink(missing_ok=True))
+            )
 
         return FileResponse(
             path=str(file_path),

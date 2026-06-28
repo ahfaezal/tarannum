@@ -1,10 +1,15 @@
 /**
  * Student Progress View - multi-surah infographic dashboard.
  */
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
+  getMySelectedRecordings,
   getStudentProgress,
   getStudentStatistics,
+  playSessionRecordingAudio,
+  ManagedRecordingAudio,
+  rebuildMySelectedRecordings,
+  SelectedRecordingsResponse,
   StudentProgress,
   StudentStatistics,
 } from "../services/platformService";
@@ -23,10 +28,13 @@ import {
   ChevronUp,
   Clock,
   Flame,
+  FileAudio,
   Lock,
   Mic,
   PlayCircle,
+  RefreshCw,
   Sparkles,
+  Square,
   Target,
   TrendingDown,
   TrendingUp,
@@ -216,6 +224,9 @@ const StudentProgressView: React.FC = () => {
   const [statistics, setStatistics] = useState<StudentStatistics | null>(null);
   const [activitySummary, setActivitySummary] =
     useState<StudentActivitySummary>(emptyActivitySummary);
+  const [selectedRecordings, setSelectedRecordings] =
+    useState<SelectedRecordingsResponse | null>(null);
+  const [selectedRecordingError, setSelectedRecordingError] = useState<string | null>(null);
   const [showAllAssessments, setShowAllAssessments] = useState(false);
   const [selectedReferenceId, setSelectedReferenceId] = useState("all");
   const [loading, setLoading] = useState(true);
@@ -229,18 +240,35 @@ const StudentProgressView: React.FC = () => {
     try {
       setLoading(true);
       setError(null);
-      const [progressData, statsData, activityData] = await Promise.all([
+      setSelectedRecordingError(null);
+      const [progressData, statsData, activityData, selectedRecordingData] = await Promise.all([
         getStudentProgress(50),
         getStudentStatistics(),
         getStudentActivitySummary(),
+        getMySelectedRecordings().catch((err) => {
+          setSelectedRecordingError(err.message || "Failed to load selected recordings");
+          return null;
+        }),
       ]);
       setProgress(progressData.progress);
       setStatistics(statsData);
       setActivitySummary(activityData);
+      setSelectedRecordings(selectedRecordingData);
     } catch (err: any) {
       setError(err.message || "Failed to load progress");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleRebuildSelectedRecordings = async () => {
+    setSelectedRecordingError(null);
+    try {
+      await rebuildMySelectedRecordings();
+      const rebuilt = await getMySelectedRecordings();
+      setSelectedRecordings(rebuilt);
+    } catch (err: any) {
+      setSelectedRecordingError(err.message || "Failed to rebuild selected recordings");
     }
   };
 
@@ -566,6 +594,13 @@ const StudentProgressView: React.FC = () => {
             </div>
           </div>
         </section>
+
+        <SelectedVoiceRecordingsCard
+          data={selectedRecordings}
+          error={selectedRecordingError}
+          onPlay={playSessionRecordingAudio}
+          onRebuild={handleRebuildSelectedRecordings}
+        />
 
         <section className="grid grid-cols-1 xl:grid-cols-5 gap-6 mb-8">
           <div className="xl:col-span-3 bg-white rounded-3xl shadow-md border border-slate-200 p-6">
@@ -1275,6 +1310,181 @@ const Bar: React.FC<{
       style={{ height }}
       title={title}
     />
+  );
+};
+
+const slotLabels: Record<"lowest" | "median" | "highest", string> = {
+  lowest: "Lowest Score",
+  median: "Middle Progress",
+  highest: "Highest Score",
+};
+
+const slotDescriptions: Record<"lowest" | "median" | "highest", string> = {
+  lowest: "Lowest mark kept for reflection",
+  median: "Closest to your usual level",
+  highest: "Best selected recitation",
+};
+
+const SelectedVoiceRecordingsCard: React.FC<{
+  data: SelectedRecordingsResponse | null;
+  error: string | null;
+  onPlay: (sessionId: string) => Promise<ManagedRecordingAudio>;
+  onRebuild: () => Promise<void>;
+}> = ({ data, error, onPlay, onRebuild }) => {
+  const [playingId, setPlayingId] = useState<string | null>(null);
+  const [loadingId, setLoadingId] = useState<string | null>(null);
+  const [isRebuilding, setIsRebuilding] = useState(false);
+  const activeAudioRef = useRef<ManagedRecordingAudio | null>(null);
+  const references = data?.references || [];
+  const hasRecordings = references.some((reference) =>
+    ["lowest", "median", "highest"].some(
+      (slot) => reference.recordings[slot as "lowest" | "median" | "highest"]
+    )
+  );
+
+  const stopActiveAudio = () => {
+    if (activeAudioRef.current) {
+      activeAudioRef.current.pause();
+      activeAudioRef.current.currentTime = 0;
+      activeAudioRef.current.cleanup();
+      activeAudioRef.current = null;
+    }
+    setPlayingId(null);
+    setLoadingId(null);
+  };
+
+  useEffect(() => () => stopActiveAudio(), []);
+
+  const handlePlay = async (sessionId: string) => {
+    if (playingId === sessionId || loadingId === sessionId) {
+      stopActiveAudio();
+      return;
+    }
+
+    try {
+      stopActiveAudio();
+      setLoadingId(sessionId);
+      const audio = await onPlay(sessionId);
+      activeAudioRef.current = audio;
+      setPlayingId(sessionId);
+      audio.addEventListener(
+        "ended",
+        () => {
+          if (activeAudioRef.current === audio) {
+            activeAudioRef.current = null;
+            setPlayingId(null);
+          }
+        },
+        { once: true }
+      );
+    } catch (err) {
+      stopActiveAudio();
+      throw err;
+    } finally {
+      setLoadingId(null);
+    }
+  };
+
+  const handleRebuild = async () => {
+    try {
+      setIsRebuilding(true);
+      await onRebuild();
+    } finally {
+      setIsRebuilding(false);
+    }
+  };
+
+  return (
+    <section className="bg-white rounded-3xl shadow-md border border-slate-200 p-6 mb-8">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between mb-5">
+        <div>
+          <h2 className="text-xl font-semibold text-slate-900 flex items-center gap-2">
+            <FileAudio className="w-5 h-5 text-cyan-600" />
+            Selected Voice Recordings
+          </h2>
+          <p className="text-sm text-slate-500">
+            Three student-only recordings are kept for reflection: lowest, middle and highest score.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={handleRebuild}
+          disabled={isRebuilding}
+          className="inline-flex items-center justify-center gap-2 rounded-xl border border-cyan-200 bg-cyan-50 px-3 py-2 text-sm font-semibold text-cyan-700 transition hover:bg-cyan-100 disabled:opacity-60"
+        >
+          <RefreshCw className={`h-4 w-4 ${isRebuilding ? "animate-spin" : ""}`} />
+          {isRebuilding ? "Refreshing" : "Refresh selection"}
+        </button>
+      </div>
+
+      {error ? (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+          {error}
+        </div>
+      ) : !hasRecordings ? (
+        <EmptyState
+          title="No selected recordings yet."
+          message="Complete scored recordings to unlock your lowest, middle and highest voice samples."
+        />
+      ) : (
+        <div className="space-y-4">
+          {references.map((reference) => (
+            <div key={reference.reference_id || "unknown"} className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+              <div className="mb-3">
+                <p className="font-semibold text-slate-900">
+                  {reference.reference?.title || getReferenceLabel(reference.reference_id || undefined)}
+                </p>
+                {reference.reference?.maqam && (
+                  <p className="text-xs text-slate-500">{reference.reference.maqam}</p>
+                )}
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                {(["lowest", "median", "highest"] as const).map((slot) => {
+                  const recording = reference.recordings[slot];
+                  return (
+                    <div key={slot} className="rounded-xl border border-white bg-white p-4 shadow-sm">
+                      <p className="text-xs font-bold uppercase tracking-wide text-slate-500">{slotLabels[slot]}</p>
+                      <p className="text-[11px] text-slate-400 mb-3">{slotDescriptions[slot]}</p>
+                      {recording ? (
+                        <>
+                          <p className="text-2xl font-bold text-slate-900 mb-1">{Math.round(recording.score)}%</p>
+                          {recording.created_at && (
+                            <p className="text-xs text-slate-500 mb-3">{formatDateTime(recording.created_at)}</p>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => handlePlay(recording.session_id)}
+                            disabled={loadingId === recording.session_id}
+                            className={`inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold text-white transition disabled:opacity-60 ${
+                              playingId === recording.session_id
+                                ? "bg-red-600 hover:bg-red-700"
+                                : "bg-cyan-600 hover:bg-cyan-700"
+                            }`}
+                          >
+                            {playingId === recording.session_id ? (
+                              <Square className="w-4 h-4" />
+                            ) : (
+                              <PlayCircle className="w-4 h-4" />
+                            )}
+                            {loadingId === recording.session_id
+                              ? "Loading"
+                              : playingId === recording.session_id
+                                ? "Stop"
+                                : "Play"}
+                          </button>
+                        </>
+                      ) : (
+                        <p className="text-sm text-slate-400">Not available yet</p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
   );
 };
 

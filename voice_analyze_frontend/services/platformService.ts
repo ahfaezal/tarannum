@@ -69,6 +69,44 @@ export interface StudentProgress {
   created_at: string;
 }
 
+export interface SelectedRecordingSlot {
+  slot_type: "lowest" | "median" | "highest";
+  score: number;
+  session_id: string;
+  analysis_result_id: string;
+  reference_id?: string | null;
+  audio_url: string;
+  duration?: number | null;
+  file_size?: number | null;
+  cloud_storage_path?: string | null;
+  storage_type?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface SelectedRecordingReference {
+  reference_id?: string | null;
+  reference?: {
+    id: string;
+    title: string;
+    maqam?: string | null;
+    filename?: string | null;
+  } | null;
+  recordings: Partial<Record<"lowest" | "median" | "highest", SelectedRecordingSlot>>;
+}
+
+export interface SelectedRecordingsResponse {
+  student_id: string;
+  references: SelectedRecordingReference[];
+  count: number;
+  storage_policy?: {
+    mode: string;
+    slots_per_student_reference: number;
+    slots: Array<"lowest" | "median" | "highest">;
+    deletes_audio: boolean;
+  };
+}
+
 export interface QariInfo {
   qari_id: string;
   qari_email: string;
@@ -96,7 +134,6 @@ export const getAvailableContent = async (): Promise<{
 
   return response.json();
 };
-
 /**
  * Qari: Add content to library
  */
@@ -870,6 +907,143 @@ export const getUsageMetrics = async (): Promise<UsageMetrics> => {
 
   if (!response.ok) {
     throw new Error("Failed to get usage metrics");
+  }
+
+  return response.json();
+};
+
+/**
+ * Student: Get curated lowest/median/highest recordings.
+ */
+export const getMySelectedRecordings = async (
+  referenceId?: string
+): Promise<SelectedRecordingsResponse> => {
+  const url = referenceId
+    ? `${API_URL}/api/platform/student/selected-recordings?reference_id=${encodeURIComponent(referenceId)}`
+    : `${API_URL}/api/platform/student/selected-recordings`;
+  const response = await fetch(url, {
+    headers: {
+      ...getAuthHeader(),
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: response.statusText }));
+    throw new Error(error.detail || "Failed to get selected recordings");
+  }
+
+  return response.json();
+};
+
+/**
+ * Qari: Get curated lowest/median/highest recordings for an assigned student.
+ */
+export const getQariStudentSelectedRecordings = async (
+  studentId: string,
+  referenceId?: string
+): Promise<SelectedRecordingsResponse> => {
+  const url = referenceId
+    ? `${API_URL}/api/platform/qari/students/${studentId}/selected-recordings?reference_id=${encodeURIComponent(referenceId)}`
+    : `${API_URL}/api/platform/qari/students/${studentId}/selected-recordings`;
+  const response = await fetch(url, {
+    headers: {
+      ...getAuthHeader(),
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: response.statusText }));
+    throw new Error(error.detail || "Failed to get selected recordings");
+  }
+
+  return response.json();
+};
+
+export type ManagedRecordingAudio = HTMLAudioElement & {
+  cleanup: () => void;
+};
+
+/**
+ * Play a protected user session recording. The endpoint requires auth headers,
+ * so dashboard buttons fetch the blob first instead of using a raw audio src.
+ */
+export const playSessionRecordingAudio = async (
+  sessionId: string
+): Promise<ManagedRecordingAudio> => {
+  const response = await fetch(`${API_URL}/api/sessions/${sessionId}/audio`, {
+    headers: {
+      ...getAuthHeader(),
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: response.statusText }));
+    throw new Error(error.detail || "Failed to load recording audio");
+  }
+
+  const audioBlob = await response.blob();
+  const objectUrl = URL.createObjectURL(audioBlob);
+  const audio = new Audio(objectUrl) as ManagedRecordingAudio;
+  let isCleanedUp = false;
+  audio.cleanup = () => {
+    if (isCleanedUp) {
+      return;
+    }
+    isCleanedUp = true;
+    URL.revokeObjectURL(objectUrl);
+  };
+  audio.addEventListener("ended", audio.cleanup, { once: true });
+  audio.addEventListener("error", audio.cleanup, { once: true });
+  await audio.play();
+  return audio;
+};
+
+export interface SelectedRecordingRebuildResult {
+  student_id?: string;
+  reference_id?: string | null;
+  references_rebuilt?: number;
+  slots_updated?: number;
+  students_rebuilt?: number;
+}
+
+export const rebuildMySelectedRecordings = async (
+  referenceId?: string
+): Promise<SelectedRecordingRebuildResult> => {
+  const url = referenceId
+    ? `${API_URL}/api/platform/student/selected-recordings/rebuild?reference_id=${encodeURIComponent(referenceId)}`
+    : `${API_URL}/api/platform/student/selected-recordings/rebuild`;
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      ...getAuthHeader(),
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: response.statusText }));
+    throw new Error(error.detail || "Failed to rebuild selected recordings");
+  }
+
+  return response.json();
+};
+
+export const rebuildQariStudentSelectedRecordings = async (
+  studentId: string,
+  referenceId?: string
+): Promise<SelectedRecordingRebuildResult> => {
+  const url = referenceId
+    ? `${API_URL}/api/platform/qari/students/${studentId}/selected-recordings/rebuild?reference_id=${encodeURIComponent(referenceId)}`
+    : `${API_URL}/api/platform/qari/students/${studentId}/selected-recordings/rebuild`;
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      ...getAuthHeader(),
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: response.statusText }));
+    throw new Error(error.detail || "Failed to rebuild selected recordings");
   }
 
   return response.json();

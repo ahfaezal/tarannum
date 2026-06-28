@@ -1,9 +1,9 @@
 /**
  * Qari Dashboard - View students, scores, and progress.
  */
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { getQariStudents, getQariContent, getQariCommissionStats, getQariReferralInfo, getStudentDetails, getQariStudentActivitySummary, StudentDetails, QariStudentActivitySummary, deleteQariContent } from "../services/platformService";
+import { getQariStudents, getQariContent, getQariCommissionStats, getQariReferralInfo, getStudentDetails, getQariStudentActivitySummary, getQariStudentSelectedRecordings, playSessionRecordingAudio, ManagedRecordingAudio, rebuildQariStudentSelectedRecordings, StudentDetails, QariStudentActivitySummary, SelectedRecordingsResponse, deleteQariContent } from "../services/platformService";
 import { StudentInfo, QariContent } from "../services/platformService";
 import {
   Activity,
@@ -18,9 +18,12 @@ import {
   Download,
   Edit,
   FileAudio,
+  PlayCircle,
   Link as LinkIcon,
   QrCode,
+  RefreshCw,
   Sparkles,
+  Square,
   Target,
   Trash2,
   TrendingDown,
@@ -49,6 +52,8 @@ const QariDashboard: React.FC = () => {
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   const [studentDetails, setStudentDetails] = useState<StudentDetails | null>(null);
   const [studentActivitySummary, setStudentActivitySummary] = useState<QariStudentActivitySummary | null>(null);
+  const [selectedRecordings, setSelectedRecordings] = useState<SelectedRecordingsResponse | null>(null);
+  const [selectedRecordingError, setSelectedRecordingError] = useState<string | null>(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [studentFilter, setStudentFilter] = useState<string>("all");
   const [showFilterDropdown, setShowFilterDropdown] = useState(false);
@@ -118,15 +123,22 @@ const QariDashboard: React.FC = () => {
     setLoadingDetails(true);
     setStudentDetails(null);
     setStudentActivitySummary(null);
+    setSelectedRecordings(null);
+    setSelectedRecordingError(null);
     setShowAllRecordings(false);
     setShowAllProgress(false);
     try {
-      const [details, activitySummary] = await Promise.all([
+      const [details, activitySummary, selectedRecordingData] = await Promise.all([
         getStudentDetails(studentId),
         getQariStudentActivitySummary(studentId).catch(() => null),
+        getQariStudentSelectedRecordings(studentId).catch((err) => {
+          setSelectedRecordingError(err.message || "Failed to load selected recordings");
+          return null;
+        }),
       ]);
       setStudentDetails(details);
       setStudentActivitySummary(activitySummary);
+      setSelectedRecordings(selectedRecordingData);
     } catch (err: any) {
       setError(err.message || "Failed to load student details");
     } finally {
@@ -134,10 +146,27 @@ const QariDashboard: React.FC = () => {
     }
   };
 
+  const handleRebuildStudentSelectedRecordings = async () => {
+    if (!selectedStudentId) {
+      return;
+    }
+
+    setSelectedRecordingError(null);
+    try {
+      await rebuildQariStudentSelectedRecordings(selectedStudentId);
+      const rebuilt = await getQariStudentSelectedRecordings(selectedStudentId);
+      setSelectedRecordings(rebuilt);
+    } catch (err: any) {
+      setSelectedRecordingError(err.message || "Failed to rebuild selected recordings");
+    }
+  };
+
   const closeStudentDetails = () => {
     setSelectedStudentId(null);
     setStudentDetails(null);
     setStudentActivitySummary(null);
+    setSelectedRecordings(null);
+    setSelectedRecordingError(null);
     setShowAllRecordings(false);
     setShowAllProgress(false);
   };
@@ -1323,6 +1352,13 @@ const QariDashboard: React.FC = () => {
                     )}
                   </div>
 
+                  <SelectedStudentRecordingsPanel
+                    data={selectedRecordings}
+                    error={selectedRecordingError}
+                    onPlay={playSessionRecordingAudio}
+                    onRebuild={handleRebuildStudentSelectedRecordings}
+                  />
+
                   {/* Recordings */}
                   <div>
                     <h3 className="font-semibold text-gray-800 mb-3">
@@ -1502,6 +1538,165 @@ const QariDashboard: React.FC = () => {
         }}
       />
       </div>
+    </div>
+  );
+};
+
+
+const selectedSlotLabels: Record<"lowest" | "median" | "highest", string> = {
+  lowest: "Lowest",
+  median: "Middle",
+  highest: "Highest",
+};
+
+const SelectedStudentRecordingsPanel: React.FC<{
+  data: SelectedRecordingsResponse | null;
+  error: string | null;
+  onPlay: (sessionId: string) => Promise<ManagedRecordingAudio>;
+  onRebuild: () => Promise<void>;
+}> = ({ data, error, onPlay, onRebuild }) => {
+  const [playingId, setPlayingId] = useState<string | null>(null);
+  const [loadingId, setLoadingId] = useState<string | null>(null);
+  const [isRebuilding, setIsRebuilding] = useState(false);
+  const activeAudioRef = useRef<ManagedRecordingAudio | null>(null);
+  const references = data?.references || [];
+  const hasRecordings = references.some((reference) =>
+    (["lowest", "median", "highest"] as const).some((slot) => reference.recordings[slot])
+  );
+
+  const stopActiveAudio = () => {
+    if (activeAudioRef.current) {
+      activeAudioRef.current.pause();
+      activeAudioRef.current.currentTime = 0;
+      activeAudioRef.current.cleanup();
+      activeAudioRef.current = null;
+    }
+    setPlayingId(null);
+    setLoadingId(null);
+  };
+
+  useEffect(() => () => stopActiveAudio(), []);
+
+  const handlePlay = async (sessionId: string) => {
+    if (playingId === sessionId || loadingId === sessionId) {
+      stopActiveAudio();
+      return;
+    }
+
+    try {
+      stopActiveAudio();
+      setLoadingId(sessionId);
+      const audio = await onPlay(sessionId);
+      activeAudioRef.current = audio;
+      setPlayingId(sessionId);
+      audio.addEventListener(
+        "ended",
+        () => {
+          if (activeAudioRef.current === audio) {
+            activeAudioRef.current = null;
+            setPlayingId(null);
+          }
+        },
+        { once: true }
+      );
+    } catch (err) {
+      stopActiveAudio();
+      throw err;
+    } finally {
+      setLoadingId(null);
+    }
+  };
+
+  const handleRebuild = async () => {
+    try {
+      setIsRebuilding(true);
+      await onRebuild();
+    } finally {
+      setIsRebuilding(false);
+    }
+  };
+
+  return (
+    <div className="rounded-2xl border border-cyan-100 bg-cyan-50 p-5">
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div>
+          <h3 className="font-bold text-gray-900 flex items-center gap-2">
+            <FileAudio className="h-5 w-5 text-cyan-600" />
+            Selected Voice Recordings
+          </h3>
+          <p className="text-sm text-cyan-800">
+            Student-only audio selected as lowest, middle and highest score samples.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={handleRebuild}
+          disabled={isRebuilding}
+          className="inline-flex items-center gap-2 rounded-xl border border-cyan-200 bg-white px-3 py-2 text-xs font-semibold text-cyan-700 hover:bg-cyan-50 disabled:opacity-60"
+        >
+          <RefreshCw className={`h-4 w-4 ${isRebuilding ? "animate-spin" : ""}`} />
+          {isRebuilding ? "Refreshing" : "Refresh"}
+        </button>
+      </div>
+
+      {error ? (
+        <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">{error}</p>
+      ) : !hasRecordings ? (
+        <p className="text-sm text-cyan-800">No selected recordings yet.</p>
+      ) : (
+        <div className="space-y-3">
+          {references.map((reference) => (
+            <div key={reference.reference_id || "unknown"} className="rounded-xl bg-white p-4 shadow-sm">
+              <p className="font-semibold text-gray-900">
+                {reference.reference?.title || reference.reference_id || "Unknown Reference"}
+              </p>
+              <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
+                {(["lowest", "median", "highest"] as const).map((slot) => {
+                  const recording = reference.recordings[slot];
+                  return (
+                    <div key={slot} className="rounded-lg border border-slate-100 p-3">
+                      <p className="text-xs font-bold uppercase text-slate-500">{selectedSlotLabels[slot]}</p>
+                      {recording ? (
+                        <div className="mt-2 flex items-center justify-between gap-2">
+                          <div>
+                            <p className="text-lg font-bold text-slate-900">{Math.round(recording.score)}%</p>
+                            {recording.duration && (
+                              <p className="text-xs text-slate-500">{Math.round(recording.duration)}s</p>
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handlePlay(recording.session_id)}
+                            disabled={loadingId === recording.session_id}
+                            className={`inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-60 ${
+                              playingId === recording.session_id
+                                ? "bg-red-600 hover:bg-red-700"
+                                : "bg-cyan-600 hover:bg-cyan-700"
+                            }`}
+                          >
+                            {playingId === recording.session_id ? (
+                              <Square className="h-3.5 w-3.5" />
+                            ) : (
+                              <PlayCircle className="h-3.5 w-3.5" />
+                            )}
+                            {loadingId === recording.session_id
+                              ? "Loading"
+                              : playingId === recording.session_id
+                                ? "Stop"
+                                : "Play"}
+                          </button>
+                        </div>
+                      ) : (
+                        <p className="mt-2 text-sm text-slate-400">Not available</p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 };

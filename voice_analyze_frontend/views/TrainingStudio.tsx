@@ -4381,6 +4381,51 @@ const TrainingStudio: React.FC = () => {
               </div>
 
               <div className='space-y-6 flex-grow'>
+                {analysisResult.aiNotes && (
+                  <div className='bg-cyan-50 p-4 rounded-xl border border-cyan-200'>
+                    <div className='flex items-center gap-2 mb-3'>
+                      <Info className='w-4 h-4 text-cyan-700' />
+                      <h4 className='text-xs font-bold text-cyan-800 uppercase tracking-wider'>
+                        {analysisResult.aiNotes.title || "Nota Bimbingan AI"}
+                      </h4>
+                    </div>
+                    <p className='text-sm text-slate-700 leading-relaxed'>
+                      {analysisResult.aiNotes.summary}
+                    </p>
+
+                    {analysisResult.aiNotes.corrections &&
+                      analysisResult.aiNotes.corrections.length > 0 && (
+                        <div className='mt-3'>
+                          <h6 className='text-xs font-semibold text-cyan-900 uppercase mb-2'>
+                            Perkara untuk disemak
+                          </h6>
+                          <ul className='list-disc list-inside space-y-1 text-sm text-slate-600 ml-2'>
+                            {analysisResult.aiNotes.corrections.map(
+                              (item, idx) => (
+                                <li key={idx}>{item}</li>
+                              )
+                            )}
+                          </ul>
+                        </div>
+                      )}
+
+                    {analysisResult.aiNotes.practiceAdvice &&
+                      analysisResult.aiNotes.practiceAdvice.length > 0 && (
+                        <div className='mt-3'>
+                          <h6 className='text-xs font-semibold text-cyan-900 uppercase mb-2'>
+                            Cadangan latihan
+                          </h6>
+                          <ul className='list-disc list-inside space-y-1 text-sm text-slate-600 ml-2'>
+                            {analysisResult.aiNotes.practiceAdvice.map(
+                              (item, idx) => (
+                                <li key={idx}>{item}</li>
+                              )
+                            )}
+                          </ul>
+                        </div>
+                      )}
+                  </div>
+                )}
                 <div className='bg-slate-50 p-4 rounded-xl border border-slate-200'>
                   <h4 className='text-xs font-bold text-slate-500 uppercase mb-3 tracking-wider'>
                     Performance Feedback

@@ -270,6 +270,9 @@ export const analyzeRecitation = async (
         }
       : undefined;
 
+    const quranCorrectness = data.quranCorrectness || undefined;
+    const aiNotes = data.aiNotes || undefined;
+
     return {
       sessionId: data.session_id,
       analysisResultId: data.analysis_result_id,
@@ -280,6 +283,8 @@ export const analyzeRecitation = async (
       pitchData,
       ayatTiming,
       scoreBreakdown,
+      quranCorrectness,
+      aiNotes,
     };
   } catch (error) {
     const errorMessage =

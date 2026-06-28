@@ -303,6 +303,32 @@ class AnalysisResult(Base):
     reference = relationship("Reference", back_populates="analysis_results")
 
 
+class StudentSelectedRecording(Base):
+    """Curated student recordings for dashboard and Qari review.
+
+    Each student/reference keeps at most one selected session per slot:
+    lowest, median, and highest. The audio remains stored on the UserSession;
+    this table only points to the selected session and analysis result.
+    """
+    __tablename__ = "student_selected_recordings"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    student_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    reference_id = Column(String, ForeignKey("references.id", ondelete="SET NULL"), nullable=True, index=True)
+    slot_type = Column(String, nullable=False, index=True)  # lowest | median | highest
+    session_id = Column(UUID(as_uuid=True), ForeignKey("user_sessions.id", ondelete="CASCADE"), nullable=False)
+    analysis_result_id = Column(UUID(as_uuid=True), ForeignKey("analysis_results.id", ondelete="CASCADE"), nullable=False)
+    score = Column(Float, nullable=False)
+    cloud_storage_path = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    student = relationship("User", foreign_keys=[student_id])
+    reference = relationship("Reference", foreign_keys=[reference_id])
+    session = relationship("UserSession", foreign_keys=[session_id])
+    analysis_result = relationship("AnalysisResult", foreign_keys=[analysis_result_id])
+
+
 class AuditLog(Base):
     """Audit trail for certification-grade data integrity (Milestone 4)."""
     __tablename__ = "audit_logs"
@@ -333,11 +359,43 @@ def get_db():
 
 
 # Initialize database
+
+def ensure_student_selected_recordings_table():
+    """Create the selected recording table if older deployments missed create_all."""
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS student_selected_recordings (
+                    id UUID PRIMARY KEY,
+                    student_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    reference_id VARCHAR REFERENCES references(id) ON DELETE SET NULL,
+                    slot_type VARCHAR NOT NULL,
+                    session_id UUID NOT NULL REFERENCES user_sessions(id) ON DELETE CASCADE,
+                    analysis_result_id UUID NOT NULL REFERENCES analysis_results(id) ON DELETE CASCADE,
+                    score FLOAT NOT NULL,
+                    cloud_storage_path VARCHAR,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """))
+            conn.execute(text("""
+                CREATE UNIQUE INDEX IF NOT EXISTS uq_student_selected_recordings_slot
+                ON student_selected_recordings (student_id, reference_id, slot_type)
+            """))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_student_selected_recordings_student_id ON student_selected_recordings (student_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_student_selected_recordings_reference_id ON student_selected_recordings (reference_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_student_selected_recordings_slot_type ON student_selected_recordings (slot_type)"))
+            conn.commit()
+        logger.info("Student selected recordings table verified")
+    except Exception as e:
+        logger.warning(f"Could not verify student_selected_recordings table: {e}", exc_info=True)
+
 def init_db():
     """Create all tables in the database."""
     try:
         Base.metadata.create_all(bind=engine)
         ensure_email_otp_columns()
+        ensure_student_selected_recordings_table()
         ensure_user_profile_columns()
         ensure_student_activity_events_table()
         logger.info("Database tables created successfully")
