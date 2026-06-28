@@ -98,6 +98,13 @@ def should_apply_score_cap() -> bool:
     return os.getenv("QURAN_CORRECTNESS_APPLY_CAP", "true").strip().lower() not in {"0", "false", "no", "off"}
 
 
+def get_quran_correctness_timeout_seconds() -> float:
+    try:
+        return max(1.0, float(os.getenv("QURAN_CORRECTNESS_TIMEOUT_SECONDS", "6")))
+    except ValueError:
+        return 6.0
+
+
 def build_expected_text(text_segments: Optional[Sequence[Dict[str, Any]]]) -> str:
     if not text_segments:
         return ""
@@ -137,7 +144,11 @@ def transcribe_arabic_audio(audio_path: Path) -> str:
         raise RuntimeError("openai package is not installed")
 
     model = os.getenv("OPENAI_TRANSCRIPTION_MODEL", "gpt-4o-transcribe")
-    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    client = OpenAI(
+        api_key=os.getenv("OPENAI_API_KEY"),
+        timeout=get_quran_correctness_timeout_seconds(),
+        max_retries=0,
+    )
     prompt = (
         "This is Quran recitation in Arabic. Transcribe only the Arabic words "
         "that were recited. Do not translate. Do not add commentary."

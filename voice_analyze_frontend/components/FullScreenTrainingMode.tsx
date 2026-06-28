@@ -417,6 +417,10 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
   const compactControls = isMobile || isClassroomLayout || (isTablet && isLandscape);
   const isPracticeContext = fullscreenContext === "practice";
   const isRecordingContext = fullscreenContext === "recording";
+  const graphIsPlaying =
+    isPlaying ||
+    isPlayingPracticeAudio ||
+    (isRecordingContext && isRecordingSession && currentTime > 0);
   const activeAyahIndex = ayatTiming.reduce((activeIndex, ayah, index) => {
     if (currentTime >= ayah.start && currentTime < ayah.end) {
       return index;
@@ -569,7 +573,7 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
             referencePitch={referencePitch}
             studentPitch={studentPitch}
             isRecording={isRecording}
-            isPlaying={isPlaying || isPlayingPracticeAudio}
+            isPlaying={graphIsPlaying}
             currentTime={
               isPlayingPracticeAudio && practiceAudioTime > 0
                 ? practiceAudioTime
