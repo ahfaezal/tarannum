@@ -95,19 +95,19 @@ const LiveHzDisplay: React.FC<LiveHzDisplayProps> = ({
 
   // Size classes based on full-screen mode - Reduced sizes for better fit
   const containerClass = isFullScreen
-    ? "mb-2 px-4 py-3 bg-gradient-to-r from-blue-900/30 to-purple-900/30 border border-blue-400/40 rounded-lg shadow-lg backdrop-blur-md"
+    ? "mb-1 px-3 py-2 sm:mb-2 sm:px-4 sm:py-3 bg-gradient-to-r from-blue-900/30 to-purple-900/30 border border-blue-400/40 rounded-lg shadow-lg backdrop-blur-md"
     : "mb-3 px-4 py-3 bg-gradient-to-r from-blue-50 to-purple-50 border border-blue-200 rounded-lg shadow-sm";
 
   const labelClass = isFullScreen
-    ? "text-[10px] font-semibold text-slate-300 uppercase tracking-wider mb-1"
+    ? "text-[9px] sm:text-[10px] font-semibold text-slate-300 uppercase tracking-wider mb-0.5 sm:mb-1"
     : "text-xs font-semibold text-slate-600 uppercase tracking-wider mb-1";
 
   const hzValueClass = isFullScreen
-    ? "text-2xl font-bold text-blue-300 tabular-nums"
+    ? "text-xl sm:text-2xl font-bold text-blue-300 tabular-nums"
     : "text-3xl font-bold text-blue-700 tabular-nums";
 
   const hzUnitClass = isFullScreen
-    ? "text-lg font-medium text-slate-300"
+    ? "text-base sm:text-lg font-medium text-slate-300"
     : "text-lg font-medium text-slate-600";
 
   const noteValueClass = isFullScreen
@@ -132,7 +132,7 @@ const LiveHzDisplay: React.FC<LiveHzDisplayProps> = ({
         >
           {/* Timeline Section - Left side */}
           <div className={`flex items-center gap-2 min-w-0 ${theme.text}`}>
-            <div className={`text-xs font-mono tabular-nums ${theme.text}`}>
+            <div className={`text-[11px] sm:text-xs font-mono tabular-nums ${theme.text}`}>
               {timeFormatter(currentTime)} / {timeFormatter(referenceDuration)}
             </div>
             <div className='flex items-center gap-1.5'>
@@ -227,7 +227,7 @@ const LiveHzDisplay: React.FC<LiveHzDisplayProps> = ({
       {latestPitch !== null && (
         <div
           className={`${
-            isFullScreen ? "mt-1" : "mt-2"
+            isFullScreen ? "mt-0.5 sm:mt-1" : "mt-2"
           } flex items-center justify-center gap-1.5`}
         >
           <div
@@ -238,7 +238,7 @@ const LiveHzDisplay: React.FC<LiveHzDisplayProps> = ({
           <span
             className={
               isFullScreen
-                ? "text-[10px] text-slate-300"
+                ? "text-[9px] sm:text-[10px] text-slate-300"
                 : "text-xs text-slate-500"
             }
           >

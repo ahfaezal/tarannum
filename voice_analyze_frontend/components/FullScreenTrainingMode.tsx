@@ -269,10 +269,12 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
     const isTouchTablet =
       typeof navigator !== "undefined" && navigator.maxTouchPoints > 1;
 
+    const isPhoneViewport = w < 640 || (isLandscape && h < 640 && w < 1024);
+
     // Phone
-    if (w < 640) {
+    if (isPhoneViewport) {
       return isLandscape
-        ? clamp(Math.floor(h * 0.62), 220, 360)
+        ? clamp(Math.floor(h * 0.58), 170, 340)
         : clamp(Math.floor(h * 0.43), 260, 390);
     }
 
@@ -452,12 +454,16 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
   };
 
   const currentTheme = themeClasses[theme];
-  const isMobile = viewport.width < 640;
-  const isTablet = viewport.width >= 640 && viewport.width < 1024;
   const isLandscape = viewport.width > viewport.height;
+  const isPhoneViewport =
+    viewport.width < 640 ||
+    (isLandscape && viewport.height < 640 && viewport.width < 1024);
+  const isMobile = isPhoneViewport;
+  const isTablet = viewport.width >= 640 && viewport.width < 1024;
   const isTouchTablet =
     typeof navigator !== "undefined" && navigator.maxTouchPoints > 1;
   const isClassroomLayout =
+    !isPhoneViewport &&
     isTouchTablet &&
     viewport.width >= 768 &&
     viewport.width <= 1400 &&
@@ -466,6 +472,7 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
   const isPracticeContext = fullscreenContext === "practice";
   const isRecordingContext = fullscreenContext === "recording";
   const isHomePracticeMobile = isMobile && isPracticeContext;
+  const isHomePracticeLandscape = isHomePracticeMobile && isLandscape;
   const defaultHomePracticeZoom = isLandscape ? 1.7 : 2.2;
   const homePracticeTimelineZoom =
     isHomePracticeMobile && zoomLevel <= 1.01
@@ -490,6 +497,19 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
     }
     return activeIndex;
   }, ayatTiming.length > 0 ? 0 : -1);
+  const latestStudentFrequency = (() => {
+    for (let index = studentPitch.length - 1; index >= 0; index--) {
+      const frequency = studentPitch[index]?.frequency;
+      if (frequency !== null && frequency !== undefined && isFinite(frequency)) {
+        return frequency;
+      }
+    }
+    return null;
+  })();
+  const landscapeGraphHeight = clamp(viewport.height - 112, 170, 340);
+  const displayGraphHeight = isHomePracticeLandscape
+    ? landscapeGraphHeight
+    : graphHeight;
 
   if (!isOpen) return null;
 
@@ -579,9 +599,9 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
       )}
 
       {/* Main Pitch Graph Area - Optimized for exact fit */}
-      <div className={`flex-1 flex flex-col w-full px-2 sm:px-4 ${isClassroomLayout ? "pt-2 pb-1" : "pt-10 sm:pt-12 pb-2"} overflow-hidden`}>
+      <div className={`flex-1 flex flex-col w-full px-2 sm:px-4 ${isClassroomLayout ? "pt-2 pb-1" : isHomePracticeMobile ? "pt-2 pb-1" : "pt-10 sm:pt-12 pb-2"} overflow-hidden`}>
         {/* ENHANCEMENT: Live Hz Display with Timeline - Smaller in full-screen */}
-        <div className={`${isClassroomLayout ? "mb-1 flex w-full max-w-[98%] items-center gap-2 mx-auto" : "mb-1 sm:mb-2 w-full max-w-[96%] sm:max-w-[90%] mx-auto"}`}>
+        <div className={`${isHomePracticeLandscape ? "hidden" : isClassroomLayout ? "mb-1 flex w-full max-w-[98%] items-center gap-2 mx-auto" : "mb-1 sm:mb-2 w-full max-w-[96%] sm:max-w-[90%] mx-auto"}`}>
           <div className='min-w-0 flex-1'>
             <LiveHzDisplay
               pitchData={studentPitch}
@@ -625,7 +645,7 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
           )}
         </div>
 
-        {isHomePracticeMobile && micStatus !== "idle" && (
+        {isHomePracticeMobile && !isHomePracticeLandscape && micStatus !== "idle" && (
           <div
             className={`mx-auto mb-1 flex max-w-[92%] items-center justify-center rounded-full border px-3 py-1 text-xs font-semibold ${
               micStatus === "ready"
@@ -640,7 +660,7 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
           </div>
         )}
 
-        {isHomePracticeMobile && (
+        {isHomePracticeMobile && !isHomePracticeLandscape && (
           <div
             className={`mx-auto mb-1 flex h-8 items-center justify-center gap-1.5 rounded-full border ${currentTheme.border} ${currentTheme.controlsBg} px-2 text-xs font-semibold ${currentTheme.text}`}
             aria-label="Timeline zoom controls"
@@ -671,112 +691,290 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
           </div>
         )}
 
-        {/* Graph Container - Full width for exact fit */}
-        <div
-          className='w-full flex items-center justify-center'
-          style={{ minHeight: `${graphHeight}px`, height: `${graphHeight}px` }}
-          data-graph-area
-        >
-          <CombinedWaveformPitch
-            referencePitch={referencePitch}
-            studentPitch={studentPitch}
-            isRecording={isRecording}
-            isPlaying={graphIsPlaying}
-            currentTime={
-              isPlayingPracticeAudio && practiceAudioTime > 0
-                ? practiceAudioTime
-                : currentTime
-            }
-            referenceDuration={referenceDuration}
-            referenceAudioUrl={referenceUrl}
-            studentAudioUrl={practiceAudioUrl}
-            studentAudioBlob={studentBlob}
-            onSeek={(progress) => {
-              if (onSeekToTime && referenceDuration > 0) {
-                onSeekToTime(progress * referenceDuration);
-              }
-            }}
-            height={graphHeight}
-            isFullScreen={true}
-            markers={markers}
-            onMarkerClick={(time) => {
-              if (onSeekToTime) {
-                onSeekToTime(time);
-              }
-            }}
-            zoomLevel={
-              isHomePracticeMobile
-                ? homePracticeTimelineZoom
-                : zoomLevel
-            }
-            onZoomChange={onZoomChange}
-          />
-        </div>
-
-        {/* Enhanced Quranic Text Display - Below Graph (Full-Screen Optimized) */}
-        {ayatTiming && ayatTiming.length > 0 && referenceDuration > 0 && (
-          <>
-            <FullScreenAyahTextDisplay
-              ayatTiming={ayatTiming}
-              currentTime={currentTime}
-              duration={referenceDuration}
-              onSeek={(time) => {
-                if (onSeekToTime) {
-                  onSeekToTime(time);
-                }
-              }}
-              theme={currentTheme}
-              compact={isClassroomLayout}
-            />
-            {isClassroomLayout && isPracticeContext && (
+        {isHomePracticeLandscape ? (
+          <div className="flex min-h-0 flex-1 gap-2 overflow-hidden">
+            <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
               <div
-                className={`mt-1 flex w-full max-w-6xl flex-shrink-0 items-center justify-center gap-2 self-center rounded-lg border ${currentTheme.border} ${currentTheme.controlsBg} px-3 py-1.5 text-xs ${currentTheme.text}`}
-                aria-label='Ayah selector placeholder'
+                className="w-full flex flex-1 items-center justify-center"
+                style={{
+                  minHeight: `${displayGraphHeight}px`,
+                  height: `${displayGraphHeight}px`,
+                }}
+                data-graph-area
               >
-                <span className={`font-semibold ${currentTheme.textMuted}`}>
-                  Ayah
-                </span>
-                <div className='flex items-center gap-1'>
-                  {Array.from({ length: 8 }).map((_, index) => (
-                    (() => {
-                      const ayah = ayatTiming[index];
-                      const isActive = index === activeAyahIndex;
-                      return (
-                        <button
-                          key={index}
-                          type='button'
-                          disabled={!ayah}
-                          onClick={() => {
-                            if (ayah && onSeekToTime) {
-                              onSeekToTime(ayah.start);
-                            }
-                          }}
-                          className={`flex h-7 w-7 items-center justify-center rounded border text-xs font-semibold transition-colors ${
-                            isActive && ayah
-                              ? "border-emerald-400/70 bg-emerald-500/25 text-emerald-100 opacity-100"
-                              : ayah
-                              ? "border-slate-600/60 bg-slate-700/40 text-slate-200 opacity-90 hover:bg-slate-600/50"
-                              : "border-slate-700/40 bg-slate-800/30 text-slate-500 opacity-40"
-                          }`}
-                          title={ayah ? `Select ayah ${index + 1}` : `Ayah ${index + 1} unavailable`}
-                          aria-label={ayah ? `Select ayah ${index + 1}` : `Ayah ${index + 1} unavailable`}
-                          aria-pressed={isActive && !!ayah}
-                        >
-                          {index + 1}
-                        </button>
-                      );
-                    })()
-                  ))}
-                </div>
+                <CombinedWaveformPitch
+                  referencePitch={referencePitch}
+                  studentPitch={studentPitch}
+                  isRecording={isRecording}
+                  isPlaying={graphIsPlaying}
+                  currentTime={
+                    isPlayingPracticeAudio && practiceAudioTime > 0
+                      ? practiceAudioTime
+                      : currentTime
+                  }
+                  referenceDuration={referenceDuration}
+                  referenceAudioUrl={referenceUrl}
+                  studentAudioUrl={practiceAudioUrl}
+                  studentAudioBlob={studentBlob}
+                  onSeek={(progress) => {
+                    if (onSeekToTime && referenceDuration > 0) {
+                      onSeekToTime(progress * referenceDuration);
+                    }
+                  }}
+                  height={displayGraphHeight}
+                  isFullScreen={true}
+                  markers={markers}
+                  onMarkerClick={(time) => {
+                    if (onSeekToTime) {
+                      onSeekToTime(time);
+                    }
+                  }}
+                  zoomLevel={homePracticeTimelineZoom}
+                  onZoomChange={onZoomChange}
+                />
               </div>
+
+              {ayatTiming && ayatTiming.length > 0 && referenceDuration > 0 && (
+                <FullScreenAyahTextDisplay
+                  ayatTiming={ayatTiming}
+                  currentTime={currentTime}
+                  duration={referenceDuration}
+                  onSeek={(time) => {
+                    if (onSeekToTime) {
+                      onSeekToTime(time);
+                    }
+                  }}
+                  theme={currentTheme}
+                  compact={true}
+                />
+              )}
+            </div>
+
+            <aside className={`flex w-[108px] flex-shrink-0 flex-col items-stretch justify-center gap-2 rounded-lg border ${currentTheme.border} ${currentTheme.controlsBg} p-2`}>
+              <div className={`rounded-lg border ${currentTheme.border} bg-slate-900/40 px-2 py-1 text-center`}>
+                <div className="text-[9px] font-semibold uppercase tracking-wider text-slate-400">
+                  Live Pitch
+                </div>
+                <div className="mt-0.5 text-lg font-bold tabular-nums text-blue-300">
+                  {latestStudentFrequency !== null
+                    ? latestStudentFrequency.toFixed(1)
+                    : "---"}
+                </div>
+                <div className="text-[9px] text-slate-400">Hz</div>
+              </div>
+
+              <div className={`flex h-8 items-center justify-center gap-1 rounded-full border ${currentTheme.border} bg-slate-900/30 px-1 text-[10px] font-semibold ${currentTheme.text}`}>
+                <button
+                  type="button"
+                  onClick={handleHomePracticeZoomOut}
+                  disabled={!onZoomChange || homePracticeTimelineZoom <= 1.2}
+                  className="flex h-6 w-7 items-center justify-center rounded-full bg-slate-700/70 text-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+                  title="Show a longer timeline"
+                  aria-label="Show a longer timeline"
+                >
+                  <ZoomOut size={12} />
+                </button>
+                <span className="min-w-[34px] text-center">
+                  {Math.round(homePracticeTimelineZoom * 100)}%
+                </span>
+                <button
+                  type="button"
+                  onClick={handleHomePracticeZoomIn}
+                  disabled={!onZoomChange || homePracticeTimelineZoom >= 4.0}
+                  className="flex h-6 w-7 items-center justify-center rounded-full bg-slate-700/70 text-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+                  title="Show a shorter timeline"
+                  aria-label="Show a shorter timeline"
+                >
+                  <ZoomIn size={12} />
+                </button>
+              </div>
+
+              {isHomePracticeMobile && micStatus !== "idle" && (
+                <div
+                  className={`rounded-full border px-2 py-1 text-center text-[10px] font-semibold ${
+                    micStatus === "ready"
+                      ? "border-emerald-400/50 bg-emerald-500/15 text-emerald-100"
+                      : micStatus === "checking"
+                      ? "border-blue-400/50 bg-blue-500/15 text-blue-100"
+                      : "border-red-400/50 bg-red-500/15 text-red-100"
+                  }`}
+                  role="status"
+                >
+                  {micStatusMessage}
+                </div>
+              )}
+
+              {isPracticeContext && onPracticeStart && onPracticeStop && (
+                <button
+                  onClick={handlePracticeToggle}
+                  className={`flex min-h-[38px] items-center justify-center rounded-lg px-2 text-xs font-semibold text-white shadow-md ${
+                    isPracticeMode
+                      ? "bg-red-600 hover:bg-red-700"
+                      : "bg-emerald-600 hover:bg-emerald-700"
+                  }`}
+                  title={isPracticeMode ? "Stop Practice" : "Start Practice"}
+                  aria-label={isPracticeMode ? "Stop practice mode" : "Start practice mode"}
+                >
+                  {isPracticeMode ? "Stop" : "Start"}
+                </button>
+              )}
+
+              {isPracticeContext && referencePitch.length > 0 && (
+                <button
+                  onClick={isPlaying ? onPause : onPlay}
+                  className="flex h-11 items-center justify-center rounded-full bg-blue-600 text-white shadow-md hover:bg-blue-700"
+                  title={isPlaying ? "Pause Reference" : "Play Reference"}
+                  aria-label={isPlaying ? "Pause reference playback" : "Play reference playback"}
+                >
+                  {isPlaying ? <Pause size={17} /> : <Play size={17} className="ml-0.5" />}
+                </button>
+              )}
+
+              {onRepeatAyahToggle && (
+                <button
+                  type="button"
+                  onClick={onRepeatAyahToggle}
+                  disabled={!canRepeatAyah}
+                  className={`flex h-11 items-center justify-center rounded-full border text-white shadow-md disabled:opacity-50 ${
+                    isRepeatAyahEnabled && canRepeatAyah
+                      ? "border-emerald-400/70 bg-emerald-500/25"
+                      : "border-slate-600/60 bg-slate-700/50"
+                  }`}
+                  title={canRepeatAyah ? "Repeat current ayah" : "Repeat ayah unavailable"}
+                  aria-label={canRepeatAyah ? "Repeat current ayah" : "Repeat ayah unavailable"}
+                  aria-pressed={isRepeatAyahEnabled && canRepeatAyah}
+                >
+                  <Repeat2 size={16} />
+                </button>
+              )}
+
+              <button
+                onClick={handleCloseWithCountdownCancel}
+                className="flex h-11 items-center justify-center rounded-full bg-red-600 text-white shadow-md hover:bg-red-700"
+                title="Exit full-screen"
+                aria-label="Exit full-screen mode"
+              >
+                <X size={18} />
+              </button>
+            </aside>
+          </div>
+        ) : (
+          <>
+            {/* Graph Container - Full width for exact fit */}
+            <div
+              className='w-full flex items-center justify-center'
+              style={{ minHeight: `${graphHeight}px`, height: `${graphHeight}px` }}
+              data-graph-area
+            >
+              <CombinedWaveformPitch
+                referencePitch={referencePitch}
+                studentPitch={studentPitch}
+                isRecording={isRecording}
+                isPlaying={graphIsPlaying}
+                currentTime={
+                  isPlayingPracticeAudio && practiceAudioTime > 0
+                    ? practiceAudioTime
+                    : currentTime
+                }
+                referenceDuration={referenceDuration}
+                referenceAudioUrl={referenceUrl}
+                studentAudioUrl={practiceAudioUrl}
+                studentAudioBlob={studentBlob}
+                onSeek={(progress) => {
+                  if (onSeekToTime && referenceDuration > 0) {
+                    onSeekToTime(progress * referenceDuration);
+                  }
+                }}
+                height={graphHeight}
+                isFullScreen={true}
+                markers={markers}
+                onMarkerClick={(time) => {
+                  if (onSeekToTime) {
+                    onSeekToTime(time);
+                  }
+                }}
+                zoomLevel={
+                  isHomePracticeMobile
+                    ? homePracticeTimelineZoom
+                    : zoomLevel
+                }
+                onZoomChange={onZoomChange}
+              />
+            </div>
+
+            {/* Enhanced Quranic Text Display - Below Graph (Full-Screen Optimized) */}
+            {ayatTiming && ayatTiming.length > 0 && referenceDuration > 0 && (
+              <>
+                <FullScreenAyahTextDisplay
+                  ayatTiming={ayatTiming}
+                  currentTime={currentTime}
+                  duration={referenceDuration}
+                  onSeek={(time) => {
+                    if (onSeekToTime) {
+                      onSeekToTime(time);
+                    }
+                  }}
+                  theme={currentTheme}
+                  compact={isClassroomLayout}
+                />
+                {isClassroomLayout && isPracticeContext && (
+                  <div
+                    className={`mt-1 flex w-full max-w-6xl flex-shrink-0 items-center justify-center gap-2 self-center rounded-lg border ${currentTheme.border} ${currentTheme.controlsBg} px-3 py-1.5 text-xs ${currentTheme.text}`}
+                    aria-label='Ayah selector placeholder'
+                  >
+                    <span className={`font-semibold ${currentTheme.textMuted}`}>
+                      Ayah
+                    </span>
+                    <div className='flex items-center gap-1'>
+                      {Array.from({ length: 8 }).map((_, index) => {
+                        const ayah = ayatTiming[index];
+                        const isActive = index === activeAyahIndex;
+                        return (
+                          <button
+                            key={index}
+                            type='button'
+                            disabled={!ayah}
+                            onClick={() => {
+                              if (ayah && onSeekToTime) {
+                                onSeekToTime(ayah.start);
+                              }
+                            }}
+                            className={`flex h-7 w-7 items-center justify-center rounded border text-xs font-semibold transition-colors ${
+                              isActive && ayah
+                                ? "border-emerald-400/70 bg-emerald-500/25 text-emerald-100 opacity-100"
+                                : ayah
+                                ? "border-slate-600/60 bg-slate-700/40 text-slate-200 opacity-90 hover:bg-slate-600/50"
+                                : "border-slate-700/40 bg-slate-800/30 text-slate-500 opacity-40"
+                            }`}
+                            title={
+                              ayah
+                                ? `Select ayah ${index + 1}`
+                                : `Ayah ${index + 1} unavailable`
+                            }
+                            aria-label={
+                              ayah
+                                ? `Select ayah ${index + 1}`
+                                : `Ayah ${index + 1} unavailable`
+                            }
+                            aria-pressed={isActive && !!ayah}
+                          >
+                            {index + 1}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </>
         )}
       </div>
 
-      <div
-        className={`w-full ${currentTheme.controlsBg} border-t ${currentTheme.border} px-2 sm:px-4 ${isClassroomLayout ? "py-1" : compactControls ? "py-1.5" : "py-3"} backdrop-blur-sm flex-shrink-0 z-10`}
-      >
+      {!isHomePracticeLandscape && (
+        <div
+          className={`w-full ${currentTheme.controlsBg} border-t ${currentTheme.border} px-2 sm:px-4 ${isClassroomLayout ? "py-1" : compactControls ? "py-1.5" : "py-3"} backdrop-blur-sm flex-shrink-0 z-10`}
+        >
         <div className={`flex items-center ${isHomePracticeMobile ? "justify-center gap-3 min-h-[54px] flex-nowrap overflow-x-auto pb-0" : `justify-start sm:justify-center ${isClassroomLayout ? "gap-1.5 min-h-[38px]" : "gap-2 sm:gap-3 min-h-[44px]"} flex-wrap overflow-x-visible sm:overflow-visible ${compactControls ? "pb-0" : "pb-1"}`}`}>
           {/* Practice Controls Group */}
           <div className='flex items-center gap-2'>
@@ -1130,7 +1328,8 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
           </span>
         </div>
         )}
-      </div>
+        </div>
+      )}
 
       {/* Countdown Overlay - Shows before practice mode starts */}
       <Countdown
