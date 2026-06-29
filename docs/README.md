@@ -2,7 +2,7 @@
 
 Version: 1.0  
 Date: 2026-06-26  
-Last Updated: 2026-06-26
+Last Updated: 2026-06-29
 
 ## Purpose
 
@@ -26,12 +26,15 @@ If the architecture changes, update the relevant document and record the decisio
 2. [Practice Rendering Engine Specification](architecture/Practice_Rendering_Engine_Spec_v1.md)
 3. [Development Principles](standards/Development_Principles.md)
 4. [Glossary](standards/Glossary.md)
-5. [Decision Log](decisions/Decision_Log.md)
+5. [Experience Modes Specification](product/Experience_Modes_Specification_v1.md)
+6. [Subscription and Royalty Model](product/Subscription_Royalty_Model_v1.md)
+7. [Decision Log](decisions/Decision_Log.md)
 
 ## Documentation Structure
 
 - `philosophy/` explains why Tarannum.ai exists and what learning experience it protects.
 - `architecture/` defines the agreed rendering architecture for Practice Live and Recording Analysis.
+- `product/` defines product experience modes, subscription policy, qari royalty, and business rules.
 - `standards/` defines shared language and development principles.
 - `decisions/` records approved architecture decisions.
 
@@ -45,4 +48,3 @@ All documents must include:
 - Last Updated date
 - professional Markdown formatting
 - architecture-level guidance that does not depend on the current implementation
-

@@ -3,7 +3,7 @@
 Version: 1.0  
 Status: Draft  
 Date: 2026-06-26  
-Last Updated: 2026-06-26  
+Last Updated: 2026-06-29
 Scope: Product roadmap
 
 ## Section 1 — Purpose
@@ -22,6 +22,8 @@ Version 1.0 focuses on:
 
 Version 2.0 focuses on:
 
+- subscription and payment gateway maturity
+- qari royalty workflow
 - AI Coach
 - Tanda Bimbingan / Annotation Layer
 - Ghost Curve
@@ -53,6 +55,8 @@ Main components:
 13. Basic Speed Control
 14. Ayah Selection
 15. Score Mimic / Analysis
+16. Payment and subscription foundation
+17. Qari assignment and transfer foundation
 
 ## Version 2.0 — Intelligent Guided Learning
 
@@ -73,6 +77,8 @@ Main components:
 11. Personalised Training Plan
 12. Progress Comparison
 13. Teacher Feedback Bank
+14. Qari royalty ledger and payout dashboard
+15. Shared qari recitation bank expansion
 
 ## Section 4 — What Belongs in v1.0
 
@@ -91,6 +97,10 @@ Examples:
 - current/next ayah
 - basic recording analysis
 - basic dashboard
+- ToyyibPay payment gateway foundation
+- student subscription foundation
+- qari assignment and 30-day transfer rule
+- shared qari recitation bank foundation
 
 v1.0 should make the core practice experience reliable before expanding into advanced guidance layers.
 
@@ -108,6 +118,8 @@ The following features must wait until v2.0, even if they are attractive:
 - Smart Classroom
 - advanced certification workflow
 - marketplace
+- usage-based qari content royalty
+- automated qari payout
 
 Reason:
 
@@ -139,3 +151,28 @@ Focus:
 11. hide keyboard hints on iPad
 12. compact control bar
 
+## Section 8 - Payment, Subscription, and Royalty Track
+
+The agreed first model is defined in:
+
+- `docs/product/Subscription_Royalty_Model_v1.md`
+
+Implementation order:
+
+1. ToyyibPay payment gateway integration
+2. student registration to email verification flow
+3. qari confirmation or selection before trial activation
+4. trial tracking by 7-day limit or 3 recording sessions
+5. student subscription records
+6. self-payment and organizer-paid entitlement support
+7. successful payment callback handling
+8. course/cohort enrollment and student invitation list
+9. qari assignment history
+10. 30-day student qari transfer lock after subscription activation
+11. shared qari recitation bank requirement
+12. royalty ledger
+13. qari dashboard royalty visibility
+14. admin royalty audit view
+15. manual payout workflow
+
+The first royalty implementation should be assignment-based and billing-cycle-based. Usage-based recitation royalties and automated payouts should wait until the core subscription and ledger system is stable.
