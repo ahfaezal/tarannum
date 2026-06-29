@@ -426,8 +426,6 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
 
   // Note: Wheel zoom is handled by LivePitchGraph component for consistency with regular mode
 
-  if (!isOpen) return null;
-
   // ENHANCEMENT: Theme-based styling
   const themeClasses = {
     dark: {
@@ -492,6 +490,8 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
     }
     return activeIndex;
   }, ayatTiming.length > 0 ? 0 : -1);
+
+  if (!isOpen) return null;
 
   return (
     <div
