@@ -278,9 +278,14 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
         : clamp(Math.floor(h * 0.43), 260, 390);
     }
 
-    // Tablet / classroom landscape: leave room for current and next ayah panels.
-    if (isTouchTablet && w >= 768 && w <= 1400 && isLandscape) {
-      return clamp(Math.floor(h * 0.54), 360, 480);
+    const isClassroomViewport =
+      !isPhoneViewport && isTouchTablet && w >= 768 && w <= 1400;
+
+    // Tablet / classroom: leave room for current and next ayah panels.
+    if (isClassroomViewport) {
+      return isLandscape
+        ? clamp(Math.floor(h * 0.54), 360, 480)
+        : clamp(Math.floor(h * 0.42), 360, 520);
     }
 
     // Tablet
@@ -466,8 +471,7 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
     !isPhoneViewport &&
     isTouchTablet &&
     viewport.width >= 768 &&
-    viewport.width <= 1400 &&
-    isLandscape;
+    viewport.width <= 1400;
   const compactControls = isMobile || isClassroomLayout || (isTablet && isLandscape);
   const isPracticeContext = fullscreenContext === "practice";
   const isRecordingContext = fullscreenContext === "recording";
