@@ -150,6 +150,10 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const [showPracticeStats, setShowPracticeStats] = useState(false);
   const [showCountdown, setShowCountdown] = useState(false);
+  const [micStatus, setMicStatus] = useState<
+    "idle" | "checking" | "ready" | "blocked" | "unavailable"
+  >("idle");
+  const [micStatusMessage, setMicStatusMessage] = useState("");
   const [viewport, setViewport] = useState(() => ({
     width: typeof window !== "undefined" ? window.innerWidth : 1280,
     height: typeof window !== "undefined" ? window.innerHeight : 720,
@@ -163,13 +167,55 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
     return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
 
-  const handlePracticeToggle = React.useCallback(() => {
+  const handlePracticeToggle = React.useCallback(async () => {
     if (isPracticeMode) {
       setShowCountdown(false);
+      setMicStatus("idle");
+      setMicStatusMessage("");
       onPracticeStop?.();
     } else {
-      onPrimeReferenceAudio?.();
-      setShowCountdown(true);
+      setMicStatus("checking");
+      setMicStatusMessage("Checking microphone...");
+
+      try {
+        if (typeof window !== "undefined" && !window.isSecureContext) {
+          throw new Error("secure-context-required");
+        }
+
+        if (!navigator.mediaDevices?.getUserMedia) {
+          throw new Error("microphone-unavailable");
+        }
+
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+            sampleRate: 44100,
+            channelCount: 1,
+          },
+        });
+
+        stream.getTracks().forEach((track) => track.stop());
+        setMicStatus("ready");
+        setMicStatusMessage("Microphone ready");
+        onPrimeReferenceAudio?.();
+
+        window.setTimeout(() => {
+          setShowCountdown(true);
+        }, 350);
+      } catch (error: any) {
+        const unavailable =
+          error?.message === "microphone-unavailable" ||
+          error?.name === "NotFoundError" ||
+          error?.name === "DevicesNotFoundError";
+        setMicStatus(unavailable ? "unavailable" : "blocked");
+        setMicStatusMessage(
+          unavailable
+            ? "Microphone unavailable"
+            : "Please allow microphone access"
+        );
+      }
     }
   }, [isPracticeMode, onPracticeStop, onPrimeReferenceAudio]);
 
@@ -193,11 +239,15 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
 
   const handleCountdownComplete = React.useCallback(() => {
     setShowCountdown(false);
+    setMicStatus("idle");
+    setMicStatusMessage("");
     onPracticeStart?.();
   }, [onPracticeStart]);
 
   const handleCountdownCancel = React.useCallback(() => {
     setShowCountdown(false);
+    setMicStatus("idle");
+    setMicStatusMessage("");
   }, []);
 
   // Calculate progress percentage
@@ -222,8 +272,8 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
     // Phone
     if (w < 640) {
       return isLandscape
-        ? clamp(Math.floor(h * 0.46), 180, 260)
-        : clamp(Math.floor(h * 0.34), 180, 280);
+        ? clamp(Math.floor(h * 0.62), 220, 360)
+        : clamp(Math.floor(h * 0.43), 260, 390);
     }
 
     // Tablet / classroom landscape: leave room for current and next ayah panels.
@@ -417,6 +467,7 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
   const compactControls = isMobile || isClassroomLayout || (isTablet && isLandscape);
   const isPracticeContext = fullscreenContext === "practice";
   const isRecordingContext = fullscreenContext === "recording";
+  const isHomePracticeMobile = isMobile && isPracticeContext;
   const graphIsPlaying =
     isPlaying ||
     isPlayingPracticeAudio ||
@@ -563,6 +614,21 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
           )}
         </div>
 
+        {isHomePracticeMobile && micStatus !== "idle" && (
+          <div
+            className={`mx-auto mb-1 flex max-w-[92%] items-center justify-center rounded-full border px-3 py-1 text-xs font-semibold ${
+              micStatus === "ready"
+                ? "border-emerald-400/50 bg-emerald-500/15 text-emerald-100"
+                : micStatus === "checking"
+                ? "border-blue-400/50 bg-blue-500/15 text-blue-100"
+                : "border-red-400/50 bg-red-500/15 text-red-100"
+            }`}
+            role="status"
+          >
+            {micStatusMessage}
+          </div>
+        )}
+
         {/* Graph Container - Full width for exact fit */}
         <div
           className='w-full flex items-center justify-center'
@@ -596,7 +662,11 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
                 onSeekToTime(time);
               }
             }}
-            zoomLevel={zoomLevel}
+            zoomLevel={
+              isHomePracticeMobile
+                ? Math.max(zoomLevel, isLandscape ? 1.7 : 2.2)
+                : zoomLevel
+            }
             onZoomChange={onZoomChange}
           />
         </div>
@@ -665,7 +735,7 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
       <div
         className={`w-full ${currentTheme.controlsBg} border-t ${currentTheme.border} px-2 sm:px-4 ${isClassroomLayout ? "py-1" : compactControls ? "py-1.5" : "py-3"} backdrop-blur-sm flex-shrink-0 z-10`}
       >
-        <div className={`flex items-center justify-start sm:justify-center ${isClassroomLayout ? "gap-1.5 min-h-[38px]" : "gap-2 sm:gap-3 min-h-[44px]"} flex-wrap overflow-x-visible sm:overflow-visible ${compactControls ? "pb-0" : "pb-1"}`}>
+        <div className={`flex items-center ${isHomePracticeMobile ? "justify-center gap-3 min-h-[54px] flex-nowrap overflow-x-auto pb-0" : `justify-start sm:justify-center ${isClassroomLayout ? "gap-1.5 min-h-[38px]" : "gap-2 sm:gap-3 min-h-[44px]"} flex-wrap overflow-x-visible sm:overflow-visible ${compactControls ? "pb-0" : "pb-1"}`}`}>
           {/* Practice Controls Group */}
           <div className='flex items-center gap-2'>
             {/* Practice Mode Toggle */}
@@ -674,7 +744,7 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
               onPracticeStop && (
               <button
                 onClick={handlePracticeToggle}
-                className={`${isClassroomLayout ? "px-2.5 py-1" : "px-3 py-1.5"} rounded-lg flex items-center gap-1.5 text-xs font-medium transition-all ${
+                className={`${isHomePracticeMobile ? "h-11 px-3.5 text-sm" : isClassroomLayout ? "px-2.5 py-1" : "px-3 py-1.5"} rounded-lg flex items-center gap-1.5 text-xs font-medium transition-all ${
                   isPracticeMode
                     ? "bg-red-600 hover:bg-red-700 text-white"
                     : "bg-emerald-600 hover:bg-emerald-700 text-white"
@@ -701,7 +771,7 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
             )}
 
             {/* Practice Mode Indicator */}
-            {isPracticeMode && (
+            {isPracticeMode && !isHomePracticeMobile && (
               <div className='flex items-center gap-1.5 px-2 py-1 rounded bg-red-600/20 border border-red-500/30'>
                 <div className='w-2 h-2 bg-red-500 rounded-full animate-pulse'></div>
                 <span className='text-xs text-red-300 font-medium'>
@@ -711,7 +781,7 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
             )}
 
             {/* Practice Mode Controls */}
-            {isPracticeMode && !isClassroomLayout && (
+            {isPracticeMode && !isClassroomLayout && !isHomePracticeMobile && (
               <>
                 {onPracticeStop && (
                   <button
@@ -773,7 +843,7 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
           )}
 
           {/* Divider */}
-          {((isPracticeContext && (isPracticeMode || practiceAudioUrl)) ||
+          {!isHomePracticeMobile && ((isPracticeContext && (isPracticeMode || practiceAudioUrl)) ||
             (isRecordingContext && isRecordingSession)) && (
             <div className='h-8 w-px bg-slate-600/50'></div>
           )}
@@ -826,14 +896,14 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
           )}
 
           {/* Divider for Reference Audio */}
-          {isPracticeContext && referencePitch.length > 0 && (
+          {!isHomePracticeMobile && isPracticeContext && referencePitch.length > 0 && (
             <div className='h-8 w-px bg-slate-600/50'></div>
           )}
 
           {/* Reference Audio Playback Controls - Always Available */}
           {isPracticeContext && referencePitch.length > 0 && (
             <div className='flex items-center gap-2'>
-              <div className='flex items-center gap-1 px-2 py-1 rounded bg-blue-600/20 border border-blue-500/30'>
+              <div className={`${isHomePracticeMobile ? "hidden" : "flex"} items-center gap-1 px-2 py-1 rounded bg-blue-600/20 border border-blue-500/30`}>
                 <span className='text-xs text-blue-300 font-medium'>
                   Reference
                 </span>
@@ -841,7 +911,7 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
               {/* Play/Pause Button */}
               <button
                 onClick={isPlaying ? onPause : onPlay}
-                className={`${isClassroomLayout ? "h-9 w-9" : "w-10 h-10"} flex items-center justify-center rounded-full bg-blue-600 hover:bg-blue-700 text-white transition-colors shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-1`}
+                className={`${isHomePracticeMobile ? "h-12 w-12 min-h-[48px] min-w-[48px]" : isClassroomLayout ? "h-9 w-9" : "w-10 h-10"} flex items-center justify-center rounded-full bg-blue-600 hover:bg-blue-700 text-white transition-colors shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-1`}
                 title={
                   isPlaying
                     ? "Pause Reference (Space)"
@@ -861,31 +931,31 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
               </button>
 
               {/* Stop Button */}
-              <button
+              {!isHomePracticeMobile && <button
                 onClick={handleStopWithCountdownCancel}
                 className={`${isClassroomLayout ? "h-8 w-8" : "w-9 h-9"} flex items-center justify-center rounded-full bg-slate-600 hover:bg-slate-700 text-white transition-colors shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-slate-400`}
                 title='Stop Reference (S)'
                 aria-label='Stop reference playback'
               >
                 <Square size={14} />
-              </button>
+              </button>}
 
               {/* Restart Button */}
-              <button
+              {!isHomePracticeMobile && <button
                 onClick={onRestart}
                 className={`${isClassroomLayout ? "h-8 w-8" : "w-9 h-9"} flex items-center justify-center rounded-full bg-slate-600 hover:bg-slate-700 text-white transition-colors shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-slate-400`}
                 title='Restart Reference (R)'
                 aria-label='Restart reference from beginning'
               >
                 <RefreshCw size={14} />
-              </button>
+              </button>}
 
               {onRepeatAyahToggle && (
                 <button
                   type='button'
                   onClick={onRepeatAyahToggle}
                   disabled={!canRepeatAyah}
-                  className={`${isClassroomLayout ? "h-8 px-2" : "h-9 px-3"} flex items-center gap-1 rounded-full border text-xs font-semibold transition-colors shadow-md focus:outline-none focus:ring-2 focus:ring-emerald-400 ${
+                  className={`${isHomePracticeMobile ? "h-12 w-12 justify-center rounded-full p-0" : isClassroomLayout ? "h-8 px-2" : "h-9 px-3"} flex items-center gap-1 border text-xs font-semibold transition-colors shadow-md focus:outline-none focus:ring-2 focus:ring-emerald-400 ${
                     isRepeatAyahEnabled && canRepeatAyah
                       ? "border-emerald-400/70 bg-emerald-500/25 text-emerald-100"
                       : canRepeatAyah
@@ -909,7 +979,7 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
                   aria-pressed={isRepeatAyahEnabled && canRepeatAyah}
                 >
                   <Repeat2 size={14} />
-                  {!isClassroomLayout && <span>Repeat</span>}
+                  {!isClassroomLayout && !isHomePracticeMobile && <span>Repeat</span>}
                 </button>
               )}
             </div>
@@ -947,7 +1017,7 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
           )}
 
           {/* Exit / Cancel Button */}
-          <div className={`${isClassroomLayout ? "ml-1 pl-2" : "ml-2 sm:ml-4 pl-2 sm:pl-4"} border-l border-slate-600/50`}>
+          <div className={isHomePracticeMobile ? "ml-0 pl-0" : `${isClassroomLayout ? "ml-1 pl-2" : "ml-2 sm:ml-4 pl-2 sm:pl-4"} border-l border-slate-600/50`}>
             {isRecordingContext ? (
               <button
                 type='button'
@@ -961,7 +1031,7 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
             ) : (
               <button
                 onClick={handleCloseWithCountdownCancel}
-                className={`${isClassroomLayout ? "h-10 w-10 min-h-[40px] min-w-[40px]" : "w-11 h-11 min-h-[44px] min-w-[44px]"} flex items-center justify-center rounded-full bg-red-600 hover:bg-red-700 text-white transition-colors shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-red-400`}
+                className={`${isHomePracticeMobile ? "h-12 w-12 min-h-[48px] min-w-[48px]" : isClassroomLayout ? "h-10 w-10 min-h-[40px] min-w-[40px]" : "w-11 h-11 min-h-[44px] min-w-[44px]"} flex items-center justify-center rounded-full bg-red-600 hover:bg-red-700 text-white transition-colors shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-red-400`}
                 title='Exit Full-Screen (ESC)'
                 aria-label='Exit full-screen mode'
               >

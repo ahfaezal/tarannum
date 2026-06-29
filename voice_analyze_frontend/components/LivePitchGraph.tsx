@@ -761,7 +761,8 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
             10
           );
 
-      const padding = 60;
+      const isMobileFullscreenGraph = isFullScreen && displayWidth < 640;
+      const padding = isMobileFullscreenGraph ? 42 : 60;
       // Use display dimensions for drawing calculations
       const graphWidth = displayWidth - padding * 2;
       const graphHeight = displayHeight - padding * 2;
@@ -972,9 +973,10 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
       ctx.lineWidth = 1;
 
       // Horizontal grid lines (frequency)
-      for (let i = 0; i <= 5; i++) {
-        const freq = finalMinFreq + (freqRange * i) / 5;
-        const y = displayHeight - padding - (i / 5) * graphHeight;
+      const horizontalGridLines = isMobileFullscreenGraph ? 3 : 5;
+      for (let i = 0; i <= horizontalGridLines; i++) {
+        const freq = finalMinFreq + (freqRange * i) / horizontalGridLines;
+        const y = displayHeight - padding - (i / horizontalGridLines) * graphHeight;
         ctx.beginPath();
         ctx.moveTo(padding, y);
         ctx.lineTo(displayWidth - padding, y);
@@ -982,14 +984,15 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
 
         // Frequency label
         ctx.fillStyle = "#64748b";
-        ctx.font = "10px sans-serif";
+        ctx.font = `${isMobileFullscreenGraph ? 9 : 10}px sans-serif`;
         ctx.fillText(`${Math.round(freq)} Hz`, 5, y + 4);
       }
 
       // Vertical grid lines (time) - adjusted for zoom
       const actualVisibleRange = maxVisibleTime - minVisibleTime;
-      const timeStep = actualVisibleRange / 10;
-      for (let i = 0; i <= 10; i++) {
+      const verticalGridLines = isMobileFullscreenGraph ? 4 : 10;
+      const timeStep = actualVisibleRange / verticalGridLines;
+      for (let i = 0; i <= verticalGridLines; i++) {
         const time = minVisibleTime + timeStep * i;
         if (time < 0 || time > baseMaxTime) continue;
 
@@ -1005,10 +1008,10 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
 
         // Time label
         ctx.fillStyle = "#64748b";
-        ctx.font = "10px sans-serif";
+        ctx.font = `${isMobileFullscreenGraph ? 9 : 10}px sans-serif`;
         ctx.fillText(
-          `${time.toFixed(1)}s`,
-          x - 15,
+          isMobileFullscreenGraph ? `${Math.round(time)}s` : `${time.toFixed(1)}s`,
+          x - (isMobileFullscreenGraph ? 10 : 15),
           displayHeight - padding + 15
         );
       }
@@ -1035,7 +1038,7 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
         );
 
         ctx.strokeStyle = "#10b981"; // Green
-        ctx.lineWidth = 2; // Slightly thinner so red line overwrites it more clearly
+        ctx.lineWidth = isMobileFullscreenGraph ? 3 : 2; // Slightly thinner so red line overwrites it more clearly
         ctx.beginPath();
         let firstPoint = true;
         let lastValidPoint: { x: number; y: number } | null = null;
@@ -1108,30 +1111,8 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
 
       // Draw student pitch (red) - live, all points up to current time
       if (studentPitch.length > 0) {
-        // Debug: Log student pitch data
-        const validPoints = studentPitch.filter(
-          (p) => p.frequency !== null && p.frequency !== undefined
-        );
-        console.log(`[Graph] Drawing student pitch:`, {
-          totalPoints: studentPitch.length,
-          validPoints: validPoints.length,
-          isRecording,
-          isPlaying,
-          currentTime,
-          minTime:
-            studentPitch.length > 0
-              ? Math.min(...studentPitch.map((p) => p.time))
-              : 0,
-          maxTime:
-            studentPitch.length > 0
-              ? Math.max(...studentPitch.map((p) => p.time))
-              : 0,
-          minVisibleTime,
-          maxVisibleTime,
-        });
-
         ctx.strokeStyle = "#ef4444"; // Red
-        ctx.lineWidth = 3.5; // Thicker than reference (2.5) to ensure it overwrites/overlays the green line
+        ctx.lineWidth = isMobileFullscreenGraph ? 4 : 3.5; // Thicker than reference to ensure it overlays the green line
         ctx.beginPath();
         let firstPoint = true;
         let lastValidPoint: { x: number; y: number } | null = null;
@@ -1176,14 +1157,6 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
           firstRenderableStudentTime !== null
             ? firstRenderableStudentTime + STUDENT_OVERLAY_START_GRACE_SECONDS
             : null;
-
-        // Debug: Count points in visible range
-        const pointsInRange = sortedPitch.filter(
-          (p) => p.time >= minVisibleTime && p.time <= maxVisibleTime
-        ).length;
-        console.log(
-          `[Graph] Student pitch points in visible range: ${pointsInRange} / ${sortedPitch.length}`
-        );
 
         // Draw connected line while suppressing spike artifacts.
         let lastVoicedTime: number | null = null;
@@ -1362,10 +1335,16 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
 
       // Draw legend
       ctx.fillStyle = "#1e293b";
-      ctx.font = "12px sans-serif";
-      ctx.fillText("Reference (Green)", displayWidth - 150, 20);
-      ctx.fillStyle = "#ef4444";
-      ctx.fillText("Student (Red)", displayWidth - 150, 40);
+      ctx.font = `${isMobileFullscreenGraph ? 10 : 12}px sans-serif`;
+      if (isMobileFullscreenGraph) {
+        ctx.fillText("Reference", displayWidth - 108, 18);
+        ctx.fillStyle = "#ef4444";
+        ctx.fillText("Student", displayWidth - 108, 34);
+      } else {
+        ctx.fillText("Reference (Green)", displayWidth - 150, 20);
+        ctx.fillStyle = "#ef4444";
+        ctx.fillText("Student (Red)", displayWidth - 150, 40);
+      }
 
       // Add markers to legend if any exist
       if (markers && markers.length > 0) {
