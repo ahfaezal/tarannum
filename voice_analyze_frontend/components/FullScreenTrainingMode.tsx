@@ -842,24 +842,6 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
                 </button>
               )}
 
-              {onRepeatAyahToggle && (
-                <button
-                  type="button"
-                  onClick={onRepeatAyahToggle}
-                  disabled={!canRepeatAyah}
-                  className={`flex h-11 items-center justify-center rounded-full border text-white shadow-md disabled:opacity-50 ${
-                    isRepeatAyahEnabled && canRepeatAyah
-                      ? "border-emerald-400/70 bg-emerald-500/25"
-                      : "border-slate-600/60 bg-slate-700/50"
-                  }`}
-                  title={canRepeatAyah ? "Repeat current ayah" : "Repeat ayah unavailable"}
-                  aria-label={canRepeatAyah ? "Repeat current ayah" : "Repeat ayah unavailable"}
-                  aria-pressed={isRepeatAyahEnabled && canRepeatAyah}
-                >
-                  <Repeat2 size={16} />
-                </button>
-              )}
-
               <button
                 onClick={handleCloseWithCountdownCancel}
                 className="flex h-11 items-center justify-center rounded-full bg-red-600 text-white shadow-md hover:bg-red-700"
