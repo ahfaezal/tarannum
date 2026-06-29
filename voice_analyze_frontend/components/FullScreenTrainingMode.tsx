@@ -523,7 +523,7 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
       aria-label='Full-screen training mode'
     >
       {/* ENHANCEMENT: Top Right Controls - Theme, Practice Stats, and Zoom Status */}
-      <div className={`${isClassroomLayout ? "hidden" : "absolute top-2 right-2 z-10 flex"} items-center gap-2 max-w-[calc(100%-1rem)] overflow-x-auto`}>
+      <div className={`${isClassroomLayout || isHomePracticeLandscape ? "hidden" : "absolute top-2 right-2 z-10 flex"} items-center gap-2 max-w-[calc(100%-1rem)] overflow-x-auto`}>
         {/* Zoom Status Display */}
         {onZoomChange && (
           <div className={`hidden sm:block px-3 py-1.5 rounded ${currentTheme.controlsBg} border ${currentTheme.border} ${currentTheme.text} text-sm font-medium backdrop-blur-sm`}>
@@ -750,38 +750,50 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
               )}
             </div>
 
-            <aside className={`flex w-[108px] flex-shrink-0 flex-col items-stretch justify-center gap-2 rounded-lg border ${currentTheme.border} ${currentTheme.controlsBg} p-2`}>
-              <div className={`rounded-lg border ${currentTheme.border} bg-slate-900/40 px-2 py-1 text-center`}>
-                <div className="text-[9px] font-semibold uppercase tracking-wider text-slate-400">
+            <aside className={`flex w-[132px] flex-shrink-0 flex-col items-stretch justify-center gap-2 rounded-lg border ${currentTheme.border} ${currentTheme.controlsBg} p-2`}>
+              <div className={`rounded-lg border ${currentTheme.border} bg-slate-900/50 px-2 py-1.5 text-center`}>
+                <div className="text-[10px] font-semibold uppercase text-slate-400">
                   Live Pitch
                 </div>
-                <div className="mt-0.5 text-lg font-bold tabular-nums text-blue-300">
-                  {latestStudentFrequency !== null
-                    ? latestStudentFrequency.toFixed(1)
-                    : "---"}
+                <div className="mt-0.5 flex items-baseline justify-center gap-1 text-blue-300">
+                  <span className="text-xl font-bold tabular-nums">
+                    {latestStudentFrequency !== null
+                      ? latestStudentFrequency.toFixed(1)
+                      : "---"}
+                  </span>
+                  <span className="text-xs font-semibold text-slate-300">
+                    Hz
+                  </span>
                 </div>
-                <div className="text-[9px] text-slate-400">Hz</div>
+                <div className="mt-0.5 flex items-center justify-center gap-1 text-[9px] text-slate-400">
+                  {latestStudentFrequency !== null && (
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                  )}
+                  <span>
+                    {latestStudentFrequency !== null ? "Pitch detected" : "Listening"}
+                  </span>
+                </div>
               </div>
 
-              <div className={`flex h-8 items-center justify-center gap-1 rounded-full border ${currentTheme.border} bg-slate-900/30 px-1 text-[10px] font-semibold ${currentTheme.text}`}>
+              <div className={`flex h-8 items-center justify-center gap-1 rounded-full border ${currentTheme.border} bg-slate-900/30 px-1.5 text-[10px] font-semibold ${currentTheme.text}`}>
                 <button
                   type="button"
                   onClick={handleHomePracticeZoomOut}
                   disabled={!onZoomChange || homePracticeTimelineZoom <= 1.2}
-                  className="flex h-6 w-7 items-center justify-center rounded-full bg-slate-700/70 text-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+                  className="flex h-6 w-8 items-center justify-center rounded-full bg-slate-700/70 text-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
                   title="Show a longer timeline"
                   aria-label="Show a longer timeline"
                 >
                   <ZoomOut size={12} />
                 </button>
-                <span className="min-w-[34px] text-center">
+                <span className="min-w-[42px] text-center">
                   {Math.round(homePracticeTimelineZoom * 100)}%
                 </span>
                 <button
                   type="button"
                   onClick={handleHomePracticeZoomIn}
                   disabled={!onZoomChange || homePracticeTimelineZoom >= 4.0}
-                  className="flex h-6 w-7 items-center justify-center rounded-full bg-slate-700/70 text-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+                  className="flex h-6 w-8 items-center justify-center rounded-full bg-slate-700/70 text-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
                   title="Show a shorter timeline"
                   aria-label="Show a shorter timeline"
                 >
