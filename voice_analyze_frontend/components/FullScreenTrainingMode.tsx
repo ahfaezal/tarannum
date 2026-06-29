@@ -1004,6 +1004,21 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
               </button>
             )}
 
+            {isClassroomLayout && micStatus !== "idle" && (
+              <div
+                className={`flex items-center justify-center rounded-full border px-2 py-1 text-[10px] font-semibold ${
+                  micStatus === "ready"
+                    ? "border-emerald-400/50 bg-emerald-500/15 text-emerald-100"
+                    : micStatus === "checking"
+                    ? "border-blue-400/50 bg-blue-500/15 text-blue-100"
+                    : "border-red-400/50 bg-red-500/15 text-red-100"
+                }`}
+                role="status"
+              >
+                {micStatusMessage}
+              </div>
+            )}
+
             {/* Practice Mode Indicator */}
             {isPracticeMode && !isHomePracticeMobile && (
               <div className='flex items-center gap-1.5 px-2 py-1 rounded bg-red-600/20 border border-red-500/30'>
