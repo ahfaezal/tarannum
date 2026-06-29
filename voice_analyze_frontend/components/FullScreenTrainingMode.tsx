@@ -167,6 +167,48 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
     return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
 
+  const checkMicrophoneAccess = React.useCallback(async () => {
+    setMicStatus("checking");
+    setMicStatusMessage("Checking microphone...");
+
+    try {
+      if (typeof window !== "undefined" && !window.isSecureContext) {
+        throw new Error("secure-context-required");
+      }
+
+      if (!navigator.mediaDevices?.getUserMedia) {
+        throw new Error("microphone-unavailable");
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+          sampleRate: 44100,
+          channelCount: 1,
+        },
+      });
+
+      stream.getTracks().forEach((track) => track.stop());
+      setMicStatus("ready");
+      setMicStatusMessage("Microphone ready");
+      return true;
+    } catch (error: any) {
+      const unavailable =
+        error?.message === "microphone-unavailable" ||
+        error?.name === "NotFoundError" ||
+        error?.name === "DevicesNotFoundError";
+      setMicStatus(unavailable ? "unavailable" : "blocked");
+      setMicStatusMessage(
+        unavailable
+          ? "Microphone unavailable"
+          : "Please allow microphone access"
+      );
+      return false;
+    }
+  }, []);
+
   const handlePracticeToggle = React.useCallback(async () => {
     if (isPracticeMode) {
       setShowCountdown(false);
@@ -174,50 +216,37 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
       setMicStatusMessage("");
       onPracticeStop?.();
     } else {
-      setMicStatus("checking");
-      setMicStatusMessage("Checking microphone...");
-
-      try {
-        if (typeof window !== "undefined" && !window.isSecureContext) {
-          throw new Error("secure-context-required");
-        }
-
-        if (!navigator.mediaDevices?.getUserMedia) {
-          throw new Error("microphone-unavailable");
-        }
-
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true,
-            sampleRate: 44100,
-            channelCount: 1,
-          },
-        });
-
-        stream.getTracks().forEach((track) => track.stop());
-        setMicStatus("ready");
-        setMicStatusMessage("Microphone ready");
+      const hasMicrophone = await checkMicrophoneAccess();
+      if (hasMicrophone) {
         onPrimeReferenceAudio?.();
 
         window.setTimeout(() => {
           setShowCountdown(true);
         }, 350);
-      } catch (error: any) {
-        const unavailable =
-          error?.message === "microphone-unavailable" ||
-          error?.name === "NotFoundError" ||
-          error?.name === "DevicesNotFoundError";
-        setMicStatus(unavailable ? "unavailable" : "blocked");
-        setMicStatusMessage(
-          unavailable
-            ? "Microphone unavailable"
-            : "Please allow microphone access"
-        );
       }
     }
-  }, [isPracticeMode, onPracticeStop, onPrimeReferenceAudio]);
+  }, [checkMicrophoneAccess, isPracticeMode, onPracticeStop, onPrimeReferenceAudio]);
+
+  const handleRecordingToggle = React.useCallback(async () => {
+    if (isRecordingSession) {
+      setShowCountdown(false);
+      setMicStatus("idle");
+      setMicStatusMessage("");
+      onRecordingStop?.();
+    } else {
+      const hasMicrophone = await checkMicrophoneAccess();
+      if (hasMicrophone) {
+        window.setTimeout(() => {
+          onRecordingStart?.();
+        }, 350);
+      }
+    }
+  }, [
+    checkMicrophoneAccess,
+    isRecordingSession,
+    onRecordingStart,
+    onRecordingStop,
+  ]);
 
   const handleStopWithCountdownCancel = React.useCallback(() => {
     setShowCountdown(false);
@@ -476,10 +505,12 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
   const isPracticeContext = fullscreenContext === "practice";
   const isRecordingContext = fullscreenContext === "recording";
   const isHomePracticeMobile = isMobile && isPracticeContext;
-  const isHomePracticeLandscape = isHomePracticeMobile && isLandscape;
+  const isMobileRecording = isMobile && isRecordingContext;
+  const isFocusedMobileExperience = isHomePracticeMobile || isMobileRecording;
+  const isFocusedMobileLandscape = isFocusedMobileExperience && isLandscape;
   const defaultHomePracticeZoom = isLandscape ? 1.7 : 2.2;
   const homePracticeTimelineZoom =
-    isHomePracticeMobile && zoomLevel <= 1.01
+    isFocusedMobileExperience && zoomLevel <= 1.01
       ? defaultHomePracticeZoom
       : zoomLevel;
   const handleHomePracticeZoomOut = React.useCallback(() => {
@@ -511,7 +542,7 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
     return null;
   })();
   const landscapeGraphHeight = clamp(viewport.height - 112, 170, 340);
-  const displayGraphHeight = isHomePracticeLandscape
+  const displayGraphHeight = isFocusedMobileLandscape
     ? landscapeGraphHeight
     : graphHeight;
 
@@ -527,7 +558,7 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
       aria-label='Full-screen training mode'
     >
       {/* ENHANCEMENT: Top Right Controls - Theme, Practice Stats, and Zoom Status */}
-      <div className={`${isClassroomLayout || isHomePracticeLandscape ? "hidden" : "absolute top-2 right-2 z-10 flex"} items-center gap-2 max-w-[calc(100%-1rem)] overflow-x-auto`}>
+      <div className={`${isClassroomLayout || isFocusedMobileLandscape ? "hidden" : "absolute top-2 right-2 z-10 flex"} items-center gap-2 max-w-[calc(100%-1rem)] overflow-x-auto`}>
         {/* Zoom Status Display */}
         {onZoomChange && (
           <div className={`hidden sm:block px-3 py-1.5 rounded ${currentTheme.controlsBg} border ${currentTheme.border} ${currentTheme.text} text-sm font-medium backdrop-blur-sm`}>
@@ -603,9 +634,9 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
       )}
 
       {/* Main Pitch Graph Area - Optimized for exact fit */}
-      <div className={`flex-1 flex flex-col w-full px-2 sm:px-4 ${isClassroomLayout ? "pt-2 pb-1" : isHomePracticeMobile ? "pt-2 pb-1" : "pt-10 sm:pt-12 pb-2"} overflow-hidden`}>
+      <div className={`flex-1 flex flex-col w-full px-2 sm:px-4 ${isClassroomLayout ? "pt-2 pb-1" : isFocusedMobileExperience ? "pt-2 pb-1" : "pt-10 sm:pt-12 pb-2"} overflow-hidden`}>
         {/* ENHANCEMENT: Live Hz Display with Timeline - Smaller in full-screen */}
-        <div className={`${isHomePracticeLandscape ? "hidden" : isClassroomLayout ? "mb-1 flex w-full max-w-[98%] items-center gap-2 mx-auto" : "mb-1 sm:mb-2 w-full max-w-[96%] sm:max-w-[90%] mx-auto"}`}>
+        <div className={`${isFocusedMobileLandscape ? "hidden" : isClassroomLayout ? "mb-1 flex w-full max-w-[98%] items-center gap-2 mx-auto" : "mb-1 sm:mb-2 w-full max-w-[96%] sm:max-w-[90%] mx-auto"}`}>
           <div className='min-w-0 flex-1'>
             <LiveHzDisplay
               pitchData={studentPitch}
@@ -649,7 +680,7 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
           )}
         </div>
 
-        {isHomePracticeMobile && !isHomePracticeLandscape && micStatus !== "idle" && (
+        {isFocusedMobileExperience && !isFocusedMobileLandscape && micStatus !== "idle" && (
           <div
             className={`mx-auto mb-1 flex max-w-[92%] items-center justify-center rounded-full border px-3 py-1 text-xs font-semibold ${
               micStatus === "ready"
@@ -664,7 +695,7 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
           </div>
         )}
 
-        {isHomePracticeMobile && !isHomePracticeLandscape && (
+        {isFocusedMobileExperience && !isFocusedMobileLandscape && (
           <div
             className={`mx-auto mb-1 flex h-8 items-center justify-center gap-1.5 rounded-full border ${currentTheme.border} ${currentTheme.controlsBg} px-2 text-xs font-semibold ${currentTheme.text}`}
             aria-label="Timeline zoom controls"
@@ -695,7 +726,7 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
           </div>
         )}
 
-        {isHomePracticeLandscape ? (
+        {isFocusedMobileLandscape ? (
           <div className="flex min-h-0 flex-1 gap-2 overflow-hidden">
             <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
               <div
@@ -805,7 +836,7 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
                 </button>
               </div>
 
-              {isHomePracticeMobile && micStatus !== "idle" && (
+              {isFocusedMobileExperience && micStatus !== "idle" && (
                 <div
                   className={`rounded-full border px-2 py-1 text-center text-[10px] font-semibold ${
                     micStatus === "ready"
@@ -835,6 +866,21 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
                 </button>
               )}
 
+              {isRecordingContext && (onRecordingStart || onRecordingStop) && (
+                <button
+                  onClick={handleRecordingToggle}
+                  className={`flex min-h-[38px] items-center justify-center rounded-lg px-2 text-xs font-semibold text-white shadow-md ${
+                    isRecordingSession
+                      ? "bg-red-600 hover:bg-red-700"
+                      : "bg-purple-600 hover:bg-purple-700"
+                  }`}
+                  title={isRecordingSession ? "Stop Recording" : "Start Recording"}
+                  aria-label={isRecordingSession ? "Stop recording" : "Start recording"}
+                >
+                  {isRecordingSession ? "Stop" : "Record"}
+                </button>
+              )}
+
               {isPracticeContext && referencePitch.length > 0 && (
                 <button
                   onClick={isPlaying ? onPause : onPlay}
@@ -847,7 +893,11 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
               )}
 
               <button
-                onClick={handleCloseWithCountdownCancel}
+                onClick={
+                  isRecordingContext
+                    ? handleRecordingCancel
+                    : handleCloseWithCountdownCancel
+                }
                 className="flex h-11 items-center justify-center rounded-full bg-red-600 text-white shadow-md hover:bg-red-700"
                 title="Exit full-screen"
                 aria-label="Exit full-screen mode"
@@ -892,7 +942,7 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
                   }
                 }}
                 zoomLevel={
-                  isHomePracticeMobile
+                  isFocusedMobileExperience
                     ? homePracticeTimelineZoom
                     : zoomLevel
                 }
@@ -969,11 +1019,11 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
         )}
       </div>
 
-      {!isHomePracticeLandscape && (
+      {!isFocusedMobileLandscape && (
         <div
           className={`w-full ${currentTheme.controlsBg} border-t ${currentTheme.border} px-2 sm:px-4 ${isClassroomLayout ? "py-1" : compactControls ? "py-1.5" : "py-3"} backdrop-blur-sm flex-shrink-0 z-10`}
         >
-        <div className={`flex items-center ${isHomePracticeMobile ? "justify-center gap-3 min-h-[54px] flex-nowrap overflow-x-auto pb-0" : `justify-start sm:justify-center ${isClassroomLayout ? "gap-1.5 min-h-[38px]" : "gap-2 sm:gap-3 min-h-[44px]"} flex-wrap overflow-x-visible sm:overflow-visible ${compactControls ? "pb-0" : "pb-1"}`}`}>
+        <div className={`flex items-center ${isFocusedMobileExperience ? "justify-center gap-3 min-h-[54px] flex-nowrap overflow-x-auto pb-0" : `justify-start sm:justify-center ${isClassroomLayout ? "gap-1.5 min-h-[38px]" : "gap-2 sm:gap-3 min-h-[44px]"} flex-wrap overflow-x-visible sm:overflow-visible ${compactControls ? "pb-0" : "pb-1"}`}`}>
           {/* Practice Controls Group */}
           <div className='flex items-center gap-2'>
             {/* Practice Mode Toggle */}
@@ -1065,14 +1115,8 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
             (onRecordingStart || onRecordingStop) && (
             <div className='flex items-center gap-2'>
               <button
-                onClick={() => {
-                  if (isRecordingSession) {
-                    onRecordingStop?.();
-                  } else {
-                    onRecordingStart?.();
-                  }
-                }}
-                className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 text-xs font-medium transition-all ${
+                onClick={handleRecordingToggle}
+                className={`${isMobileRecording ? "h-11 px-3.5 text-sm" : "px-3 py-1.5"} rounded-lg flex items-center gap-1.5 text-xs font-medium transition-all ${
                   isRecordingSession
                     ? "bg-red-600 hover:bg-red-700 text-white"
                     : "bg-purple-600 hover:bg-purple-700 text-white"
@@ -1096,7 +1140,7 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
           )}
 
           {/* Divider */}
-          {!isHomePracticeMobile && ((isPracticeContext && (isPracticeMode || practiceAudioUrl)) ||
+          {!isFocusedMobileExperience && ((isPracticeContext && (isPracticeMode || practiceAudioUrl)) ||
             (isRecordingContext && isRecordingSession)) && (
             <div className='h-8 w-px bg-slate-600/50'></div>
           )}
@@ -1270,12 +1314,12 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
           )}
 
           {/* Exit / Cancel Button */}
-          <div className={isHomePracticeMobile ? "ml-0 pl-0" : `${isClassroomLayout ? "ml-1 pl-2" : "ml-2 sm:ml-4 pl-2 sm:pl-4"} border-l border-slate-600/50`}>
+          <div className={isFocusedMobileExperience ? "ml-0 pl-0" : `${isClassroomLayout ? "ml-1 pl-2" : "ml-2 sm:ml-4 pl-2 sm:pl-4"} border-l border-slate-600/50`}>
             {isRecordingContext ? (
               <button
                 type='button'
                 onClick={handleRecordingCancel}
-                className={`${isClassroomLayout ? "h-9 px-3" : "h-10 px-4"} flex items-center justify-center rounded-lg bg-red-600 hover:bg-red-700 text-sm font-semibold text-white transition-colors shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-red-400`}
+                className={`${isMobileRecording ? "h-11 px-4" : isClassroomLayout ? "h-9 px-3" : "h-10 px-4"} flex items-center justify-center rounded-lg bg-red-600 hover:bg-red-700 text-sm font-semibold text-white transition-colors shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-red-400`}
                 title='Cancel recording'
                 aria-label='Cancel recording fullscreen'
               >
