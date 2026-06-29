@@ -6,7 +6,7 @@ import LivePitchGraph from "../components/LivePitchGraph";
 import CombinedWaveformPitch from "../components/CombinedWaveformPitch";
 import LiveHzDisplay from "../components/LiveHzDisplay";
 import ScoreExplanation from "../components/ScoreExplanation";
-import Countdown from "../components/Countdown";
+import Countdown, { primeCountdownAudioCue } from "../components/Countdown";
 import PracticeFullScreenMode from "../components/PracticeFullScreenMode";
 import RecordingFullScreenMode from "../components/RecordingFullScreenMode";
 import AyahTextDisplay from "../components/AyahTextDisplay";
@@ -1708,6 +1708,7 @@ const TrainingStudio: React.FC = () => {
     if (isPracticeMode || isPracticeModeRef.current) {
       handlePracticeStop();
     }
+    void primeCountdownAudioCue();
     // Show countdown before starting recording
     setShowRecordingCountdown(true);
   };
@@ -3178,7 +3179,10 @@ const TrainingStudio: React.FC = () => {
                                   Stop
                                 </button>
                                 <button
-                                  onClick={() => setShowCountdown(true)}
+                                  onClick={() => {
+                                    void primeCountdownAudioCue();
+                                    setShowCountdown(true);
+                                  }}
                                   className='flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors text-blue-600 bg-blue-50 border border-blue-200 hover:bg-blue-100'
                                   title='Restart practice - clear graph and start fresh'
                                 >

@@ -1,5 +1,53 @@
 import React, { useEffect, useState, useRef } from "react";
 
+let sharedAudioContext: AudioContext | null = null;
+
+const getCountdownAudioContext = (): AudioContext | null => {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    if (!sharedAudioContext || sharedAudioContext.state === "closed") {
+      sharedAudioContext = new (window.AudioContext ||
+        (window as any).webkitAudioContext)();
+    }
+    return sharedAudioContext;
+  } catch (e) {
+    console.warn("AudioContext not available, beep will be disabled:", e);
+    return null;
+  }
+};
+
+export const primeCountdownAudioCue = async (): Promise<boolean> => {
+  const audioContext = getCountdownAudioContext();
+  if (!audioContext) {
+    return false;
+  }
+
+  try {
+    if (audioContext.state === "suspended") {
+      await audioContext.resume();
+    }
+
+    const oscillator = audioContext.createOscillator();
+    const gainNode = audioContext.createGain();
+
+    oscillator.connect(gainNode);
+    gainNode.connect(audioContext.destination);
+
+    oscillator.frequency.value = 440;
+    gainNode.gain.setValueAtTime(0.0001, audioContext.currentTime);
+
+    oscillator.start(audioContext.currentTime);
+    oscillator.stop(audioContext.currentTime + 0.03);
+    return true;
+  } catch (e) {
+    console.warn("Failed to prime countdown audio cue:", e);
+    return false;
+  }
+};
+
 interface CountdownProps {
   isActive: boolean;
   onComplete: () => void;
@@ -28,36 +76,18 @@ const Countdown: React.FC<CountdownProps> = ({
 }) => {
   const [count, setCount] = useState(duration);
   const [isVisible, setIsVisible] = useState(false);
-  const audioContextRef = useRef<AudioContext | null>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const beepTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const completeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Initialize audio context for beep sound
-  useEffect(() => {
-    if (showAudioCue && !audioContextRef.current) {
-      try {
-        audioContextRef.current = new (window.AudioContext ||
-          (window as any).webkitAudioContext)();
-      } catch (e) {
-        console.warn("AudioContext not available, beep will be disabled:", e);
-      }
-    }
-
-    return () => {
-      if (audioContextRef.current) {
-        audioContextRef.current.close().catch(() => {});
-        audioContextRef.current = null;
-      }
-    };
-  }, [showAudioCue]);
-
   // Play beep sound
   const playBeep = async (frequency: number = 800, duration: number = 100) => {
-    if (!showAudioCue || !audioContextRef.current) return;
+    if (!showAudioCue) return;
 
     try {
-      const audioContext = audioContextRef.current;
+      const audioContext = getCountdownAudioContext();
+      if (!audioContext) return;
+
       if (audioContext.state === "suspended") {
         await audioContext.resume();
       }

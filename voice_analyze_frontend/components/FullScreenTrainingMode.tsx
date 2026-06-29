@@ -19,7 +19,7 @@ import CombinedWaveformPitch from "./CombinedWaveformPitch";
 import LiveHzDisplay from "./LiveHzDisplay";
 import AyahTextDisplay from "./AyahTextDisplay";
 import FullScreenAyahTextDisplay from "./FullScreenAyahTextDisplay";
-import Countdown from "./Countdown";
+import Countdown, { primeCountdownAudioCue } from "./Countdown";
 
 interface FullScreenTrainingModeProps {
   isOpen: boolean;
@@ -216,6 +216,7 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
       setMicStatusMessage("");
       onPracticeStop?.();
     } else {
+      void primeCountdownAudioCue();
       const hasMicrophone = await checkMicrophoneAccess();
       if (hasMicrophone) {
         onPrimeReferenceAudio?.();
@@ -234,6 +235,7 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
       setMicStatusMessage("");
       onRecordingStop?.();
     } else {
+      void primeCountdownAudioCue();
       const hasMicrophone = await checkMicrophoneAccess();
       if (hasMicrophone) {
         window.setTimeout(() => {
