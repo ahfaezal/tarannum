@@ -468,6 +468,17 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
   const isPracticeContext = fullscreenContext === "practice";
   const isRecordingContext = fullscreenContext === "recording";
   const isHomePracticeMobile = isMobile && isPracticeContext;
+  const defaultHomePracticeZoom = isLandscape ? 1.7 : 2.2;
+  const homePracticeTimelineZoom =
+    isHomePracticeMobile && zoomLevel <= 1.01
+      ? defaultHomePracticeZoom
+      : zoomLevel;
+  const handleHomePracticeZoomOut = React.useCallback(() => {
+    onZoomChange?.(Math.max(1.2, homePracticeTimelineZoom - 0.3));
+  }, [homePracticeTimelineZoom, onZoomChange]);
+  const handleHomePracticeZoomIn = React.useCallback(() => {
+    onZoomChange?.(Math.min(4.0, homePracticeTimelineZoom + 0.3));
+  }, [homePracticeTimelineZoom, onZoomChange]);
   const graphIsPlaying =
     isPlaying ||
     isPlayingPracticeAudio ||
@@ -629,6 +640,37 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
           </div>
         )}
 
+        {isHomePracticeMobile && (
+          <div
+            className={`mx-auto mb-1 flex h-8 items-center justify-center gap-1.5 rounded-full border ${currentTheme.border} ${currentTheme.controlsBg} px-2 text-xs font-semibold ${currentTheme.text}`}
+            aria-label="Timeline zoom controls"
+          >
+            <button
+              type="button"
+              onClick={handleHomePracticeZoomOut}
+              disabled={!onZoomChange || homePracticeTimelineZoom <= 1.2}
+              className="flex h-6 w-8 items-center justify-center rounded-full bg-slate-700/60 text-slate-100 transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+              title="Show a longer timeline"
+              aria-label="Show a longer timeline"
+            >
+              <ZoomOut size={13} />
+            </button>
+            <span className="min-w-[62px] text-center text-[11px]">
+              {Math.round(homePracticeTimelineZoom * 100)}%
+            </span>
+            <button
+              type="button"
+              onClick={handleHomePracticeZoomIn}
+              disabled={!onZoomChange || homePracticeTimelineZoom >= 4.0}
+              className="flex h-6 w-8 items-center justify-center rounded-full bg-slate-700/60 text-slate-100 transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+              title="Show a shorter timeline"
+              aria-label="Show a shorter timeline"
+            >
+              <ZoomIn size={13} />
+            </button>
+          </div>
+        )}
+
         {/* Graph Container - Full width for exact fit */}
         <div
           className='w-full flex items-center justify-center'
@@ -664,7 +706,7 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
             }}
             zoomLevel={
               isHomePracticeMobile
-                ? Math.max(zoomLevel, isLandscape ? 1.7 : 2.2)
+                ? homePracticeTimelineZoom
                 : zoomLevel
             }
             onZoomChange={onZoomChange}
