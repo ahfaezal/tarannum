@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Play, Pause, Square, Trash2, Edit2, Check, X, Wand2 } from 'lucide-react';
+import { Play, Pause, Square, Trash2, Edit2, Check, X, Wand2, Scissors, FileText } from 'lucide-react';
 import { TextSegment } from '../services/referenceLibraryService';
 import Waveform from './Waveform';
 import LivePitchGraph from './LivePitchGraph';
@@ -67,11 +67,15 @@ const TextAlignmentEditor: React.FC<TextAlignmentEditorProps> = ({
     isOpen: false,
     message: '',
   });
+  const [editorMode, setEditorMode] = useState<'trim' | 'text'>(onTrimAudio ? 'trim' : 'text');
   const [trimStart, setTrimStart] = useState(0);
   const [trimEnd, setTrimEnd] = useState(duration || 0);
+  const [draggingTrimHandle, setDraggingTrimHandle] = useState<'start' | 'end' | null>(null);
   const textInputRef = useRef<HTMLTextAreaElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const waveformRef = useRef<any>(null);
+  const trimWaveformRef = useRef<HTMLDivElement>(null);
+  const wasPlayingBeforeTrimDragRef = useRef(false);
   const onSegmentsChangeRef = useRef(onSegmentsChange);
   const prevInitialSegmentsRef = useRef<string>('');
 
@@ -104,6 +108,30 @@ const TextAlignmentEditor: React.FC<TextAlignmentEditorProps> = ({
     setTrimStart(0);
     setTrimEnd(duration || 0);
   }, [duration, audioUrl]);
+
+  useEffect(() => {
+    if (!draggingTrimHandle) return;
+
+    const handlePointerMove = (event: PointerEvent) => {
+      updateTrimHandleFromClientX(event.clientX, draggingTrimHandle, true);
+    };
+
+    const handlePointerUp = () => {
+      setDraggingTrimHandle(null);
+      if (audioRef.current && !wasPlayingBeforeTrimDragRef.current) {
+        audioRef.current.pause();
+        setIsPlaying(false);
+      }
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+    };
+  }, [draggingTrimHandle, trimStart, trimEnd, duration]);
 
   // Call onSegmentsChange only when segments actually change (not when callback reference changes)
   useEffect(() => {
@@ -177,6 +205,66 @@ const TextAlignmentEditor: React.FC<TextAlignmentEditorProps> = ({
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const clampTrimTime = (time: number) => {
+    if (!Number.isFinite(time)) return 0;
+    return Math.min(Math.max(time, 0), duration || 0);
+  };
+
+  const getTrimTimeFromClientX = (clientX: number, rect: DOMRect) => {
+    const progress = Math.min(Math.max((clientX - rect.left) / rect.width, 0), 1);
+    return Number((progress * duration).toFixed(2));
+  };
+
+  const updateTrimHandleFromClientX = (
+    clientX: number,
+    handle: 'start' | 'end',
+    previewAudio = false
+  ) => {
+    if (!trimWaveformRef.current || duration <= 0) return;
+
+    const rect = trimWaveformRef.current.getBoundingClientRect();
+    const rawTime = getTrimTimeFromClientX(clientX, rect);
+    const minGap = 0.05;
+    const nextTime =
+      handle === 'start'
+        ? Math.min(clampTrimTime(rawTime), Math.max(0, trimEnd - minGap))
+        : Math.max(clampTrimTime(rawTime), Math.min(duration, trimStart + minGap));
+
+    if (handle === 'start') {
+      setTrimStart(nextTime);
+    } else {
+      setTrimEnd(nextTime);
+    }
+
+    if (audioRef.current) {
+      audioRef.current.currentTime = nextTime;
+      setCurrentTime(nextTime);
+      if (previewAudio && audioRef.current.paused) {
+        audioRef.current.play().then(() => setIsPlaying(true)).catch(() => undefined);
+      }
+    }
+  };
+
+  const handleTrimHandlePointerDown = (
+    event: React.PointerEvent<HTMLButtonElement>,
+    handle: 'start' | 'end'
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    wasPlayingBeforeTrimDragRef.current = Boolean(audioRef.current && !audioRef.current.paused);
+    setDraggingTrimHandle(handle);
+    updateTrimHandleFromClientX(event.clientX, handle, true);
+  };
+
+  const handleTrimWaveformClick = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (draggingTrimHandle) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const clickedTime = getTrimTimeFromClientX(event.clientX, rect);
+    const distanceToStart = Math.abs(clickedTime - trimStart);
+    const distanceToEnd = Math.abs(clickedTime - trimEnd);
+    updateTrimHandleFromClientX(event.clientX, distanceToStart <= distanceToEnd ? 'start' : 'end');
   };
 
   const handleMarkStart = () => {
@@ -375,6 +463,35 @@ const TextAlignmentEditor: React.FC<TextAlignmentEditorProps> = ({
     <div className="space-y-6">
       {/* Audio Controls */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+        {onTrimAudio && (
+          <div className="mb-4 flex flex-wrap items-center gap-2 border-b border-slate-200 pb-4">
+            <button
+              type="button"
+              onClick={() => setEditorMode('trim')}
+              className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-colors ${
+                editorMode === 'trim'
+                  ? 'bg-amber-600 text-white'
+                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+              }`}
+            >
+              <Scissors size={16} />
+              Trim Audio
+            </button>
+            <button
+              type="button"
+              onClick={() => setEditorMode('text')}
+              className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-colors ${
+                editorMode === 'text'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+              }`}
+            >
+              <FileText size={16} />
+              Edit Ayat
+            </button>
+          </div>
+        )}
+
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <button
@@ -395,13 +512,13 @@ const TextAlignmentEditor: React.FC<TextAlignmentEditorProps> = ({
           </div>
         </div>
 
-        {onTrimAudio && (
+        {onTrimAudio && editorMode === 'trim' && (
           <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <div>
                 <h4 className="text-sm font-semibold text-amber-900">Audio Trim</h4>
                 <p className="text-xs text-amber-800">
-                  Remove long silence at the beginning or end, then adjust text timing if needed.
+                  Clean the audio first. Drag the start/end handles on the waveform, then save before editing ayat timing.
                 </p>
               </div>
               <button
@@ -466,18 +583,81 @@ const TextAlignmentEditor: React.FC<TextAlignmentEditorProps> = ({
 
         {/* Waveform */}
         <div className="mb-4">
-          <Waveform
-            url={audioUrl}
-            height={100}
-            interact={true}
-            onSeek={handleSeek}
-            syncProgress={duration > 0 ? currentTime / duration : null}
-            showControls={false}
-          />
+          {onTrimAudio && editorMode === 'trim' ? (
+            <div className="rounded-lg border border-slate-200 bg-white p-2">
+              <div
+                ref={trimWaveformRef}
+                className="relative"
+                onPointerDown={handleTrimWaveformClick}
+              >
+                <Waveform
+                  url={audioUrl}
+                  height={130}
+                  interact={true}
+                  onSeek={handleSeek}
+                  syncProgress={duration > 0 ? currentTime / duration : null}
+                  showControls={false}
+                />
+                {duration > 0 && (
+                  <div className="pointer-events-none absolute inset-0">
+                    <div
+                      className="absolute top-0 bottom-0 bg-amber-400/15 ring-1 ring-amber-400/60"
+                      style={{
+                        left: `${(trimStart / duration) * 100}%`,
+                        width: `${Math.max(((trimEnd - trimStart) / duration) * 100, 0)}%`,
+                      }}
+                    />
+                    <button
+                      type="button"
+                      aria-label="Drag trim start"
+                      onPointerDown={(event) => handleTrimHandlePointerDown(event, 'start')}
+                      className="pointer-events-auto absolute top-0 bottom-0 w-4 -translate-x-1/2 cursor-ew-resize rounded-full border border-amber-500 bg-amber-500 shadow-sm focus:outline-none focus:ring-2 focus:ring-amber-300"
+                      style={{ left: `${(trimStart / duration) * 100}%` }}
+                    >
+                      <span className="absolute left-1/2 top-full mt-1 -translate-x-1/2 whitespace-nowrap rounded bg-amber-700 px-2 py-0.5 text-[11px] font-semibold text-white">
+                        {formatTime(trimStart)}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      aria-label="Drag trim end"
+                      onPointerDown={(event) => handleTrimHandlePointerDown(event, 'end')}
+                      className="pointer-events-auto absolute top-0 bottom-0 w-4 -translate-x-1/2 cursor-ew-resize rounded-full border border-amber-500 bg-amber-500 shadow-sm focus:outline-none focus:ring-2 focus:ring-amber-300"
+                      style={{ left: `${(trimEnd / duration) * 100}%` }}
+                    >
+                      <span className="absolute left-1/2 top-full mt-1 -translate-x-1/2 whitespace-nowrap rounded bg-amber-700 px-2 py-0.5 text-[11px] font-semibold text-white">
+                        {formatTime(trimEnd)}
+                      </span>
+                    </button>
+                  </div>
+                )}
+              </div>
+              <div className="mt-7 grid grid-cols-1 gap-2 text-xs text-slate-600 md:grid-cols-3">
+                <div className="rounded bg-slate-50 px-3 py-2">
+                  Start: <span className="font-semibold text-slate-900">{formatTime(trimStart)}</span>
+                </div>
+                <div className="rounded bg-slate-50 px-3 py-2">
+                  End: <span className="font-semibold text-slate-900">{formatTime(trimEnd)}</span>
+                </div>
+                <div className="rounded bg-slate-50 px-3 py-2">
+                  New duration: <span className="font-semibold text-slate-900">{formatTime(Math.max(trimEnd - trimStart, 0))}</span>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <Waveform
+              url={audioUrl}
+              height={100}
+              interact={true}
+              onSeek={handleSeek}
+              syncProgress={duration > 0 ? currentTime / duration : null}
+              showControls={false}
+            />
+          )}
         </div>
 
         {/* Pitch Contour */}
-        {referencePitch.length > 0 && (
+        {editorMode === 'text' && referencePitch.length > 0 && (
           <div className="mb-4" style={{ height: '200px' }}>
             <LivePitchGraph
               referencePitch={referencePitch}
@@ -492,36 +672,39 @@ const TextAlignmentEditor: React.FC<TextAlignmentEditorProps> = ({
         )}
 
         {/* Marking Controls */}
-        <div className="flex items-center gap-3 mb-4">
-          <button
-            onClick={() => {
-              if (!markingStart && !markingEnd) {
-                setMarkingStart(true);
-                handleMarkStart();
-              } else if (markingEnd) {
-                handleMarkEnd();
-              }
-            }}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
-          >
-            {markingEnd ? 'Mark End' : 'Mark Start'}
-          </button>
-          {markingEnd && (
+        {editorMode === 'text' && (
+          <div className="flex items-center gap-3 mb-4">
             <button
               onClick={() => {
-                setMarkingEnd(false);
-                setTempStart(0);
-                setTempEnd(0);
+                if (!markingStart && !markingEnd) {
+                  setMarkingStart(true);
+                  handleMarkStart();
+                } else if (markingEnd) {
+                  handleMarkEnd();
+                }
               }}
-              className="px-4 py-2 bg-slate-600 hover:bg-slate-700 text-white rounded-lg text-sm font-medium transition-colors"
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
             >
-              Cancel
+              {markingEnd ? 'Mark End' : 'Mark Start'}
             </button>
-          )}
-        </div>
+            {markingEnd && (
+              <button
+                onClick={() => {
+                  setMarkingEnd(false);
+                  setTempStart(0);
+                  setTempEnd(0);
+                }}
+                className="px-4 py-2 bg-slate-600 hover:bg-slate-700 text-white rounded-lg text-sm font-medium transition-colors"
+              >
+                Cancel
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Text Segments List */}
+      {editorMode === 'text' && (
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -662,6 +845,7 @@ const TextAlignmentEditor: React.FC<TextAlignmentEditorProps> = ({
           </div>
         )}
       </div>
+      )}
 
       {/* Text Input Modal */}
       {showTextModal && (
