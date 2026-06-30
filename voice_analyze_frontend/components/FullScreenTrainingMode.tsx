@@ -761,6 +761,7 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
                   height={displayGraphHeight}
                   isFullScreen={true}
                   markers={markers}
+                  ayahMarkers={ayatTiming}
                   onMarkerClick={(time) => {
                     if (onSeekToTime) {
                       onSeekToTime(time);
@@ -938,6 +939,7 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
                 height={graphHeight}
                 isFullScreen={true}
                 markers={markers}
+                ayahMarkers={ayatTiming}
                 onMarkerClick={(time) => {
                   if (onSeekToTime) {
                     onSeekToTime(time);

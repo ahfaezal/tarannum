@@ -3275,6 +3275,11 @@ const TrainingStudio: React.FC = () => {
                       }}
                       height={pitchGraphHeight}
                       markers={[]}
+                      ayahMarkers={
+                        selectedRef?.is_preset && referenceAyahTiming.length > 0
+                          ? referenceAyahTiming
+                          : []
+                      }
                     />
 
                     {/* Quranic Text Display - Always show below waveform when text segments are available (Admin and Qari only) */}
@@ -3736,6 +3741,11 @@ const TrainingStudio: React.FC = () => {
                   }
                   height={pitchGraphHeight}
                   markers={analysisResult?.pitchData?.markers || []}
+                  ayahMarkers={
+                    selectedRef?.is_preset && referenceAyahTiming.length > 0
+                      ? referenceAyahTiming
+                      : []
+                  }
                   onMarkerClick={(time) => {
                     // Seek student audio to marker time
                     if (studentWaveSurfer.current && referenceDuration > 0) {

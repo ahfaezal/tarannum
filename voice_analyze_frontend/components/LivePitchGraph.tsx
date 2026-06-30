@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { PitchPoint } from "../services/pitchExtractor";
-import { PitchData, PitchMarker } from "../types";
+import { AyahTiming, PitchData, PitchMarker } from "../types";
 import { ZoomIn, ZoomOut, RotateCcw, Maximize2 } from "lucide-react";
 
 const AUTO_FOLLOW_PLAYHEAD_RATIO = 0.425;
@@ -20,6 +20,7 @@ interface LivePitchGraphProps {
   height?: number;
   isFullScreen?: boolean; // Full-screen training mode (hides controls, simplifies UI)
   markers?: PitchMarker[]; // Training markers for unclear/unstable segments
+  ayahMarkers?: AyahTiming[]; // Ayah-start guide lines for preset references
   onMarkerClick?: (time: number) => void; // Callback when marker is clicked
   fixedYAxis?: boolean; // Lock Y-axis to fixed range (60-600 Hz) when true
   minFreq?: number; // Minimum frequency for fixed Y-axis (default: 60 Hz)
@@ -38,6 +39,7 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
   height = 300,
   isFullScreen = false,
   markers = [],
+  ayahMarkers = [],
   onMarkerClick,
   fixedYAxis = false,
   minFreq = 60,
@@ -1025,6 +1027,54 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
       ctx.lineTo(displayWidth - padding, displayHeight - padding);
       ctx.stroke();
 
+      // Draw ayah-start guide markers. These use timing metadata, not pitch wave changes,
+      // so students get a reliable cue before each text transition.
+      if (ayahMarkers && ayahMarkers.length > 0) {
+        const actualVisibleRange = maxVisibleTime - minVisibleTime;
+        const activeAyahIndex = ayahMarkers.reduce((activeIndex, ayah, index) => {
+          if (currentTime >= ayah.start && currentTime < ayah.end) return index;
+          if (currentTime >= ayah.start) return index;
+          return activeIndex;
+        }, ayahMarkers.length > 0 ? 0 : -1);
+        const upcomingAyahIndex = ayahMarkers.findIndex(
+          (ayah, index) => index > activeAyahIndex && ayah.start > currentTime
+        );
+
+        ctx.save();
+        for (let index = 0; index < ayahMarkers.length; index++) {
+          const ayah = ayahMarkers[index];
+          if (
+            !Number.isFinite(ayah.start) ||
+            ayah.start < minVisibleTime ||
+            ayah.start > maxVisibleTime
+          ) {
+            continue;
+          }
+
+          const x =
+            padding +
+            ((ayah.start - minVisibleTime) / actualVisibleRange) * graphWidth;
+
+          if (x < padding || x > displayWidth - padding) continue;
+
+          const isActive = index === activeAyahIndex;
+          const isUpcoming = index === upcomingAyahIndex;
+
+          ctx.strokeStyle = isActive
+            ? "rgba(16, 185, 129, 0.9)"
+            : isUpcoming
+            ? "rgba(245, 158, 11, 0.58)"
+            : "rgba(20, 184, 166, 0.28)";
+          ctx.lineWidth = isActive ? 2.2 : isUpcoming ? 1.7 : 1;
+          ctx.setLineDash(isActive ? [7, 4] : isUpcoming ? [6, 5] : [4, 6]);
+          ctx.beginPath();
+          ctx.moveTo(x, padding);
+          ctx.lineTo(x, displayHeight - padding);
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+
       // Draw reference pitch (green) - full length, static
       // Reference pitch persists after playback stops (same as student pitch after practice stops)
       // Enhanced: Apply smoothing for smoother melodic flow (tarannum training)
@@ -1431,6 +1481,7 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
     referenceDuration,
     isFullScreen, // Add isFullScreen to trigger redraw when entering fullscreen
     markers, // Include markers to trigger redraw when they change
+    ayahMarkers,
     // Don't include .length - it changes too frequently and causes blinking
     // The array reference changes are enough to trigger updates
   ]);

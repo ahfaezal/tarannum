@@ -2,7 +2,7 @@ import React from "react";
 import LivePitchGraph from "./LivePitchGraph";
 import Waveform from "./Waveform";
 import { PitchPoint } from "../services/pitchExtractor";
-import { PitchData, PitchMarker } from "../types";
+import { AyahTiming, PitchData, PitchMarker } from "../types";
 
 interface CombinedWaveformPitchProps {
   // Pitch graph props (for LivePitchGraph)
@@ -13,6 +13,7 @@ interface CombinedWaveformPitchProps {
   currentTime: number;
   referenceDuration?: number;
   markers?: PitchMarker[];
+  ayahMarkers?: AyahTiming[];
   onMarkerClick?: (time: number) => void;
 
   // Waveform props
@@ -43,6 +44,7 @@ const CombinedWaveformPitch: React.FC<CombinedWaveformPitchProps> = ({
   currentTime,
   referenceDuration,
   markers = [],
+  ayahMarkers = [],
   onMarkerClick,
   referenceAudioUrl,
   studentAudioUrl,
@@ -104,6 +106,7 @@ const CombinedWaveformPitch: React.FC<CombinedWaveformPitchProps> = ({
           height={isFullScreen ? height : pitchHeight}
           isFullScreen={isFullScreen}
           markers={markers}
+          ayahMarkers={ayahMarkers}
           onMarkerClick={onMarkerClick}
           fixedYAxis={isFullScreen}
           minFreq={60}
