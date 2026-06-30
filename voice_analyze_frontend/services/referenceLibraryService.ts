@@ -226,8 +226,9 @@ class ReferenceLibraryService {
         throw new Error(errorMsg);
       }
       
-      const response = await fetch(`${API_BASE_URL}/api/references/${refId}/audio`, {
+      const response = await fetch(`${API_BASE_URL}/api/references/${refId}/audio?v=${Date.now()}`, {
         headers,
+        cache: 'no-store',
       });
 
       if (!response.ok) {

@@ -1820,7 +1820,7 @@ async def get_reference_audio(
                 from pathlib import Path as PathLib
 
                 # Download from S3 to temp file
-                temp_audio_path = TEMP_DIR / f"s3_proxy_{ref_id}{PathLib(ref_record.filename).suffix if ref_record.filename else '.mp3'}"
+                temp_audio_path = TEMP_DIR / f"s3_proxy_{ref_id}_{uuid.uuid4().hex}{PathLib(ref_record.filename).suffix if ref_record.filename else '.mp3'}"
                 success = cloud_storage.download_file(ref_record.cloud_storage_path, temp_audio_path)
 
                 if success and temp_audio_path.exists():
@@ -1840,7 +1840,7 @@ async def get_reference_audio(
                         media_type=media_type,
                         filename=ref_record.filename or temp_audio_path.name,
                         headers={
-                            "Cache-Control": "public, max-age=3600",
+                            "Cache-Control": "no-store, max-age=0",
                             "X-Content-Type-Options": "nosniff"
                         }
                     )
@@ -1878,7 +1878,11 @@ async def get_reference_audio(
         return FileResponse(
             path=str(file_path),
             media_type=media_type,
-            filename=file_path.name
+            filename=file_path.name,
+            headers={
+                "Cache-Control": "no-store, max-age=0",
+                "X-Content-Type-Options": "nosniff"
+            }
         )
     except HTTPException:
         raise
@@ -1967,15 +1971,26 @@ async def trim_reference_audio(
             export_format = "mp3"
         trimmed_audio.export(trimmed_path, format=export_format)
 
-        updated_ref = db_reference_library.save_reference(
-            audio_file_path=trimmed_path,
-            title=ref_record.title,
-            maqam=ref_record.maqam,
-            filename=ref_record.filename,
-            owner_id=str(ref_record.owner_id) if ref_record.owner_id else None,
-            is_public=bool(ref_record.is_public),
-            db=db
-        )
+        if ref_record.cloud_storage_type and ref_record.cloud_storage_path:
+            from cloud_storage import cloud_storage
+
+            remote_path = ref_record.cloud_storage_path
+            if remote_path.startswith("s3://"):
+                remote_path = remote_path.replace("s3://", "").split("/", 1)[1]
+            cloud_url = cloud_storage.upload_file(trimmed_path, remote_path)
+            ref_record.cloud_storage_path = cloud_url
+            ref_record.file_path = cloud_url
+        else:
+            local_path = db_reference_library.get_reference_file_path(ref_id, db=db)
+            if not local_path:
+                raise HTTPException(status_code=404, detail="Reference audio file not found")
+            local_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(trimmed_path, local_path)
+
+        verified_duration = len(trimmed_audio) / 1000.0
+        ref_record.duration = float(verified_duration)
+        ref_record.file_size = trimmed_path.stat().st_size
+        ref_record.upload_date = datetime.utcnow()
 
         db.query(PitchCache).filter(PitchCache.reference_id == ref_id).delete()
 
@@ -1994,7 +2009,8 @@ async def trim_reference_audio(
                 segment.end = new_end
 
         db.commit()
-        return updated_ref
+        db.refresh(ref_record)
+        return db_reference_library._reference_to_dict(ref_record)
 
     except HTTPException:
         raise
