@@ -31,6 +31,7 @@ const QariContentEditor: React.FC = () => {
   const [loadingPitch, setLoadingPitch] = useState(false);
   const [audioBlobUrl, setAudioBlobUrl] = useState<string | null>(null);
   const [loadingAudio, setLoadingAudio] = useState(false);
+  const [trimmingAudio, setTrimmingAudio] = useState(false);
 
   useEffect(() => {
     if (contentId) {
@@ -140,6 +141,32 @@ const QariContentEditor: React.FC = () => {
 
   const handleSegmentsChange = (segments: TextSegment[]) => {
     setTextSegments(segments);
+  };
+
+  const handleTrimAudio = async (trimStart: number, trimEnd: number) => {
+    if (!content?.reference_id) return;
+
+    try {
+      setTrimmingAudio(true);
+      setError(null);
+      await referenceLibraryService.trimReference(
+        content.reference_id,
+        trimStart,
+        trimEnd,
+        isAdminManagingQari ? qariId : undefined
+      );
+      if (audioBlobUrl) {
+        URL.revokeObjectURL(audioBlobUrl);
+        setAudioBlobUrl(null);
+      }
+      setReferenceAudio(null);
+      setReferencePitch([]);
+      await loadContent();
+    } catch (err: any) {
+      setError(err.message || 'Failed to trim audio');
+    } finally {
+      setTrimmingAudio(false);
+    }
   };
 
   const handleSave = async () => {
@@ -344,6 +371,10 @@ const QariContentEditor: React.FC = () => {
                 referencePitch={referencePitch}
                 onSegmentsChange={handleSegmentsChange}
                 initialSegments={textSegments}
+                surahNumber={surahNumber}
+                surahName={surahName}
+                onTrimAudio={handleTrimAudio}
+                isTrimmingAudio={trimmingAudio}
               />
             )}
           </div>

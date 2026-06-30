@@ -1887,6 +1887,130 @@ async def get_reference_audio(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/api/references/{ref_id}/trim")
+async def trim_reference_audio(
+    ref_id: str,
+    trim_start: float = Form(...),
+    trim_end: float = Form(...),
+    target_user_id: Optional[str] = Form(None),
+    current_user: Optional[User] = Depends(get_current_user_optional),
+    db: Session = Depends(get_db)
+):
+    """Trim the start/end of a reference audio file and replace the stored reference audio."""
+    source_path = None
+    trimmed_path = None
+    try:
+        if not current_user:
+            raise HTTPException(status_code=401, detail="Authentication required")
+        if current_user.role not in [UserRole.ADMIN, UserRole.QARI]:
+            raise HTTPException(status_code=403, detail="Only Admin and Qari can trim reference audio")
+
+        from uuid import UUID
+        from database import Reference, TextSegment, PitchCache
+        from pydub import AudioSegment
+
+        ref_record = db.query(Reference).filter(Reference.id == ref_id).first()
+        if not ref_record:
+            raise HTTPException(status_code=404, detail="Reference not found")
+
+        if current_user.role == UserRole.QARI and ref_record.owner_id != current_user.id:
+            raise HTTPException(status_code=403, detail="You can only trim your own references")
+
+        segment_owner_id = ref_record.owner_id or current_user.id
+        if target_user_id:
+            if current_user.role != UserRole.ADMIN:
+                raise HTTPException(status_code=403, detail="Only Admin can trim on behalf of another user")
+            try:
+                segment_owner_uuid = UUID(target_user_id)
+            except (ValueError, AttributeError):
+                raise HTTPException(status_code=404, detail="Target Qari not found")
+            target_user = db.query(User).filter(User.id == segment_owner_uuid).first()
+            if not target_user or target_user.role != UserRole.QARI:
+                raise HTTPException(status_code=404, detail="Target Qari not found")
+            segment_owner_id = target_user.id
+
+        original_duration = float(ref_record.duration or 0)
+        if original_duration <= 0:
+            raise HTTPException(status_code=400, detail="Reference duration is not available")
+        if trim_start < 0 or trim_end <= trim_start or trim_end > original_duration + 0.1:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Trim range must be between 0 and {original_duration:.2f} seconds, and end must be after start"
+            )
+
+        ext = Path(ref_record.filename or ref_record.file_path or "reference.mp3").suffix or ".mp3"
+        source_path = TEMP_DIR / f"trim_source_{ref_id}_{uuid.uuid4().hex}{ext}"
+        trimmed_path = TEMP_DIR / f"trimmed_{ref_id}_{uuid.uuid4().hex}{ext}"
+
+        if ref_record.cloud_storage_type and ref_record.cloud_storage_path:
+            from cloud_storage import cloud_storage
+            success = cloud_storage.download_file(ref_record.cloud_storage_path, source_path)
+            if not success or not source_path.exists():
+                raise HTTPException(status_code=404, detail="Could not download reference audio for trimming")
+        else:
+            local_path = db_reference_library.get_reference_file_path(ref_id, db=db)
+            if not local_path or not local_path.exists():
+                raise HTTPException(status_code=404, detail="Reference audio file not found")
+            shutil.copyfile(local_path, source_path)
+
+        audio = AudioSegment.from_file(source_path)
+        start_ms = max(0, int(trim_start * 1000))
+        end_ms = min(len(audio), int(trim_end * 1000))
+        trimmed_audio = audio[start_ms:end_ms]
+
+        export_format = ext.lstrip(".").lower()
+        if export_format in ["m4a", "mp4"]:
+            export_format = "mp4"
+        elif export_format in ["oga", "opus"]:
+            export_format = "ogg"
+        elif not export_format:
+            export_format = "mp3"
+        trimmed_audio.export(trimmed_path, format=export_format)
+
+        updated_ref = db_reference_library.save_reference(
+            audio_file_path=trimmed_path,
+            title=ref_record.title,
+            maqam=ref_record.maqam,
+            filename=ref_record.filename,
+            owner_id=str(ref_record.owner_id) if ref_record.owner_id else None,
+            is_public=bool(ref_record.is_public),
+            db=db
+        )
+
+        db.query(PitchCache).filter(PitchCache.reference_id == ref_id).delete()
+
+        # Shift existing text segments for the selected Qari/user after trimming the start.
+        new_duration = trim_end - trim_start
+        segment_query = db.query(TextSegment).filter(TextSegment.reference_id == ref_id)
+        if segment_owner_id:
+            segment_query = segment_query.filter(TextSegment.user_id == segment_owner_id)
+        for segment in segment_query.all():
+            new_start = max(0.0, float(segment.start or 0) - trim_start)
+            new_end = min(new_duration, float(segment.end or 0) - trim_start)
+            if new_end <= 0 or new_start >= new_duration or new_end <= new_start:
+                db.delete(segment)
+            else:
+                segment.start = new_start
+                segment.end = new_end
+
+        db.commit()
+        return updated_ref
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error trimming reference audio: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        for temp_path in [source_path, trimmed_path]:
+            if temp_path and Path(temp_path).exists():
+                try:
+                    Path(temp_path).unlink()
+                except Exception as cleanup_error:
+                    logger.warning(f"Could not clean up temp trim file {temp_path}: {cleanup_error}")
+
+
 @app.delete("/api/references/{ref_id}")
 async def delete_reference(
     ref_id: str,

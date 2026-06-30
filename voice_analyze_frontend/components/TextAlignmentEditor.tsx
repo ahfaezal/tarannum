@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Play, Pause, Square, Plus, Trash2, Edit2, Check, X } from 'lucide-react';
+import { Play, Pause, Square, Trash2, Edit2, Check, X, Wand2 } from 'lucide-react';
 import { TextSegment } from '../services/referenceLibraryService';
 import Waveform from './Waveform';
 import LivePitchGraph from './LivePitchGraph';
@@ -12,7 +12,26 @@ interface TextAlignmentEditorProps {
   referencePitch?: PitchData[];
   onSegmentsChange: (segments: TextSegment[]) => void;
   initialSegments?: TextSegment[];
+  surahNumber?: number | string;
+  surahName?: string;
+  onTrimAudio?: (trimStart: number, trimEnd: number) => Promise<void>;
+  isTrimmingAudio?: boolean;
 }
+
+const QURAN_TEXT_TEMPLATES: Record<number, { segments: string[] }> = {
+  1: {
+    segments: [
+      'بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ',
+      'الْحَمْدُ لِلَّهِ رَبِّ الْعَالَمِينَ',
+      'الرَّحْمَٰنِ الرَّحِيمِ',
+      'مَالِكِ يَوْمِ الدِّينِ',
+      'إِيَّاكَ نَعْبُدُ وَإِيَّاكَ نَسْتَعِينُ',
+      'اهْدِنَا الصِّرَاطَ الْمُسْتَقِيمَ',
+      'صِرَاطَ الَّذِينَ أَنْعَمْتَ عَلَيْهِمْ',
+      'غَيْرِ الْمَغْضُوبِ عَلَيْهِمْ وَلَا الضَّالِّينَ',
+    ],
+  },
+};
 
 const TextAlignmentEditor: React.FC<TextAlignmentEditorProps> = ({
   audioUrl,
@@ -20,6 +39,10 @@ const TextAlignmentEditor: React.FC<TextAlignmentEditorProps> = ({
   referencePitch = [],
   onSegmentsChange,
   initialSegments = [],
+  surahNumber,
+  surahName,
+  onTrimAudio,
+  isTrimmingAudio = false,
 }) => {
   // Initialize segments and sort by start time (ascending - smallest first)
   const [segments, setSegments] = useState<TextSegment[]>(() => {
@@ -44,6 +67,8 @@ const TextAlignmentEditor: React.FC<TextAlignmentEditorProps> = ({
     isOpen: false,
     message: '',
   });
+  const [trimStart, setTrimStart] = useState(0);
+  const [trimEnd, setTrimEnd] = useState(duration || 0);
   const textInputRef = useRef<HTMLTextAreaElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const waveformRef = useRef<any>(null);
@@ -74,6 +99,11 @@ const TextAlignmentEditor: React.FC<TextAlignmentEditorProps> = ({
       }
     }
   }, [initialSegments]);
+
+  useEffect(() => {
+    setTrimStart(0);
+    setTrimEnd(duration || 0);
+  }, [duration, audioUrl]);
 
   // Call onSegmentsChange only when segments actually change (not when callback reference changes)
   useEffect(() => {
@@ -257,6 +287,90 @@ const TextAlignmentEditor: React.FC<TextAlignmentEditorProps> = ({
     }
   };
 
+  const getCurrentTemplate = () => {
+    const parsedSurahNumber =
+      typeof surahNumber === 'string' ? parseInt(surahNumber, 10) : surahNumber;
+
+    if (parsedSurahNumber && QURAN_TEXT_TEMPLATES[parsedSurahNumber]) {
+      return QURAN_TEXT_TEMPLATES[parsedSurahNumber];
+    }
+
+    const normalizedName = (surahName || '').toLowerCase().replace(/[^a-z]/g, '');
+    if (['alfatihah', 'fatiha', 'fatihah'].includes(normalizedName)) {
+      return QURAN_TEXT_TEMPLATES[1];
+    }
+
+    return null;
+  };
+
+  const handleLoadTemplate = () => {
+    const template = getCurrentTemplate();
+    if (!template) {
+      setAlertModal({
+        isOpen: true,
+        message: 'Template is available for Al-Fatihah only at this stage. Enter Surah Number 1 or Surah Name Al-Fatihah.',
+      });
+      return;
+    }
+
+    if (segments.length > 0) {
+      const shouldReplace = window.confirm(
+        'This will replace the current text segments with the Al-Fatihah template. Continue?'
+      );
+      if (!shouldReplace) return;
+    }
+
+    const segmentCount = template.segments.length;
+    const safeDuration = duration > 0 ? duration : segmentCount;
+    const existingTimingsMatch = segments.length === segmentCount;
+    const nextSegments = template.segments.map((text, index) => {
+      if (existingTimingsMatch) {
+        return {
+          text,
+          start: segments[index].start,
+          end: segments[index].end,
+        };
+      }
+
+      const start = (safeDuration / segmentCount) * index;
+      const end = index === segmentCount - 1 ? safeDuration : (safeDuration / segmentCount) * (index + 1);
+      return {
+        text,
+        start: Number(start.toFixed(2)),
+        end: Number(end.toFixed(2)),
+      };
+    });
+
+    setSegments(nextSegments);
+  };
+
+  const handleClearSegments = () => {
+    if (segments.length === 0) return;
+    const shouldClear = window.confirm('Clear all text segments?');
+    if (shouldClear) {
+      setSegments([]);
+      setEditingIndex(null);
+    }
+  };
+
+  const handleSaveTrim = async () => {
+    if (!onTrimAudio) return;
+    if (trimStart < 0 || trimEnd > duration || trimEnd <= trimStart) {
+      setAlertModal({
+        isOpen: true,
+        message: `Trim range must be between 0 and ${formatTime(duration)}, and end must be after start.`,
+      });
+      return;
+    }
+
+    const shouldTrim = window.confirm(
+      'Save trimmed audio? This will replace the current reference audio and regenerate pitch data.'
+    );
+    if (!shouldTrim) return;
+
+    await onTrimAudio(trimStart, trimEnd);
+  };
+
   return (
     <div className="space-y-6">
       {/* Audio Controls */}
@@ -280,6 +394,75 @@ const TextAlignmentEditor: React.FC<TextAlignmentEditorProps> = ({
             {formatTime(currentTime)} / {formatTime(duration)}
           </div>
         </div>
+
+        {onTrimAudio && (
+          <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h4 className="text-sm font-semibold text-amber-900">Audio Trim</h4>
+                <p className="text-xs text-amber-800">
+                  Remove long silence at the beginning or end, then adjust text timing if needed.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleSaveTrim}
+                disabled={isTrimmingAudio}
+                className="rounded-lg bg-amber-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-amber-700 disabled:cursor-not-allowed disabled:bg-slate-400"
+              >
+                {isTrimmingAudio ? 'Trimming...' : 'Save Trim'}
+              </button>
+            </div>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-amber-900">
+                  Trim Start (seconds)
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="number"
+                    min="0"
+                    max={duration}
+                    step="0.01"
+                    value={trimStart}
+                    onChange={(event) => setTrimStart(parseFloat(event.target.value) || 0)}
+                    className="w-full rounded border border-amber-300 px-2 py-1 text-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setTrimStart(Number(currentTime.toFixed(2)))}
+                    className="whitespace-nowrap rounded bg-white px-2 py-1 text-xs font-medium text-amber-800 ring-1 ring-amber-300 hover:bg-amber-100"
+                  >
+                    Set Start
+                  </button>
+                </div>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-amber-900">
+                  Trim End (seconds)
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="number"
+                    min="0"
+                    max={duration}
+                    step="0.01"
+                    value={trimEnd}
+                    onChange={(event) => setTrimEnd(parseFloat(event.target.value) || 0)}
+                    className="w-full rounded border border-amber-300 px-2 py-1 text-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setTrimEnd(Number(currentTime.toFixed(2)))}
+                    className="whitespace-nowrap rounded bg-white px-2 py-1 text-xs font-medium text-amber-800 ring-1 ring-amber-300 hover:bg-amber-100"
+                  >
+                    Set End
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Waveform */}
         <div className="mb-4">
@@ -340,9 +523,35 @@ const TextAlignmentEditor: React.FC<TextAlignmentEditorProps> = ({
 
       {/* Text Segments List */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
-        <h3 className="text-lg font-semibold text-slate-800 mb-4">
-          Text Segments ({segments.length})
-        </h3>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className="text-lg font-semibold text-slate-800">
+              Text Segments ({segments.length})
+            </h3>
+            <p className="mt-1 text-xs text-slate-500">
+              Load Quran text first, then adjust each timing point if needed.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={handleLoadTemplate}
+              className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-700"
+            >
+              <Wand2 size={16} />
+              Load Al-Fatihah Text
+            </button>
+            <button
+              type="button"
+              onClick={handleClearSegments}
+              disabled={segments.length === 0}
+              className="inline-flex items-center gap-2 rounded-lg bg-slate-100 px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Trash2 size={16} />
+              Clear
+            </button>
+          </div>
+        </div>
 
         {segments.length === 0 ? (
           <p className="text-slate-500 text-center py-8">
@@ -536,4 +745,3 @@ const TextAlignmentEditor: React.FC<TextAlignmentEditorProps> = ({
 };
 
 export default TextAlignmentEditor;
-

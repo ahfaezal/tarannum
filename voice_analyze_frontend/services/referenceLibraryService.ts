@@ -170,6 +170,36 @@ class ReferenceLibraryService {
   }
 
   /**
+   * Trim the start/end of a reference audio file.
+   */
+  async trimReference(
+    refId: string,
+    trimStart: number,
+    trimEnd: number,
+    targetUserId?: string
+  ): Promise<ReferenceAudio> {
+    const formData = new FormData();
+    formData.append('trim_start', trimStart.toString());
+    formData.append('trim_end', trimEnd.toString());
+    if (targetUserId) formData.append('target_user_id', targetUserId);
+
+    const response = await fetch(`${API_BASE_URL}/api/references/${refId}/trim`, {
+      method: 'POST',
+      headers: {
+        ...getAuthHeader(),
+      },
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Failed to trim reference audio' }));
+      throw new Error(error.detail || 'Failed to trim reference audio');
+    }
+
+    return response.json();
+  }
+
+  /**
    * Get reference audio as a blob URL (for use in audio elements with authentication)
    * This fetches the audio with auth headers and creates a blob URL that can be used
    * in <audio> tags or WaveSurfer without authentication issues.
