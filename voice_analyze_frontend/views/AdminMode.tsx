@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Edit, Trash2, Users, BookOpen, CheckCircle, XCircle, UserPlus, Save, X, BarChart3, Activity, TrendingUp, FileAudio, UserCheck, Monitor, HardDrive, PlayCircle } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { referenceLibraryService, ReferenceAudio, TextSegment } from '../services/referenceLibraryService';
 import { 
   listAllUsers, getUser, updateUser, createUser, deleteUser, approveQari, AdminUser, 
@@ -17,6 +18,7 @@ interface AdminModeProps {
 }
 
 const AdminMode: React.FC<AdminModeProps> = ({ view = 'presets' }) => {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<TabType>(view);
   
   // Update activeTab when view prop changes
@@ -665,6 +667,14 @@ const AdminMode: React.FC<AdminModeProps> = ({ view = 'presets' }) => {
                                 className="text-emerald-600 hover:text-emerald-900 font-medium"
                               >
                                 Approve
+                              </button>
+                            )}
+                            {user.role === 'qari' && (
+                              <button
+                                onClick={() => navigate(`/admin/qari/${user.id}/content`)}
+                                className="text-emerald-600 hover:text-emerald-900 font-medium"
+                              >
+                                Content
                               </button>
                             )}
                             <button

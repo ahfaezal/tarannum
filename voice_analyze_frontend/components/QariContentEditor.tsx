@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Save, X } from 'lucide-react';
-import { getQariContent, updateQariContent, QariContent } from '../services/platformService';
+import { getAdminQariContent, getQariContent, updateAdminQariContent, updateQariContent, QariContent } from '../services/platformService';
 import { referenceLibraryService, TextSegment } from '../services/referenceLibraryService';
 import TextAlignmentEditor from './TextAlignmentEditor';
 import { extractReferencePitch } from '../services/apiService';
@@ -9,7 +9,8 @@ import { PitchData } from '../types';
 
 const QariContentEditor: React.FC = () => {
   const navigate = useNavigate();
-  const { contentId } = useParams<{ contentId: string }>();
+  const { contentId, qariId } = useParams<{ contentId: string; qariId?: string }>();
+  const isAdminManagingQari = !!qariId;
   const [content, setContent] = useState<QariContent | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -55,7 +56,9 @@ const QariContentEditor: React.FC = () => {
   const loadContent = async () => {
     try {
       setLoading(true);
-      const contentData = await getQariContent();
+      const contentData = isAdminManagingQari && qariId
+        ? await getAdminQariContent(qariId)
+        : await getQariContent();
       const foundContent = contentData.content.find((c: QariContent) => c.id === contentId);
       
       if (!foundContent) {
@@ -93,8 +96,7 @@ const QariContentEditor: React.FC = () => {
     if (!content?.reference_id) return;
     
     try {
-      const refs = await referenceLibraryService.getReferences();
-      const ref = refs.find(r => r.id === content.reference_id);
+      const ref = await referenceLibraryService.getReference(content.reference_id);
       if (ref) {
         setReferenceAudio(ref);
       }
@@ -148,21 +150,22 @@ const QariContentEditor: React.FC = () => {
       setError(null);
       
       // First, save the metadata (surah/ayah/maqam)
-      await updateQariContent(
-        contentId,
-        {
-          surah_number: surahNumber ? parseInt(surahNumber) : undefined,
-          surah_name: surahName || undefined,
-          ayah_number: ayahNumber ? parseInt(ayahNumber) : undefined,
-          maqam: maqam || undefined,
-        }
-      );
+      const metadata = {
+        surah_number: surahNumber ? parseInt(surahNumber) : undefined,
+        surah_name: surahName || undefined,
+        ayah_number: ayahNumber ? parseInt(ayahNumber) : undefined,
+        maqam: maqam || undefined,
+      };
+      if (isAdminManagingQari && qariId) {
+        await updateAdminQariContent(qariId, contentId, metadata);
+      } else {
+        await updateQariContent(contentId, metadata);
+      }
       
       // Then, save text segments using the preset endpoint
       if (textSegments.length > 0) {
         // Check if reference is already a preset
-        const refs = await referenceLibraryService.getReferences();
-        const ref = refs.find(r => r.id === content.reference_id);
+        const ref = await referenceLibraryService.getReference(content.reference_id).catch(() => referenceAudio);
         
         if (ref?.is_preset) {
           // Update existing preset
@@ -170,7 +173,8 @@ const QariContentEditor: React.FC = () => {
             content.reference_id,
             textSegments,
             ref.title || content.reference_title || 'Untitled',
-            maqam || undefined
+            maqam || undefined,
+            isAdminManagingQari ? qariId : undefined
           );
         } else {
           // Create new preset
@@ -178,13 +182,14 @@ const QariContentEditor: React.FC = () => {
             content.reference_id,
             content.reference_title || 'Untitled',
             textSegments,
-            maqam || undefined
+            maqam || undefined,
+            isAdminManagingQari ? qariId : undefined
           );
         }
       }
       
       // Navigate back to dashboard
-      navigate('/dashboard');
+      navigate(isAdminManagingQari && qariId ? `/admin/qari/${qariId}/content` : '/dashboard');
     } catch (err: any) {
       setError(err.message || 'Failed to save content');
     } finally {
@@ -193,7 +198,7 @@ const QariContentEditor: React.FC = () => {
   };
 
   const handleCancel = () => {
-    navigate('/dashboard');
+    navigate(isAdminManagingQari && qariId ? `/admin/qari/${qariId}/content` : '/dashboard');
   };
 
   if (loading) {
@@ -220,7 +225,7 @@ const QariContentEditor: React.FC = () => {
             onClick={handleCancel}
             className="w-full px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg transition-colors"
           >
-            Back to Dashboard
+            {isAdminManagingQari ? 'Back to Qari Content' : 'Back to Dashboard'}
           </button>
         </div>
       </div>
@@ -240,8 +245,13 @@ const QariContentEditor: React.FC = () => {
           Back
         </button>
         <h2 className="text-2xl font-bold text-slate-800 mb-2">
-          Edit Content Settings
+          {isAdminManagingQari ? 'Edit Qari Content Settings' : 'Edit Content Settings'}
         </h2>
+        {isAdminManagingQari && (
+          <p className="text-sm text-slate-500">
+            Admin is editing text and timing on behalf of this Qari.
+          </p>
+        )}
       </div>
 
       {error && (
@@ -311,8 +321,8 @@ const QariContentEditor: React.FC = () => {
             {referenceAudio && (
               <div>
                 <p className="text-sm text-slate-500">
-                  Reference: {referenceAudio.title || content.reference_title || 'Untitled'} 
-                  ({Math.floor((referenceAudio.duration || 0) / 60)}:{(Math.floor((referenceAudio.duration || 0) % 60)).toString().padStart(2, '0')})
+                Reference: {referenceAudio.title || content.reference_title || 'Untitled'} 
+                  ({Math.floor(((referenceAudio.duration || content.reference_duration || content.duration || 0)) / 60)}:{(Math.floor(((referenceAudio.duration || content.reference_duration || content.duration || 0)) % 60)).toString().padStart(2, '0')})
                 </p>
               </div>
             )}
@@ -322,7 +332,7 @@ const QariContentEditor: React.FC = () => {
         {/* Audio and Pitch Visualization */}
         {content && content.reference_id && (
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-            {loadingPitch || loadingAudio || !referenceAudio || !audioUrl ? (
+            {loadingPitch || loadingAudio || !audioUrl ? (
               <div className="text-center py-12">
                 <div className="w-8 h-8 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
                 <div className="text-slate-500">Loading audio and pitch data...</div>
@@ -330,7 +340,7 @@ const QariContentEditor: React.FC = () => {
             ) : (
               <TextAlignmentEditor
                 audioUrl={audioUrl}
-                duration={referenceAudio.duration || 0}
+                duration={referenceAudio.duration || content.reference_duration || content.duration || 0}
                 referencePitch={referencePitch}
                 onSegmentsChange={handleSegmentsChange}
                 initialSegments={textSegments}

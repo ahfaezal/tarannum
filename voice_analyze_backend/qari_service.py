@@ -82,15 +82,42 @@ class QariService:
         db_session = db or SessionLocal()
         try:
             qari_uuid = UUID(qari_id) if isinstance(qari_id, str) else qari_id
-            content_uuid = UUID(content_id) if isinstance(content_id, str) else content_id
+            try:
+                content_uuid = UUID(content_id) if isinstance(content_id, str) else content_id
+            except (ValueError, AttributeError):
+                content_uuid = None
             
             # Find the content and verify ownership
-            qari_content = db_session.query(QariContent).filter(
-                and_(
-                    QariContent.id == content_uuid,
-                    QariContent.qari_id == qari_uuid
-                )
-            ).first()
+            qari_content = None
+            if content_uuid:
+                qari_content = db_session.query(QariContent).filter(
+                    and_(
+                        QariContent.id == content_uuid,
+                        QariContent.qari_id == qari_uuid
+                    )
+                ).first()
+            
+            if not qari_content:
+                reference = db_session.query(Reference).filter(
+                    and_(
+                        Reference.id == content_id,
+                        Reference.owner_id == qari_uuid
+                    )
+                ).first()
+                if reference:
+                    qari_content = db_session.query(QariContent).filter(
+                        and_(
+                            QariContent.reference_id == reference.id,
+                            QariContent.qari_id == qari_uuid
+                        )
+                    ).first()
+                    if not qari_content:
+                        qari_content = QariContent(
+                            qari_id=qari_uuid,
+                            reference_id=reference.id,
+                            is_active=True
+                        )
+                        db_session.add(qari_content)
             
             if not qari_content:
                 raise ValueError(f"Content {content_id} not found or access denied")

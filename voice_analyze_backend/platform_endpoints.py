@@ -7,6 +7,7 @@ from sqlalchemy import func, and_, or_, case, desc
 from pydantic import BaseModel
 from datetime import datetime
 from typing import Optional, List
+from uuid import UUID
 from database import User, UserRole, get_db
 from auth import (
     get_current_user, get_current_admin_user, get_current_qari_user,
@@ -112,6 +113,101 @@ async def get_qari_content(
         return {"content": content, "count": len(content)}
     except Exception as e:
         logger.error(f"Error getting Qari content: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+def _get_admin_managed_qari(qari_id: str, db: Session) -> User:
+    try:
+        qari_uuid = UUID(qari_id) if isinstance(qari_id, str) else qari_id
+    except (ValueError, AttributeError):
+        raise HTTPException(status_code=404, detail="Qari not found")
+
+    qari = db.query(User).filter(User.id == qari_uuid).first()
+    if not qari or qari.role != UserRole.QARI:
+        raise HTTPException(status_code=404, detail="Qari not found")
+    return qari
+
+
+@router.get("/admin/qari/{qari_id}/content")
+async def get_admin_qari_content(
+    qari_id: str,
+    current_user: User = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Admin: get a selected Qari's content library."""
+    try:
+        qari = _get_admin_managed_qari(qari_id, db)
+        content = qari_service.get_qari_content(str(qari.id), db=db)
+        return {
+            "content": content,
+            "count": len(content),
+            "qari": {
+                "id": str(qari.id),
+                "email": qari.email,
+                "full_name": qari.full_name,
+                "is_approved": qari.is_approved,
+                "is_active": qari.is_active,
+            },
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting admin-managed Qari content: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/admin/qari/{qari_id}/content/{content_id}")
+async def update_admin_qari_content(
+    qari_id: str,
+    content_id: str,
+    content: UpdateQariContentRequest,
+    current_user: User = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Admin: update selected Qari content metadata."""
+    try:
+        qari = _get_admin_managed_qari(qari_id, db)
+        qari_content = qari_service.update_qari_content(
+            content_id=content_id,
+            qari_id=str(qari.id),
+            surah_number=content.surah_number,
+            surah_name=content.surah_name,
+            ayah_number=content.ayah_number,
+            maqam=content.maqam,
+            db=db
+        )
+        return {"success": True, "content_id": str(qari_content.id)}
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error updating admin-managed Qari content: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/admin/qari/{qari_id}/content/{content_id}")
+async def delete_admin_qari_content(
+    qari_id: str,
+    content_id: str,
+    current_user: User = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Admin: remove content from selected Qari's library."""
+    try:
+        qari = _get_admin_managed_qari(qari_id, db)
+        qari_service.delete_qari_content(
+            content_id=content_id,
+            qari_id=str(qari.id),
+            db=db
+        )
+        return {"success": True, "message": "Content removed from Qari library"}
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error deleting admin-managed Qari content: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 

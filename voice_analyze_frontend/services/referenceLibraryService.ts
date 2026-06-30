@@ -44,7 +44,8 @@ class ReferenceLibraryService {
     title: string,
     maqam?: string,
     onProgress?: (progress: number) => void,
-    isPublic: boolean = false
+    isPublic: boolean = false,
+    targetQariId?: string
   ): Promise<ReferenceAudio> {
     return new Promise((resolve, reject) => {
       const formData = new FormData();
@@ -52,6 +53,7 @@ class ReferenceLibraryService {
       if (title) formData.append('title', title);
       if (maqam) formData.append('maqam', maqam);
       formData.append('is_public', isPublic.toString());
+      if (targetQariId) formData.append('target_qari_id', targetQariId);
 
       const xhr = new XMLHttpRequest();
 
@@ -285,13 +287,15 @@ class ReferenceLibraryService {
     referenceId: string,
     title: string,
     textSegments: TextSegment[],
-    maqam?: string
+    maqam?: string,
+    targetUserId?: string
   ): Promise<ReferenceAudio> {
     const formData = new FormData();
     formData.append('reference_id', referenceId);
     formData.append('title', title);
     formData.append('text_segments', JSON.stringify(textSegments));
     if (maqam) formData.append('maqam', maqam);
+    if (targetUserId) formData.append('target_user_id', targetUserId);
 
     const response = await fetch(`${API_BASE_URL}/api/admin/presets`, {
       method: 'POST',
@@ -369,12 +373,14 @@ class ReferenceLibraryService {
     presetId: string,
     textSegments: TextSegment[],
     title?: string,
-    maqam?: string
+    maqam?: string,
+    targetUserId?: string
   ): Promise<ReferenceAudio> {
     const formData = new FormData();
     formData.append('text_segments', JSON.stringify(textSegments));
     if (title) formData.append('title', title);
     if (maqam) formData.append('maqam', maqam);
+    if (targetUserId) formData.append('target_user_id', targetUserId);
 
     const response = await fetch(`${API_BASE_URL}/api/admin/presets/${presetId}`, {
       method: 'PUT',

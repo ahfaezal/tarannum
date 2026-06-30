@@ -6,6 +6,7 @@ import { logout, fetchCurrentUser } from './store/slices/authSlice';
 import TrainingStudio from './views/TrainingStudio';
 import AdminMode from './views/AdminMode';
 import QariDashboard from './views/QariDashboard';
+import AdminQariContentManager from './views/AdminQariContentManager';
 import QariProfileView from './views/QariProfile';
 import StudentProgressView from './views/StudentProgress';
 import StudentProfileView from './views/StudentProfile';
@@ -545,6 +546,26 @@ const App: React.FC = () => {
               path="/qari/content/edit/:contentId" 
               element={
                 isAuthenticated && userRole === 'qari' ? (
+                  <QariContentEditor />
+                ) : (
+                  <Navigate to="/login" replace />
+                )
+              }
+            />
+            <Route
+              path="/admin/qari/:qariId/content"
+              element={
+                isAuthenticated && userRole === 'admin' ? (
+                  <AdminQariContentManager />
+                ) : (
+                  <Navigate to="/login" replace />
+                )
+              }
+            />
+            <Route
+              path="/admin/qari/:qariId/content/edit/:contentId"
+              element={
+                isAuthenticated && userRole === 'admin' ? (
                   <QariContentEditor />
                 ) : (
                   <Navigate to="/login" replace />

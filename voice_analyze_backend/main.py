@@ -1401,6 +1401,7 @@ async def upload_reference(
     title: Optional[str] = Form(None),
     maqam: Optional[str] = Form(None),
     is_public: bool = Form(False),
+    target_qari_id: Optional[str] = Form(None),
     current_user: Optional[User] = Depends(get_current_user_optional),
     db: Session = Depends(get_db)
 ):
@@ -1429,6 +1430,22 @@ async def upload_reference(
                 detail="Qari account must be approved by Admin before uploading content"
             )
 
+        target_qari = None
+        if target_qari_id:
+            if current_user.role != UserRole.ADMIN:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Only Admin can upload content on behalf of a Qari"
+                )
+            from uuid import UUID
+            try:
+                target_qari_uuid = UUID(target_qari_id)
+            except (ValueError, AttributeError):
+                raise HTTPException(status_code=404, detail="Target Qari not found")
+            target_qari = db.query(User).filter(User.id == target_qari_uuid).first()
+            if not target_qari or target_qari.role != UserRole.QARI:
+                raise HTTPException(status_code=404, detail="Target Qari not found")
+
         if not title:
             # Use filename as title if not provided
             title = file.filename or "Untitled Reference"
@@ -1454,7 +1471,9 @@ async def upload_reference(
 
         # Determine owner_id and is_public
         # Both Admin and Qari should have owner_id set to their user_id
-        if current_user.role == UserRole.QARI:
+        if target_qari:
+            owner_id = str(target_qari.id)
+        elif current_user.role == UserRole.QARI:
             owner_id = str(current_user.id)
         elif current_user.role == UserRole.ADMIN:
             owner_id = str(current_user.id)  # Admin should also have owner_id set
@@ -1462,7 +1481,9 @@ async def upload_reference(
             owner_id = None
         # Admin uploads are public by default (accessible to public users)
         # Qari content is private by default
-        if current_user.role == UserRole.ADMIN:
+        if target_qari:
+            public_flag = False
+        elif current_user.role == UserRole.ADMIN:
             # Default to True for Admin uploads unless explicitly set to False
             public_flag = is_public if is_public else True
         else:
@@ -1481,17 +1502,18 @@ async def upload_reference(
             )
             logger.info(f"Successfully saved reference to library: {ref_data.get('id', 'unknown')}")
 
-            # If Qari uploaded, automatically add to their Content Library
-            if current_user.role == UserRole.QARI and owner_id:
+            # If Qari uploaded, or Admin uploaded for a Qari, automatically add to that Qari's Content Library
+            qari_content_owner_id = str(target_qari.id) if target_qari else (owner_id if current_user.role == UserRole.QARI else None)
+            if qari_content_owner_id:
                 try:
                     from qari_service import qari_service
                     qari_service.add_content_to_qari(
-                        qari_id=owner_id,
+                        qari_id=qari_content_owner_id,
                         reference_id=ref_data.get('id'),
                         maqam=maqam,
                         db=db
                     )
-                    logger.info(f"Automatically added reference {ref_data.get('id')} to Qari {owner_id}'s Content Library")
+                    logger.info(f"Automatically added reference {ref_data.get('id')} to Qari {qari_content_owner_id}'s Content Library")
                 except Exception as qari_content_error:
                     # Non-critical - log but don't fail the upload
                     logger.warning(f"Could not add reference to Qari Content Library: {qari_content_error}")
@@ -1506,7 +1528,7 @@ async def upload_reference(
                 usage_session = UserSession(
                     user_id=current_user.id if current_user else None,
                     reference_id=ref_data.get('id'),
-                    qari_id=UUID(owner_id) if owner_id else None,
+                    qari_id=UUID(qari_content_owner_id or owner_id) if (qari_content_owner_id or owner_id) else None,
                     is_public_demo=False,
                     created_at=datetime.utcnow()
                 )
@@ -1918,6 +1940,7 @@ async def create_preset(
     title: str = Form(...),
     text_segments: str = Form(...),  # JSON string
     maqam: Optional[str] = Form(None),
+    target_user_id: Optional[str] = Form(None),
     current_user: Optional[User] = Depends(get_current_user_optional),
     db: Session = Depends(get_db)
 ):
@@ -1942,8 +1965,20 @@ async def create_preset(
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
-        # Get user_id for text segments ownership
+        # Get user_id for text segments ownership. Admin may save on behalf of a Qari.
         user_id = str(current_user.id) if current_user else None
+        if target_user_id:
+            if not current_user or current_user.role != UserRole.ADMIN:
+                raise HTTPException(status_code=403, detail="Only Admin can save text segments for another user")
+            from uuid import UUID
+            try:
+                target_user_uuid = UUID(target_user_id)
+            except (ValueError, AttributeError):
+                raise HTTPException(status_code=404, detail="Target Qari not found")
+            target_user = db.query(User).filter(User.id == target_user_uuid).first()
+            if not target_user or target_user.role != UserRole.QARI:
+                raise HTTPException(status_code=404, detail="Target Qari not found")
+            user_id = str(target_user.id)
 
         # Save preset
         preset = db_reference_library.save_preset(
@@ -2004,6 +2039,7 @@ async def update_preset(
     text_segments: str = Form(...),  # JSON string
     title: Optional[str] = Form(None),
     maqam: Optional[str] = Form(None),
+    target_user_id: Optional[str] = Form(None),
     current_user: Optional[User] = Depends(get_current_user_optional),
     db: Session = Depends(get_db)
 ):
@@ -2028,8 +2064,20 @@ async def update_preset(
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
-        # Get user_id for text segments ownership
+        # Get user_id for text segments ownership. Admin may save on behalf of a Qari.
         user_id = str(current_user.id) if current_user else None
+        if target_user_id:
+            if not current_user or current_user.role != UserRole.ADMIN:
+                raise HTTPException(status_code=403, detail="Only Admin can save text segments for another user")
+            from uuid import UUID
+            try:
+                target_user_uuid = UUID(target_user_id)
+            except (ValueError, AttributeError):
+                raise HTTPException(status_code=404, detail="Target Qari not found")
+            target_user = db.query(User).filter(User.id == target_user_uuid).first()
+            if not target_user or target_user.role != UserRole.QARI:
+                raise HTTPException(status_code=404, detail="Target Qari not found")
+            user_id = str(target_user.id)
 
         # Update preset
         preset = db_reference_library.update_preset_text_segments(

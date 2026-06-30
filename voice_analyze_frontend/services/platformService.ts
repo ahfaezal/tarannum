@@ -182,6 +182,36 @@ export const getQariContent = async (): Promise<{
 };
 
 /**
+ * Admin: Get selected Qari's content library
+ */
+export const getAdminQariContent = async (
+  qariId: string
+): Promise<{
+  content: QariContent[];
+  count: number;
+  qari: {
+    id: string;
+    email: string;
+    full_name?: string;
+    is_approved: boolean;
+    is_active: boolean;
+  };
+}> => {
+  const response = await fetch(`${API_URL}/api/platform/admin/qari/${qariId}/content`, {
+    headers: {
+      ...getAuthHeader(),
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: response.statusText }));
+    throw new Error(error.detail || "Failed to get Qari content");
+  }
+
+  return response.json();
+};
+
+/**
  * Qari: Update content metadata (surah/ayah settings)
  */
 export const updateQariContent = async (
@@ -211,12 +241,64 @@ export const updateQariContent = async (
 };
 
 /**
+ * Admin: Update selected Qari's content metadata
+ */
+export const updateAdminQariContent = async (
+  qariId: string,
+  contentId: string,
+  content: {
+    surah_number?: number;
+    surah_name?: string;
+    ayah_number?: number;
+    maqam?: string;
+  }
+): Promise<{ success: boolean; content_id: string }> => {
+  const response = await fetch(`${API_URL}/api/platform/admin/qari/${qariId}/content/${contentId}`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      ...getAuthHeader(),
+    },
+    body: JSON.stringify(content),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: response.statusText }));
+    throw new Error(error.detail || "Failed to update Qari content");
+  }
+
+  return response.json();
+};
+
+/**
  * Qari: Delete/remove content from library
  */
 export const deleteQariContent = async (
   contentId: string
 ): Promise<{ success: boolean; message: string }> => {
   const response = await fetch(`${API_URL}/api/platform/qari/content/${contentId}`, {
+    method: "DELETE",
+    headers: {
+      ...getAuthHeader(),
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: response.statusText }));
+    throw new Error(error.detail || "Failed to delete Qari content");
+  }
+
+  return response.json();
+};
+
+/**
+ * Admin: Delete/remove content from selected Qari's library
+ */
+export const deleteAdminQariContent = async (
+  qariId: string,
+  contentId: string
+): Promise<{ success: boolean; message: string }> => {
+  const response = await fetch(`${API_URL}/api/platform/admin/qari/${qariId}/content/${contentId}`, {
     method: "DELETE",
     headers: {
       ...getAuthHeader(),
