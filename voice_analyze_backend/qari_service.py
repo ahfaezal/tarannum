@@ -40,6 +40,18 @@ class QariService:
             ).first()
             
             if existing:
+                existing.is_active = True
+                if surah_number is not None:
+                    existing.surah_number = surah_number
+                if surah_name is not None:
+                    existing.surah_name = surah_name
+                if ayah_number is not None:
+                    existing.ayah_number = ayah_number
+                if maqam is not None:
+                    existing.maqam = maqam
+                db_session.commit()
+                db_session.refresh(existing)
+                logger.info(f"Reactivated content for Qari {qari_id}: {reference_id}")
                 return existing
             
             # Create new content
