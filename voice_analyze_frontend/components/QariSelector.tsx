@@ -26,6 +26,8 @@ const QariSelector: React.FC<QariSelectorProps> = ({ onQariSelected }) => {
   const [assigning, setAssigning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedQariId, setSelectedQariId] = useState<string>("");
+  const getQariDisplayName = (qari?: { full_name?: string; email?: string }) =>
+    (qari?.full_name?.trim() || qari?.email || "Qari").toUpperCase();
 
   useEffect(() => {
     loadData();
@@ -38,7 +40,11 @@ const QariSelector: React.FC<QariSelectorProps> = ({ onQariSelected }) => {
         getAvailableQaris(),
         getMyQari(),
       ]);
-      setQaris(qariList.qaris.filter((q) => q.is_approved && q.is_active));
+      setQaris(
+        qariList.qaris
+          .filter((q) => q.is_approved && q.is_active)
+          .sort((a, b) => getQariDisplayName(a).localeCompare(getQariDisplayName(b)))
+      );
       if (myQari.qari) {
         setCurrentQari(myQari.qari);
       }
@@ -88,7 +94,7 @@ const QariSelector: React.FC<QariSelectorProps> = ({ onQariSelected }) => {
           <div className="flex-1">
             <h3 className="font-semibold text-gray-800 text-lg">Your Qari</h3>
             <p className="text-sm text-gray-600">
-              {currentQari.qari_name || currentQari.qari_email}
+              {(currentQari.qari_name || currentQari.qari_email).toUpperCase()}
             </p>
           </div>
           <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
@@ -142,7 +148,7 @@ const QariSelector: React.FC<QariSelectorProps> = ({ onQariSelected }) => {
                 <option value="">-- Select a Qari --</option>
                 {qaris.map((qari) => (
                   <option key={qari.id} value={qari.id}>
-                    {qari.full_name || "Qari"} ({qari.email})
+                    {getQariDisplayName(qari)}
                   </option>
                 ))}
               </select>
@@ -156,7 +162,7 @@ const QariSelector: React.FC<QariSelectorProps> = ({ onQariSelected }) => {
                   </div>
                   <div className="flex-1">
                     <div className="font-medium text-gray-800">
-                      {qaris.find(q => q.id === selectedQariId)?.full_name || "Qari"}
+                      {getQariDisplayName(qaris.find(q => q.id === selectedQariId))}
                     </div>
                     <div className="text-sm text-gray-600">
                       {qaris.find(q => q.id === selectedQariId)?.email}

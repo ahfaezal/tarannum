@@ -302,7 +302,7 @@ const AdminMode: React.FC<AdminModeProps> = ({ view = 'presets' }) => {
       if (editingUser) {
         // Update existing user
         await updateUser(editingUser.id, {
-          full_name: userFormData.full_name || undefined,
+          full_name: userFormData.full_name.trim().toUpperCase() || undefined,
           role: userFormData.role,
           is_approved: userFormData.is_approved,
           is_active: userFormData.is_active,
@@ -317,7 +317,7 @@ const AdminMode: React.FC<AdminModeProps> = ({ view = 'presets' }) => {
         await createUser({
           email: userFormData.email,
           password: userFormData.password,
-          full_name: userFormData.full_name || undefined,
+          full_name: userFormData.full_name.trim().toUpperCase() || undefined,
           role: userFormData.role,
           is_approved: userFormData.is_approved,
           is_active: userFormData.is_active,
@@ -352,6 +352,9 @@ const AdminMode: React.FC<AdminModeProps> = ({ view = 'presets' }) => {
     const secs = Math.floor(seconds % 60);
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
+
+  const formatDisplayName = (name?: string | null, fallback?: string) =>
+    (name?.trim() || fallback || '').toUpperCase();
 
   if (creatingNew || editingPreset) {
     return (
@@ -508,7 +511,7 @@ const AdminMode: React.FC<AdminModeProps> = ({ view = 'presets' }) => {
                   <input
                     type="text"
                     value={userFormData.full_name}
-                    onChange={(e) => setUserFormData({ ...userFormData, full_name: e.target.value })}
+                    onChange={(e) => setUserFormData({ ...userFormData, full_name: e.target.value.toUpperCase() })}
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
                   />
                 </div>
@@ -611,7 +614,7 @@ const AdminMode: React.FC<AdminModeProps> = ({ view = 'presets' }) => {
                         <td className="px-3 py-3 sm:px-4 sm:py-4 lg:px-6 whitespace-normal break-words sm:whitespace-nowrap">
                           <div>
                             <div className="text-sm font-medium text-slate-900">
-                              {user.full_name || user.email}
+                              {formatDisplayName(user.full_name, user.email)}
                             </div>
                             <div className="text-sm text-slate-500">{user.email}</div>
                             {user.referral_code && (
@@ -1038,7 +1041,7 @@ const AdminMode: React.FC<AdminModeProps> = ({ view = 'presets' }) => {
                             <td className="px-6 py-4">
                               <div>
                                 <div className="text-sm font-medium text-slate-900">
-                                  {user.full_name || user.email}
+                                  {formatDisplayName(user.full_name, user.email)}
                                 </div>
                                 <div className="text-sm text-slate-500">{user.email}</div>
                               </div>

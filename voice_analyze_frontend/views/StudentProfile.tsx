@@ -336,9 +336,9 @@ const StudentProfileView: React.FC = () => {
                   <span className="text-sm font-semibold text-slate-700">Full Name</span>
                   <input
                     value={form.full_name}
-                    onChange={(event) => setForm({ ...form, full_name: event.target.value })}
+                    onChange={(event) => setForm({ ...form, full_name: event.target.value.toUpperCase() })}
                     className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-emerald-500 focus:ring-4 focus:ring-emerald-100"
-                    placeholder="Your full name"
+                    placeholder="YOUR FULL NAME"
                   />
                 </label>
                 <label className="space-y-2">

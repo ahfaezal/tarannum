@@ -134,6 +134,14 @@ def _normalize_referral_code(code: Optional[str]) -> Optional[str]:
     return cleaned or None
 
 
+def _normalize_full_name(name: Optional[str]) -> Optional[str]:
+    """Store display names consistently in uppercase."""
+    if not name:
+        return None
+    cleaned = " ".join(name.strip().split())
+    return cleaned.upper() if cleaned else None
+
+
 def _find_valid_qari_by_referral_code(db: Session, referral_code: Optional[str]) -> Optional[User]:
     """Return active approved Qari for a referral code, if valid."""
     normalized_code = _normalize_referral_code(referral_code)
@@ -552,7 +560,7 @@ async def register(user_data: UserRegister, db: Session = Depends(get_db)):
             email=normalized_email,
             hashed_password=hashed_password,
             role=user_data.role,
-            full_name=user_data.full_name,
+            full_name=_normalize_full_name(user_data.full_name),
             ic_number=ic_number or None,
             address=address or None,
             is_active=True,
@@ -798,7 +806,7 @@ async def update_my_profile(
     role = _role_value(current_user.role)
 
     if payload.full_name is not None:
-        current_user.full_name = _clean_optional_text(payload.full_name)
+        current_user.full_name = _normalize_full_name(payload.full_name)
     if role == UserRole.STUDENT.value and payload.ic_number is not None:
         current_user.ic_number = _clean_optional_text(payload.ic_number)
     if role == UserRole.STUDENT.value and payload.address is not None:

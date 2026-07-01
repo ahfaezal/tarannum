@@ -30,6 +30,7 @@ const Register: React.FC<RegisterProps> = ({ onSwitchToLogin, onSuccess, onClose
   const [referralCode, setReferralCode] = useState<string | null>(null);
   const [referralQariName, setReferralQariName] = useState<string | null>(null);
   const [referralWarning, setReferralWarning] = useState<string | null>(null);
+  const normalizeFullName = (value: string) => value.toUpperCase();
 
   React.useEffect(() => {
     const rawReferralCode = searchParams.get("ref");
@@ -91,7 +92,7 @@ const Register: React.FC<RegisterProps> = ({ onSwitchToLogin, onSuccess, onClose
         registerUser({
           email,
           password,
-          full_name: fullName || undefined,
+          full_name: fullName.trim().toUpperCase() || undefined,
           ic_number: icNumber || undefined,
           address: address || undefined,
           referral_code: role === "student" ? referralCode || undefined : undefined,
@@ -166,10 +167,10 @@ const Register: React.FC<RegisterProps> = ({ onSwitchToLogin, onSuccess, onClose
               <input
                 type="text"
                 value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
+                onChange={(e) => setFullName(normalizeFullName(e.target.value))}
                 required
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                placeholder="Your full name"
+                placeholder="YOUR FULL NAME"
               />
             </div>
           </div>

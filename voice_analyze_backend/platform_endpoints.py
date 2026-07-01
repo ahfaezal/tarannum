@@ -47,6 +47,14 @@ def _ensure_qari_referral_code(qari: User, db: Session) -> str:
     return qari.referral_code
 
 
+def _normalize_full_name(name: Optional[str]) -> Optional[str]:
+    """Store display names consistently in uppercase."""
+    if not name:
+        return None
+    cleaned = " ".join(name.strip().split())
+    return cleaned.upper() if cleaned else None
+
+
 # Request Models
 class AssignQariRequest(BaseModel):
     qari_id: str
@@ -1215,7 +1223,7 @@ async def update_user(
         
         # Update fields
         if user_data.full_name is not None:
-            user.full_name = user_data.full_name
+            user.full_name = _normalize_full_name(user_data.full_name)
         if user_data.role is not None:
             # Validate role
             if user_data.role not in ["admin", "qari", "student", "public"]:
@@ -1301,7 +1309,7 @@ async def create_user(
         new_user = User(
             email=user_data.email,
             hashed_password=hashed_password,
-            full_name=user_data.full_name,
+            full_name=_normalize_full_name(user_data.full_name),
             role=user_data.role,
             is_active=user_data.is_active,
             is_approved=is_approved,
