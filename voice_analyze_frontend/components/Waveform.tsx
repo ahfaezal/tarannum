@@ -17,6 +17,7 @@ interface WaveformProps {
   onSeek?: (progress: number) => void;
   syncProgress?: number | null; // External progress to sync to (0-1)
   isSyncing?: boolean; // Flag to prevent sync loops
+  minPxPerSec?: number;
 }
 
 const Waveform: React.FC<WaveformProps> = ({ 
@@ -33,7 +34,8 @@ const Waveform: React.FC<WaveformProps> = ({
   title,
   onSeek,
   syncProgress = null,
-  isSyncing = false
+  isSyncing = false,
+  minPxPerSec = 50
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const wavesurferRef = useRef<WaveSurfer | null>(null);
@@ -54,7 +56,7 @@ const Waveform: React.FC<WaveformProps> = ({
       barRadius: 3,
       height: height,
       normalize: true,
-      minPxPerSec: 50,
+      ...(minPxPerSec > 0 ? { minPxPerSec } : {}),
       interact: interact,
     });
 
@@ -170,7 +172,7 @@ const Waveform: React.FC<WaveformProps> = ({
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [height, waveColor, progressColor, interact]);
+  }, [height, waveColor, progressColor, interact, minPxPerSec]);
 
   useEffect(() => {
     const ws = wavesurferRef.current;

@@ -1904,6 +1904,7 @@ async def trim_reference_audio(
     """Trim the start/end of a reference audio file and replace the stored reference audio."""
     source_path = None
     trimmed_path = None
+    fallback_wav_path = None
     try:
         if not current_user:
             raise HTTPException(status_code=401, detail="Authentication required")
@@ -1945,7 +1946,8 @@ async def trim_reference_audio(
 
         ext = Path(ref_record.filename or ref_record.file_path or "reference.mp3").suffix or ".mp3"
         source_path = TEMP_DIR / f"trim_source_{ref_id}_{uuid.uuid4().hex}{ext}"
-        trimmed_path = TEMP_DIR / f"trimmed_{ref_id}_{uuid.uuid4().hex}{ext}"
+        trimmed_path = TEMP_DIR / f"trimmed_{ref_id}_{uuid.uuid4().hex}.mp3"
+        fallback_wav_path = None
 
         if ref_record.cloud_storage_type and ref_record.cloud_storage_path:
             from cloud_storage import cloud_storage
@@ -1958,19 +1960,88 @@ async def trim_reference_audio(
                 raise HTTPException(status_code=404, detail="Reference audio file not found")
             shutil.copyfile(local_path, source_path)
 
-        audio = AudioSegment.from_file(source_path)
-        start_ms = max(0, int(trim_start * 1000))
-        end_ms = min(len(audio), int(trim_end * 1000))
-        trimmed_audio = audio[start_ms:end_ms]
+        try:
+            audio = AudioSegment.from_file(source_path)
+            start_ms = max(0, int(trim_start * 1000))
+            end_ms = min(len(audio), int(trim_end * 1000))
+            trimmed_audio = audio[start_ms:end_ms]
 
-        export_format = ext.lstrip(".").lower()
-        if export_format in ["m4a", "mp4"]:
-            export_format = "mp4"
-        elif export_format in ["oga", "opus"]:
-            export_format = "ogg"
-        elif not export_format:
-            export_format = "mp3"
-        trimmed_audio.export(trimmed_path, format=export_format)
+            trimmed_audio.export(trimmed_path, format="mp3", bitrate="128k")
+            verified_duration = len(trimmed_audio) / 1000.0
+        except Exception as pydub_error:
+            is_missing_ffmpeg = any(
+                text in str(pydub_error).lower()
+                for text in ["ffmpeg", "ffprobe", "no such file", "cannot find the file"]
+            )
+            if not is_missing_ffmpeg:
+                raise
+
+            logger.warning(
+                f"pydub MP3 export failed, using librosa WAV temp + ffmpeg MP3 encode fallback: {pydub_error}"
+            )
+            from scipy.io import wavfile
+            import numpy as np
+            import subprocess
+
+            audio_data, sample_rate = librosa.load(str(source_path), sr=None, mono=False)
+            total_samples = audio_data.shape[-1]
+            start_sample = max(0, int(trim_start * sample_rate))
+            end_sample = min(total_samples, int(trim_end * sample_rate))
+            trimmed_data = audio_data[..., start_sample:end_sample]
+
+            if trimmed_data.size == 0:
+                raise HTTPException(status_code=400, detail="Trim range produced empty audio")
+
+            wav_data = np.clip(trimmed_data, -1.0, 1.0)
+            if wav_data.ndim == 2:
+                wav_data = wav_data.T
+            wav_int16 = (wav_data * 32767).astype(np.int16)
+            fallback_wav_path = TEMP_DIR / f"trimmed_source_{ref_id}_{uuid.uuid4().hex}.wav"
+            wavfile.write(str(fallback_wav_path), sample_rate, wav_int16)
+
+            ffmpeg_path = shutil.which("ffmpeg")
+            if not ffmpeg_path:
+                try:
+                    import imageio_ffmpeg
+                    ffmpeg_path = imageio_ffmpeg.get_ffmpeg_exe()
+                except Exception as ffmpeg_lookup_error:
+                    logger.error(f"Could not locate ffmpeg for MP3 trim export: {ffmpeg_lookup_error}")
+            if not ffmpeg_path:
+                for venv_name in [".venv", ".venv-codex"]:
+                    binaries_dir = BASE_DIR / venv_name / "Lib" / "site-packages" / "imageio_ffmpeg" / "binaries"
+                    ffmpeg_candidates = sorted(binaries_dir.glob("ffmpeg*.exe")) if binaries_dir.exists() else []
+                    if ffmpeg_candidates:
+                        ffmpeg_path = str(ffmpeg_candidates[0])
+                        logger.info(f"Using bundled imageio-ffmpeg binary: {ffmpeg_path}")
+                        break
+
+            if not ffmpeg_path:
+                raise HTTPException(
+                    status_code=500,
+                    detail="MP3 trim export requires ffmpeg. Install ffmpeg or install backend dependency imageio-ffmpeg."
+                )
+
+            subprocess.run(
+                [
+                    ffmpeg_path,
+                    "-y",
+                    "-hide_banner",
+                    "-loglevel",
+                    "error",
+                    "-i",
+                    str(fallback_wav_path),
+                    "-vn",
+                    "-codec:a",
+                    "libmp3lame",
+                    "-b:a",
+                    "128k",
+                    str(trimmed_path),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            verified_duration = trimmed_data.shape[-1] / float(sample_rate)
 
         if ref_record.cloud_storage_type and ref_record.cloud_storage_path:
             from cloud_storage import cloud_storage
@@ -1978,6 +2049,7 @@ async def trim_reference_audio(
             remote_path = ref_record.cloud_storage_path
             if remote_path.startswith("s3://"):
                 remote_path = remote_path.replace("s3://", "").split("/", 1)[1]
+            remote_path = str(Path(remote_path).with_suffix(".mp3")).replace("\\", "/")
             cloud_url = cloud_storage.upload_file(trimmed_path, remote_path)
             ref_record.cloud_storage_path = cloud_url
             ref_record.file_path = cloud_url
@@ -1985,10 +2057,14 @@ async def trim_reference_audio(
             local_path = db_reference_library.get_reference_file_path(ref_id, db=db)
             if not local_path:
                 raise HTTPException(status_code=404, detail="Reference audio file not found")
+            local_path = local_path.with_suffix(".mp3")
             local_path.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(trimmed_path, local_path)
+            ref_record.file_path = str(local_path.relative_to(Path(__file__).parent)).replace("\\", "/")
 
-        verified_duration = len(trimmed_audio) / 1000.0
+        current_name = ref_record.filename or f"{ref_id}{ext}"
+        ref_record.filename = f"{Path(current_name).stem}.mp3"
+
         ref_record.duration = float(verified_duration)
         ref_record.file_size = trimmed_path.stat().st_size
         ref_record.upload_date = datetime.utcnow()
@@ -2020,7 +2096,7 @@ async def trim_reference_audio(
         logger.error(f"Error trimming reference audio: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        for temp_path in [source_path, trimmed_path]:
+        for temp_path in [source_path, trimmed_path, fallback_wav_path]:
             if temp_path and Path(temp_path).exists():
                 try:
                     Path(temp_path).unlink()

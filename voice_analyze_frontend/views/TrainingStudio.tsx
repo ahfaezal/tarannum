@@ -229,6 +229,30 @@ const TrainingStudio: React.FC = () => {
   const [playbackSpeed, setPlaybackSpeed] = useState(1.0);
   const isCustomUploadRefId = (id?: string | null): boolean =>
     !!id && (id === "custom" || id.startsWith("custom_"));
+  const normalizeTextSegmentsForMarkers = React.useCallback((segments?: any[]) => {
+    if (!Array.isArray(segments)) return [];
+
+    return segments
+      .map((seg: any) => ({
+        text: seg?.text || seg?.text_content || "",
+        start: Number(seg?.start ?? 0),
+        end: Number(seg?.end ?? 0),
+      }))
+      .filter(
+        (seg) =>
+          seg.text.trim() !== "" &&
+          Number.isFinite(seg.start) &&
+          Number.isFinite(seg.end) &&
+          seg.end > seg.start
+      )
+      .sort((a, b) => a.start - b.start);
+  }, []);
+  const realAyahMarkers = useMemo(() => {
+    const fromSelectedRef = normalizeTextSegmentsForMarkers(selectedRef?.text_segments);
+    if (fromSelectedRef.length > 0) return fromSelectedRef;
+
+    return normalizeTextSegmentsForMarkers(referenceAyahTiming);
+  }, [normalizeTextSegmentsForMarkers, referenceAyahTiming, selectedRef?.text_segments]);
   const [studentPlaybackSpeed, setStudentPlaybackSpeed] = useState(() => {
     // Load from localStorage if available, otherwise default to 1.0
     const saved = localStorage.getItem("studentPlaybackSpeed");
@@ -658,8 +682,8 @@ const TrainingStudio: React.FC = () => {
               }
             }
 
-            // Check if this is a preset with text_segments and load them
-            if (first.is_preset && first.text_segments && first.text_segments.length > 0) {
+            // Load saved text_segments for presets and Qari content alike.
+            if (first.text_segments && first.text_segments.length > 0) {
               console.log(`[InitialLoad] Loading preset text_segments for: ${first.title}`, first.text_segments);
 
               // Convert text_segments to ayatTiming format
@@ -685,7 +709,7 @@ const TrainingStudio: React.FC = () => {
                 console.log(`✅ [InitialLoad] referenceAyahTiming set with ${presetTextSegments.length} segments`);
               }, 100);
             } else {
-              // Not a preset or no text segments - clear text
+              // No text segments - clear text
               presetTextSegmentsRef.current = null;
               setReferenceAyahTiming([]);
               console.log(`[InitialLoad] Reference "${first.title}" is not a preset or has no text segments`);
@@ -768,37 +792,6 @@ const TrainingStudio: React.FC = () => {
     }
   }, [isPracticeMode, referenceAyahTiming, practiceTime, referenceDuration]);
 
-  // Generate fallback text segments if missing during practice mode
-  useEffect(() => {
-    if (
-      isPracticeMode &&
-      referenceAyahTiming.length === 0 &&
-      referenceDuration > 0
-    ) {
-      // Generate fallback segments based on reference duration
-      const numSegments = Math.max(
-        5,
-        Math.min(20, Math.ceil(referenceDuration / 2))
-      );
-      const segmentDuration = referenceDuration / numSegments;
-      const fallbackSegments = [];
-
-      for (let i = 0; i < numSegments; i++) {
-        fallbackSegments.push({
-          start: i * segmentDuration,
-          end:
-            i < numSegments - 1 ? (i + 1) * segmentDuration : referenceDuration,
-          text: "", // Empty text - will show time range
-        });
-      }
-
-      setReferenceAyahTiming(fallbackSegments);
-      console.log(
-        `📋 Generated ${fallbackSegments.length} fallback segments for practice mode`
-      );
-    }
-  }, [isPracticeMode, referenceAyahTiming.length, referenceDuration]);
-
   // Extract reference pitch when reference loads
   useEffect(() => {
     const extractRefPitch = async () => {
@@ -840,10 +833,10 @@ const TrainingStudio: React.FC = () => {
       setPracticeStartTime(null);
       setPracticeTime(0);
 
-      // Clear reference text timing ONLY when reference actually changes
-      // BUT: Don't clear if the new reference is a preset with text_segments
+      // Clear reference text timing ONLY when reference actually changes.
+      // Saved text_segments apply to both preset and Qari-uploaded references.
       const currentRefId = selectedRef?.id;
-      const isPresetWithText = (selectedRef?.is_preset &&
+      const isPresetWithText = (selectedRef &&
         selectedRef?.text_segments &&
         Array.isArray(selectedRef.text_segments) &&
         selectedRef.text_segments.length > 0) ||
@@ -864,7 +857,7 @@ const TrainingStudio: React.FC = () => {
           // Reference changed to a preset with text - restore from ref if needed
           const segmentsToRestore = presetTextSegmentsRef.current ||
             (selectedRef?.text_segments?.map((seg: any) => ({
-              text: seg.text || '',
+              text: seg.text || seg.text_content || '',
               start: seg.start || 0,
               end: seg.end || 0,
             })) || []);
@@ -959,9 +952,9 @@ const TrainingStudio: React.FC = () => {
             extractedReferencePitch[extractedReferencePitch.length - 1],
         });
 
-        // Extract text timing if available
-        // BUT: Don't overwrite preset text_segments if they already exist
-        const isPresetWithText = (selectedRef?.is_preset &&
+        // Extract text timing if available.
+        // Do not overwrite saved text_segments for preset or Qari-uploaded references.
+        const isPresetWithText = (selectedRef &&
           selectedRef?.text_segments &&
           Array.isArray(selectedRef.text_segments) &&
           selectedRef.text_segments.length > 0) ||
@@ -977,13 +970,13 @@ const TrainingStudio: React.FC = () => {
           currentAyahTiming: referenceAyahTiming.length,
         });
 
-        // If this is a preset with text_segments, keep them (already set in onSelect handler)
-        // Only use backend-extracted timing if NOT a preset or if preset has no text_segments
+        // If this reference has saved text_segments, keep them.
+        // Only use backend-extracted timing if no saved text_segments exist.
         if (isPresetWithText) {
-          // Restore preset text from ref if needed
+          // Restore saved text from ref if needed
           const segmentsToUse = presetTextSegmentsRef.current ||
             (selectedRef.text_segments?.map((seg: any) => ({
-              text: seg.text || '',
+              text: seg.text || seg.text_content || '',
               start: seg.start || 0,
               end: seg.end || 0,
             })) || []);
@@ -1053,7 +1046,7 @@ const TrainingStudio: React.FC = () => {
               });
             }
 
-            setReferenceAyahTiming(fallbackSegments);
+            setReferenceAyahTiming([]);
             console.log(
               `⚠️ Text extraction failed - Generated ${fallbackSegments.length} fallback time segments`
             );
@@ -1977,9 +1970,9 @@ const TrainingStudio: React.FC = () => {
 
   const getAyahIndexForTime = React.useCallback(
     (time: number): number | null => {
-      if (!referenceAyahTiming || referenceAyahTiming.length === 0) return null;
+      if (!realAyahMarkers || realAyahMarkers.length === 0) return null;
 
-      const directIndex = referenceAyahTiming.findIndex(
+      const directIndex = realAyahMarkers.findIndex(
         (ayah) =>
           typeof ayah.start === "number" &&
           typeof ayah.end === "number" &&
@@ -1988,16 +1981,16 @@ const TrainingStudio: React.FC = () => {
       );
       if (directIndex >= 0) return directIndex;
 
-      for (let index = referenceAyahTiming.length - 1; index >= 0; index--) {
-        const ayah = referenceAyahTiming[index];
+      for (let index = realAyahMarkers.length - 1; index >= 0; index--) {
+        const ayah = realAyahMarkers[index];
         if (typeof ayah.start === "number" && time >= ayah.start) {
           return index;
         }
       }
 
-      return referenceAyahTiming.length > 0 ? 0 : null;
+      return realAyahMarkers.length > 0 ? 0 : null;
     },
-    [referenceAyahTiming]
+    [realAyahMarkers]
   );
 
   const seekToAyahStart = React.useCallback(
@@ -2047,7 +2040,7 @@ const TrainingStudio: React.FC = () => {
       !isRepeatAyahEnabled ||
       !isPlaying ||
       !refWaveSurfer.current ||
-      referenceAyahTiming.length === 0
+      realAyahMarkers.length === 0
     ) {
       return;
     }
@@ -2057,7 +2050,7 @@ const TrainingStudio: React.FC = () => {
       repeatAyahIndex ?? getAyahIndexForTime(currentReferenceTime);
     if (activeRepeatIndex === null) return;
 
-    const activeAyah = referenceAyahTiming[activeRepeatIndex];
+    const activeAyah = realAyahMarkers[activeRepeatIndex];
     if (!activeAyah || typeof activeAyah.end !== "number") return;
     if (currentReferenceTime < activeAyah.end) return;
 
@@ -2071,7 +2064,7 @@ const TrainingStudio: React.FC = () => {
     isPracticeMode,
     playbackTime,
     practiceTime,
-    referenceAyahTiming,
+    realAyahMarkers,
     repeatAyahIndex,
     getAyahIndexForTime,
     seekToAyahStart,
@@ -2080,12 +2073,12 @@ const TrainingStudio: React.FC = () => {
   // Full-screen mode handlers
   const handleFullScreenPlay = () => {
     if (refWaveSurfer.current && !refWaveSurfer.current.isPlaying()) {
-      if (isRepeatAyahEnabled && referenceAyahTiming.length > 0) {
+      if (isRepeatAyahEnabled && realAyahMarkers.length > 0) {
         const currentReferenceTime = isPracticeMode ? practiceTime : playbackTime;
         const activeRepeatIndex =
           repeatAyahIndex ?? getAyahIndexForTime(currentReferenceTime);
         const activeAyah =
-          activeRepeatIndex !== null ? referenceAyahTiming[activeRepeatIndex] : null;
+          activeRepeatIndex !== null ? realAyahMarkers[activeRepeatIndex] : null;
 
         if (
           activeAyah &&
@@ -2912,8 +2905,8 @@ const TrainingStudio: React.FC = () => {
                 text_segments: ref.text_segments || [],
               });
 
-              // Check if this is a preset with text_segments and set timing
-              if (ref.is_preset && ref.text_segments && ref.text_segments.length > 0) {
+              // Load saved text_segments for presets and Qari content alike.
+              if (ref.text_segments && ref.text_segments.length > 0) {
                 // Debug: Log raw text_segments to see their structure
                 console.log(`[PresetLoad] Raw text_segments from API:`, ref.text_segments);
 
@@ -2944,7 +2937,7 @@ const TrainingStudio: React.FC = () => {
                   setReferenceAyahTiming(presetTextSegments);
                 }, 50);
               } else {
-                // Not a preset or no text segments - clear text
+                // No text segments - clear text
                 presetTextSegmentsRef.current = null;
                 setReferenceAyahTiming([]);
               }
@@ -3275,41 +3268,12 @@ const TrainingStudio: React.FC = () => {
                       }}
                       height={pitchGraphHeight}
                       markers={[]}
-                      ayahMarkers={
-                        selectedRef?.is_preset && referenceAyahTiming.length > 0
-                          ? referenceAyahTiming
-                          : []
-                      }
+                      ayahMarkers={realAyahMarkers}
                     />
 
                     {/* Quranic Text Display - Always show below waveform when text segments are available (Admin and Qari only) */}
                     {(() => {
-                      // Get text segments - prioritize referenceAyahTiming first (where preset segments are stored)
-                      let textSegments: any[] = [];
-
-                      // First check referenceAyahTiming (where preset segments get stored by useEffect and initial load)
-                      if (referenceAyahTiming && referenceAyahTiming.length > 0) {
-                        textSegments = referenceAyahTiming;
-                        // Sort by 'start' field to ensure proper order
-                        textSegments = [...textSegments].sort((a, b) => (a.start || 0) - (b.start || 0));
-                        const segmentsWithText = textSegments.filter((seg: any) => seg.text && seg.text.trim() !== '').length;
-                        console.log(`[TextDisplay] Using referenceAyahTiming: ${textSegments.length} total, ${segmentsWithText} with text (sorted by start)`);
-                      }
-
-                      // Fallback: Check selectedRef.text_segments if referenceAyahTiming is empty
-                      if (textSegments.length === 0 && selectedRef && !Array.isArray(selectedRef) && selectedRef.text_segments && Array.isArray(selectedRef.text_segments) && selectedRef.text_segments.length > 0) {
-                        textSegments = selectedRef.text_segments.map((seg: any) => {
-                          const textValue = seg.text || seg.text_content || '';
-                          return {
-                            text: textValue,
-                            start: seg.start || 0,
-                            end: seg.end || 0,
-                          };
-                        });
-                        // Sort by 'start' field to ensure proper order
-                        textSegments = [...textSegments].sort((a, b) => (a.start || 0) - (b.start || 0));
-                        console.log(`[TextDisplay] Using selectedRef.text_segments as fallback (${textSegments.length} segments, sorted by start)`);
-                      }
+                      const textSegments = realAyahMarkers;
 
                       // Filter to only count segments with actual text content
                       const segmentsWithText = textSegments.filter((seg: any) => seg.text && seg.text.trim() !== '');
@@ -3741,11 +3705,7 @@ const TrainingStudio: React.FC = () => {
                   }
                   height={pitchGraphHeight}
                   markers={analysisResult?.pitchData?.markers || []}
-                  ayahMarkers={
-                    selectedRef?.is_preset && referenceAyahTiming.length > 0
-                      ? referenceAyahTiming
-                      : []
-                  }
+                  ayahMarkers={realAyahMarkers}
                   onMarkerClick={(time) => {
                     // Seek student audio to marker time
                     if (studentWaveSurfer.current && referenceDuration > 0) {
@@ -4919,16 +4879,11 @@ const TrainingStudio: React.FC = () => {
         onPlayPracticeAudio={handlePlayPracticeAudio}
         onPausePracticeAudio={handlePausePracticeAudio}
         onStopPracticeAudio={handleStopPracticeAudio}
-        ayatTiming={
-          // Only show text if it's a preset (not from analysis result for custom uploads)
-          selectedRef?.is_preset && referenceAyahTiming.length > 0
-            ? referenceAyahTiming
-            : []
-        }
+        ayatTiming={realAyahMarkers}
         onSeekToTime={handleFullScreenSeekToTime}
         isRepeatAyahEnabled={isRepeatAyahEnabled}
         onRepeatAyahToggle={handleRepeatAyahToggle}
-        canRepeatAyah={selectedRef?.is_preset && referenceAyahTiming.length > 0}
+        canRepeatAyah={realAyahMarkers.length > 0}
         markers={analysisResult?.pitchData?.markers || []}
         referenceUrl={
           isCustomUploadRefId(selectedRef?.id) && uploadedRefUrl
@@ -4998,15 +4953,11 @@ const TrainingStudio: React.FC = () => {
         onPlayPracticeAudio={handlePlayPracticeAudio}
         onPausePracticeAudio={handlePausePracticeAudio}
         onStopPracticeAudio={handleStopPracticeAudio}
-        ayatTiming={
-          selectedRef?.is_preset && referenceAyahTiming.length > 0
-            ? referenceAyahTiming
-            : []
-        }
+        ayatTiming={realAyahMarkers}
         onSeekToTime={handleFullScreenSeekToTime}
         isRepeatAyahEnabled={isRepeatAyahEnabled}
         onRepeatAyahToggle={handleRepeatAyahToggle}
-        canRepeatAyah={selectedRef?.is_preset && referenceAyahTiming.length > 0}
+        canRepeatAyah={realAyahMarkers.length > 0}
         markers={analysisResult?.pitchData?.markers || []}
         referenceUrl={
           isCustomUploadRefId(selectedRef?.id) && uploadedRefUrl

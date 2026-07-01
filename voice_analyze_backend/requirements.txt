@@ -8,6 +8,7 @@ librosa==0.10.1
 scipy==1.11.4
 fastdtw==0.3.4
 pydub==0.25.1
+imageio-ffmpeg==0.5.1
 vosk==0.3.45
 rapidfuzz==3.14.3
 sqlalchemy==2.0.23
