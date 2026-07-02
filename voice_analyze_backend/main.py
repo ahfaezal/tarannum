@@ -546,7 +546,7 @@ async def score_performance(
             if file_size == 0:
                 raise ValueError(f"User audio file is empty after save: {user_path}")
 
-            logger.info(f"âœ“ User audio saved: {file_size} bytes to {user_path}")
+            logger.info(f"✓ User audio saved: {file_size} bytes to {user_path}")
         except Exception as e:
             logger.error(f"Error saving user audio: {e}", exc_info=True)
             raise HTTPException(status_code=400, detail=f"Failed to save user audio: {str(e)}")
@@ -777,27 +777,31 @@ async def score_performance(
                 def _ayat_feedback_message(seg_score, issues):
                     issues = issues or []
                     if 'timing_too_slow' in issues:
-                        return 'Timing sedikit lambat berbanding rujukan'
+                        return 'Timing sedikit lambat; ikut perubahan ayat rujukan'
                     if 'timing_too_fast' in issues:
-                        return 'Timing sedikit cepat berbanding rujukan'
-                    if 'pitch_too_high' in issues:
-                        return 'Alunan cenderung terlalu tinggi'
-                    if 'pitch_too_low' in issues:
-                        return 'Alunan cenderung terlalu rendah'
-                    if seg_score >= 80:
-                        return 'Alunan dan timing hampir tepat'
-                    if seg_score >= 65:
-                        return 'Alunan baik, terus kemaskan timing'
-                    if seg_score >= 50:
-                        return 'Pitch kurang stabil, ulang ayat ini perlahan-lahan'
-                    return 'Fokus semula pada alunan dan timing ayat ini'
+                        return 'Timing sedikit cepat; stabilkan tempo ayat'
+                    if 'pitch_too_high' in issues or 'pitch_too_low' in issues:
+                        if seg_score >= 85:
+                            return 'Alunan hampir selari, teruskan kawalan graph'
+                        if seg_score >= 75:
+                            return 'Alunan baik, kemaskan sedikit lenggok'
+                        if seg_score >= 60:
+                            return 'Alunan belum cukup selari dengan rujukan'
+                        return 'Ulang bahagian ini dengan alunan lebih dekat kepada rujukan'
+                    if seg_score >= 85:
+                        return 'Alunan dan timing hampir selari'
+                    if seg_score >= 75:
+                        return 'Alunan baik, kemaskan sedikit timing'
+                    if seg_score >= 60:
+                        return 'Graph agak selari, ulang untuk lebih stabil'
+                    return 'Ulang bahagian ini dengan graph yang lebih dekat kepada rujukan'
 
                 def _ayat_feedback_label(seg_score):
-                    if seg_score >= 80:
+                    if seg_score >= 85:
                         return 'Kuat'
-                    if seg_score >= 65:
+                    if seg_score >= 75:
                         return 'Baik'
-                    if seg_score >= 50:
+                    if seg_score >= 60:
                         return 'Perlu kemas'
                     return 'Perlu ulang'
 
@@ -873,6 +877,7 @@ async def score_performance(
                 )
 
                 score_breakdown = {
+                    "scoringVersion": breakdown.get('scoring_version', 'v1'),
                     "pitch": round(pitch_score_val, 2),
                     "timing": round(segment_score_val, 2),
                     "pronunciation": round(base_score_val, 2),
@@ -880,6 +885,7 @@ async def score_performance(
                     "audioMatch": round(base_score_val, 2),
                     "pitchContour": round(pitch_score_val, 2),
                     "ayatTiming": round(segment_score_val, 2),
+                    "graphStability": round(breakdown.get('graph_stability_score', pitch_score_val) or pitch_score_val, 2),
                     "tonalPattern": round(tonal_pattern_val, 2),
                     "audioClarity": round(audio_clarity_val, 2),
                     "micStability": round(mic_stability_val, 2),
@@ -2831,3 +2837,4 @@ if __name__ == "__main__":
     else:
         # Production mode: no auto-reload
         uvicorn.run(app, host="0.0.0.0", port=port)
+

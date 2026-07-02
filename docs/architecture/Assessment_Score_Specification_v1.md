@@ -131,9 +131,38 @@ This created a product risk:
 
 The system should still reject poor recordings, silence, or wrong audio, but genuine tarannum improvement should move the score more visibly.
 
+## Scoring Version 2: Graph-Only Baseline
+
+As of the V2 scoring experiment, Assessment Score is simplified to graph-only scoring. The purpose is to restore user trust by making the final score follow what students can see on the graph.
+
+V2 final score uses:
+
+| Component | Weight | Meaning |
+|---|---:|---|
+| Pitch Contour | 60% | How closely the student's red graph follows the qari reference graph shape |
+| Ayat Timing | 30% | How well the graph follows the reference timing and ayat changes |
+| Graph Stability | 10% | How stable the student graph is, including spike control |
+
+The following signals are kept as diagnostics only in V2 and should not affect the final score:
+
+- MFCC
+- Chroma
+- Tonnetz
+- Spectral Contrast
+- Zero Crossing Rate
+- Audio Clarity
+- Mic Stability
+
+Rationale:
+
+- students judge improvement primarily through the visible graph
+- if the red graph gets closer to the green graph, the score should move accordingly
+- audio-feature-heavy scoring was too difficult to explain and could reduce trust
+- additional scoring elements should only be reintroduced one at a time after graph-only scoring is trusted
+
 ## Updated Tarannum-Aware Assessment Score
 
-The updated model keeps Assessment Score as a single score for Recording Mode, but makes it more aligned with tarannum learning.
+The following tarannum-aware audio-feature model is retained as historical reference and diagnostic context. It is not the current V2 final-score formula.
 
 ### Updated Global Audio Feature Weights
 
@@ -303,7 +332,9 @@ Segment-level data may still remain in the backend response and may still be use
 
 ## Assessment Validity Gate
 
-The assessment must not rely on pitch contour alone. A student can create a visible red wave or high pitch-contour score without actually reciting the expected ayat. Therefore the system applies an Assessment Validity Gate before returning the final score.
+The assessment must not rely on pitch contour alone in future certification-grade scoring. A student can create a visible red wave or high pitch-contour score without actually reciting the expected ayat.
+
+For V2 graph-only scoring, this gate is kept as diagnostic metadata only. It must not cap or boost the final score while the graph-only baseline is being tested.
 
 The gate uses the same components shown in Score Breakdown:
 
@@ -315,19 +346,19 @@ The gate uses the same components shown in Score Breakdown:
 | Audio Clarity | Helps detect whether the audio is clear enough to assess |
 | Mic Stability | Helps explain recording quality; should warn more than punish unless combined with weak tonal/clarity signals |
 
-Initial validity rules:
+Historical validity rules from the previous experiment:
 
 | Condition | Action |
 |---|---|
-| Pitch Contour >= 70, Tonal / Maqam Pattern < 25, Audio Clarity < 30 | Mark as invalid/requires review and cap score at 45% |
-| Tonal / Maqam Pattern < 28, Audio Clarity < 32, Mic Stability < 22 | Mark as review and cap score at 48% |
-| Pitch Contour >= 90, Ayat Timing >= 55, Tonal / Maqam Pattern >= 25, Audio Clarity >= 30, and score < 60 | Treat as valid improvement and raise the minimum displayed score to 60% |
+| Pitch Contour >= 70, Tonal / Maqam Pattern < 25, Audio Clarity < 30 | Previously marked as invalid/requires review and capped score at 45% |
+| Tonal / Maqam Pattern < 28, Audio Clarity < 32, Mic Stability < 22 | Previously marked as review and capped score at 48% |
+| Pitch Contour >= 90, Ayat Timing >= 55, Tonal / Maqam Pattern >= 25, Audio Clarity >= 30, and score < 60 | Previously treated as valid improvement and raised the minimum displayed score to 60% |
 
 Rationale:
 
 - high pitch contour alone is not enough proof of valid recitation
-- weak tonal and clarity signals should prevent non-recitation or humming-like attempts from receiving a mid-level score
-- valid attempts with strong pitch contour and acceptable ayat timing should not stay trapped around 55%
+- however, these rules made scoring too complicated for the current training baseline
+- future validity gates should be reintroduced only after V2 graph-only scoring is trusted
 
 Student-facing messages should be non-accusatory. Preferred wording:
 
@@ -341,6 +372,7 @@ or:
 
 Current implementation exposes diagnostic fields such as:
 
+- scoringVersion
 - pitch
 - timing
 - pronunciation, retained as a legacy compatibility key
@@ -348,6 +380,7 @@ Current implementation exposes diagnostic fields such as:
 - audioMatch
 - pitchContour
 - ayatTiming
+- graphStability
 - tonalPattern
 - audioClarity
 - micStability

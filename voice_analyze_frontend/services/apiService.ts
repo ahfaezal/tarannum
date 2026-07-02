@@ -262,6 +262,7 @@ export const analyzeRecitation = async (
     // Handle score breakdown from backend (if available)
     const scoreBreakdown = data.scoreBreakdown
       ? {
+          scoringVersion: data.scoreBreakdown.scoringVersion,
           pitch: data.scoreBreakdown.pitch || 0,
           timing: data.scoreBreakdown.timing || 0,
           pronunciation: data.scoreBreakdown.pronunciation || 0,
@@ -269,6 +270,7 @@ export const analyzeRecitation = async (
           audioMatch: data.scoreBreakdown.audioMatch,
           pitchContour: data.scoreBreakdown.pitchContour,
           ayatTiming: data.scoreBreakdown.ayatTiming,
+          graphStability: data.scoreBreakdown.graphStability,
           tonalPattern: data.scoreBreakdown.tonalPattern,
           audioClarity: data.scoreBreakdown.audioClarity,
           micStability: data.scoreBreakdown.micStability,

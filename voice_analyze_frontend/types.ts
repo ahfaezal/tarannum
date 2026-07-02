@@ -183,6 +183,7 @@ export interface AnalysisResult {
   aiNotes?: AIRecitationNotes;
   assessmentValidity?: AssessmentValidity;
   scoreBreakdown?: {
+    scoringVersion?: string;
     pitch: number; // Pitch accuracy (0-100)
     timing: number; // Segment/timing consistency (0-100)
     pronunciation: number; // Legacy key: audio feature match (0-100)
@@ -190,6 +191,7 @@ export interface AnalysisResult {
     audioMatch?: number; // Audio feature match (0-100)
     pitchContour?: number;
     ayatTiming?: number;
+    graphStability?: number;
     tonalPattern?: number;
     audioClarity?: number;
     micStability?: number;

@@ -3802,6 +3802,9 @@ def calculate_similarity_score(reference_path: str, user_path: str, return_segme
         # Calculate segment scores if requested (blended MFCC + pitch when pitch_data available)
         segments = []
         segment_based_overall = None
+        graph_timing_score = None
+        graph_stability_score = None
+        scoring_version = 'v2_graph_only'
         if return_segments:
             logger.info("Calculating per-segment scores (MFCC + pitch blend)...")
             ref_duration = len(ref_audio_processed) / float(ref_sr) if ref_sr > 0 else 0.0
@@ -3860,7 +3863,91 @@ def calculate_similarity_score(reference_path: str, user_path: str, return_segme
                         pre_segment_final,
                         final_score,
                     )
-        
+
+        # Scoring V2: graph-only assessment.
+        # Final score is based on visible pitch graph behaviour only:
+        # - Pitch contour similarity: 60%
+        # - Ayat/timing alignment from pitch graph: 30%
+        # - Graph stability/spike control: 10%
+        # Audio feature scores remain available as diagnostics but do not decide
+        # the final score in this version.
+        try:
+            graph_ref_duration = len(ref_audio_processed) / float(ref_sr) if ref_sr > 0 else 0.0
+            ref_pitch_for_graph = pitch_data.get('reference', []) if isinstance(pitch_data, dict) else []
+            user_pitch_for_graph = pitch_data.get('student', []) if isinstance(pitch_data, dict) else []
+
+            graph_timing_scores = []
+            graph_timing_weights = []
+            if ref_pitch_for_graph and user_pitch_for_graph and graph_ref_duration > 0:
+                if text_segments and len(text_segments) > 0:
+                    for text_seg in text_segments:
+                        seg_start = float(text_seg.get('start', 0))
+                        seg_end = float(text_seg.get('end', 0))
+                        if seg_end <= seg_start:
+                            continue
+                        if seg_end <= 1.0:
+                            seg_start_sec = seg_start * graph_ref_duration
+                            seg_end_sec = seg_end * graph_ref_duration
+                        else:
+                            seg_start_sec = seg_start
+                            seg_end_sec = seg_end
+                        seg_pitch_score = _segment_pitch_score(
+                            ref_pitch_for_graph,
+                            user_pitch_for_graph,
+                            seg_start_sec,
+                            seg_end_sec,
+                        )
+                        if seg_pitch_score > 0:
+                            graph_timing_scores.append(float(seg_pitch_score))
+                            graph_timing_weights.append(max(0.001, seg_end_sec - seg_start_sec))
+                else:
+                    graph_windows = calculate_dynamic_segments(graph_ref_duration)
+                    for i in range(graph_windows):
+                        seg_start_sec = (i / graph_windows) * graph_ref_duration
+                        seg_end_sec = ((i + 1) / graph_windows) * graph_ref_duration
+                        seg_pitch_score = _segment_pitch_score(
+                            ref_pitch_for_graph,
+                            user_pitch_for_graph,
+                            seg_start_sec,
+                            seg_end_sec,
+                        )
+                        if seg_pitch_score > 0:
+                            graph_timing_scores.append(float(seg_pitch_score))
+                            graph_timing_weights.append(max(0.001, seg_end_sec - seg_start_sec))
+
+            if graph_timing_scores and sum(graph_timing_weights) > 0:
+                graph_timing_mean = sum(
+                    score * weight for score, weight in zip(graph_timing_scores, graph_timing_weights)
+                ) / sum(graph_timing_weights)
+                graph_timing_median = _weighted_median(graph_timing_scores, graph_timing_weights)
+                graph_timing_score = _clamp(0.7 * graph_timing_mean + 0.3 * graph_timing_median)
+            elif isinstance(segment_based_overall, (int, float)):
+                graph_timing_score = _clamp(float(segment_based_overall))
+            else:
+                graph_timing_score = _clamp(float(pitch_shape_score))
+
+            if pitch_stability_metrics and isinstance(pitch_stability_metrics, dict):
+                student_stability = pitch_stability_metrics.get('student') or {}
+                graph_stability_score = _clamp(float(student_stability.get('score', pitch_shape_score)))
+            else:
+                graph_stability_score = _clamp(float(pitch_shape_score))
+
+            graph_only_score = _clamp(
+                0.60 * float(pitch_shape_score)
+                + 0.30 * float(graph_timing_score)
+                + 0.10 * float(graph_stability_score)
+            )
+            logger.info(
+                "Scoring V2 graph-only: pitch=%.2f, timing=%.2f, stability=%.2f, final=%.2f",
+                pitch_shape_score,
+                graph_timing_score,
+                graph_stability_score,
+                graph_only_score,
+            )
+            final_score = graph_only_score
+        except Exception as e:
+            logger.warning(f"Failed to apply Scoring V2 graph-only policy: {e}", exc_info=True)
+
         # Extract ayah timing if requested
         ayah_timing = []
         if return_ayah_timing:
@@ -3930,11 +4017,9 @@ def calculate_similarity_score(reference_path: str, user_path: str, return_segme
             except Exception as e:
                 logger.warning(f"Failed to apply segment policy recalculation: {e}", exc_info=True)
 
-        # Assessment Validity Gate:
-        # Pitch contour alone can look strong even for humming or non-recitation audio.
-        # Use supporting audio features to cap attempts that are not sufficiently valid
-        # as Quran recitation, then allow valid high-pitch/high-timing attempts to move
-        # out of the discouraging 55% plateau.
+        # Scoring V2 keeps audio feature validity as diagnostics only.
+        # It must not cap or boost the final score while we are validating
+        # whether graph-only scoring is trusted by users.
         assessment_validity = {
             'status': 'valid',
             'reason': '',
@@ -3968,7 +4053,7 @@ def calculate_similarity_score(reference_path: str, user_path: str, return_segme
             validity_reason = ''
             validity_message = ''
 
-            if tonal_score < 25.0 and clarity_score < 30.0 and pitch_shape_score >= 70.0:
+            if False and tonal_score < 25.0 and clarity_score < 30.0 and pitch_shape_score >= 70.0:
                 validity_cap = 45.0
                 validity_status = 'invalid'
                 validity_reason = 'pitch_high_but_audio_pattern_weak'
@@ -3976,7 +4061,7 @@ def calculate_similarity_score(reference_path: str, user_path: str, return_segme
                     'Sistem mengesan pitch/alunan, tetapi corak audio tidak cukup '
                     'menyerupai bacaan rujukan untuk assessment yang adil.'
                 )
-            elif tonal_score < 28.0 and clarity_score < 32.0 and mic_stability_score < 22.0:
+            elif False and tonal_score < 28.0 and clarity_score < 32.0 and mic_stability_score < 22.0:
                 validity_cap = 48.0
                 validity_status = 'review'
                 validity_reason = 'audio_support_too_weak'
@@ -4006,7 +4091,7 @@ def calculate_similarity_score(reference_path: str, user_path: str, return_segme
                     'cap_applied': True,
                     'cap_value': validity_cap,
                 })
-            elif (
+            elif False and (
                 pitch_shape_score >= 90.0
                 and timing_score >= 55.0
                 and tonal_score >= 25.0
@@ -4122,10 +4207,13 @@ def calculate_similarity_score(reference_path: str, user_path: str, return_segme
         # Breakdown: base_score (pronunciation/timing) and pitch_shape_score (pitch accuracy)
         if isinstance(training_feedback, dict):
             training_feedback['scoreBreakdown'] = {
+                'scoring_version': scoring_version,
                 'base_score': round(base_score, 2),
                 'pitch_score': round(pitch_shape_score, 2),
                 'audio_match_score': round(base_score, 2),
-                'segment_consistency_score': (round(segment_based_overall, 2) if isinstance(segment_based_overall, (int, float)) else None),
+                'segment_consistency_score': (round(graph_timing_score, 2) if isinstance(graph_timing_score, (int, float)) else None),
+                'graph_timing_score': (round(graph_timing_score, 2) if isinstance(graph_timing_score, (int, float)) else None),
+                'graph_stability_score': (round(graph_stability_score, 2) if isinstance(graph_stability_score, (int, float)) else None),
                 'raw_base_score': round(raw_base_score, 2),
                 'raw_pitch_contour_score': round(raw_pitch_contour_score, 2),
                 'feature_scores': feature_scores,
@@ -4135,10 +4223,11 @@ def calculate_similarity_score(reference_path: str, user_path: str, return_segme
                 'final_score_after_segment_fusion': round(final_score, 2),
                 'segment_based_overall': (round(segment_based_overall, 2) if isinstance(segment_based_overall, (int, float)) else None),
                 'assessment_weights': {
-                    'pitch_contour': 40,
-                    'segment_consistency': 25,
-                    'tonal_audio_features': 20,
-                    'pronunciation_like_audio_match': 15,
+                    'pitch_contour': 60,
+                    'graph_timing': 30,
+                    'graph_stability': 10,
+                    'tonal_audio_features': 0,
+                    'pronunciation_like_audio_match': 0,
                 },
             }
         

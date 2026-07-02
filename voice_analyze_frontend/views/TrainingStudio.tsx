@@ -4403,6 +4403,8 @@ const TrainingStudio: React.FC = () => {
                       breakdown={
                         analysisResult.scoreBreakdown
                           ? {
+                              scoringVersion:
+                                analysisResult.scoreBreakdown.scoringVersion,
                               pitch: analysisResult.scoreBreakdown.pitch,
                               timing: analysisResult.scoreBreakdown.timing,
                               pronunciation:
@@ -4415,6 +4417,8 @@ const TrainingStudio: React.FC = () => {
                                 analysisResult.scoreBreakdown.pitchContour,
                               ayatTiming:
                                 analysisResult.scoreBreakdown.ayatTiming,
+                              graphStability:
+                                analysisResult.scoreBreakdown.graphStability,
                               tonalPattern:
                                 analysisResult.scoreBreakdown.tonalPattern,
                               audioClarity:
@@ -4571,45 +4575,70 @@ const TrainingStudio: React.FC = () => {
                           </div>
                         )}
                       <div className='space-y-3'>
-                        {[
-                          {
-                            label: "Pitch Contour",
-                            score:
-                              analysisResult.scoreBreakdown.pitchContour ??
-                              analysisResult.scoreBreakdown.pitch,
-                            note: "Alunan suara: naik, turun, mendatar, lenggok",
-                          },
-                          {
-                            label: "Ayat Timing",
-                            score:
-                              analysisResult.scoreBreakdown.ayatTiming ??
-                              analysisResult.scoreBreakdown.timing,
-                            note: "Masa bacaan ayat: mula ayat, pertukaran ayat, panjang pendek bacaan",
-                          },
-                          {
-                            label: "Tonal / Maqam Pattern",
-                            score:
-                              analysisResult.scoreBreakdown.tonalPattern ??
-                              analysisResult.scoreBreakdown.audioMatch ??
-                              analysisResult.scoreBreakdown.pronunciation,
-                            note: "Corak nada: rasa maqam dan arah nada bacaan",
-                          },
-                          {
-                            label: "Audio Clarity",
-                            score:
-                              analysisResult.scoreBreakdown.audioClarity ??
-                              analysisResult.scoreBreakdown.pronunciation,
-                            note: "Kejelasan bacaan: suara jelas, sebutan dapat dikesan, corak audio kemas",
-                          },
-                          {
-                            label: "Mic Stability",
-                            score:
-                              analysisResult.scoreBreakdown.micStability ??
-                              analysisResult.scoreBreakdown.consistency ??
-                              analysisResult.scoreBreakdown.timing,
-                            note: "Kualiti rakaman: signal mic stabil, bersih, tidak terlalu bising atau putus-putus",
-                          },
-                        ].map((item) => {
+                        {(analysisResult.scoreBreakdown.scoringVersion === "v2_graph_only"
+                          ? [
+                              {
+                                label: "Pitch Contour",
+                                score:
+                                  analysisResult.scoreBreakdown.pitchContour ??
+                                  analysisResult.scoreBreakdown.pitch,
+                                note: "Alunan graph: naik, turun, mendatar, lenggok",
+                              },
+                              {
+                                label: "Ayat Timing",
+                                score:
+                                  analysisResult.scoreBreakdown.ayatTiming ??
+                                  analysisResult.scoreBreakdown.timing,
+                                note: "Keselarasan graph mengikut masa dan pertukaran ayat",
+                              },
+                              {
+                                label: "Graph Stability",
+                                score:
+                                  analysisResult.scoreBreakdown.graphStability ??
+                                  analysisResult.scoreBreakdown.pitchContour ??
+                                  analysisResult.scoreBreakdown.pitch,
+                                note: "Kestabilan graph dan kawalan spike yang terlalu ketara",
+                              },
+                            ]
+                          : [
+                              {
+                                label: "Pitch Contour",
+                                score:
+                                  analysisResult.scoreBreakdown.pitchContour ??
+                                  analysisResult.scoreBreakdown.pitch,
+                                note: "Alunan suara: naik, turun, mendatar, lenggok",
+                              },
+                              {
+                                label: "Ayat Timing",
+                                score:
+                                  analysisResult.scoreBreakdown.ayatTiming ??
+                                  analysisResult.scoreBreakdown.timing,
+                                note: "Masa bacaan ayat: mula ayat, pertukaran ayat, panjang pendek bacaan",
+                              },
+                              {
+                                label: "Tonal / Maqam Pattern",
+                                score:
+                                  analysisResult.scoreBreakdown.tonalPattern ??
+                                  analysisResult.scoreBreakdown.audioMatch ??
+                                  analysisResult.scoreBreakdown.pronunciation,
+                                note: "Corak nada: rasa maqam dan arah nada bacaan",
+                              },
+                              {
+                                label: "Audio Clarity",
+                                score:
+                                  analysisResult.scoreBreakdown.audioClarity ??
+                                  analysisResult.scoreBreakdown.pronunciation,
+                                note: "Kejelasan bacaan: suara jelas, sebutan dapat dikesan, corak audio kemas",
+                              },
+                              {
+                                label: "Mic Stability",
+                                score:
+                                  analysisResult.scoreBreakdown.micStability ??
+                                  analysisResult.scoreBreakdown.consistency ??
+                                  analysisResult.scoreBreakdown.timing,
+                                note: "Kualiti rakaman: signal mic stabil, bersih, tidak terlalu bising atau putus-putus",
+                              },
+                            ]).map((item) => {
                           const score = Math.max(
                             0,
                             Math.min(100, Number(item.score || 0))
@@ -4640,8 +4669,9 @@ const TrainingStudio: React.FC = () => {
                         })}
                       </div>
                       <p className='mt-4 rounded-lg bg-emerald-50 p-3 text-xs leading-relaxed text-emerald-900'>
-                        Graph menunjukkan bentuk pitch/alunan. Markah akhir turut mengambil kira timing ayat,
-                        corak tonal, kejelasan audio dan kestabilan mikrofon.
+                        {analysisResult.scoreBreakdown.scoringVersion === "v2_graph_only"
+                          ? "Scoring V2 menilai graph sahaja: pitch contour, timing ayat dan kestabilan graph. Tonal, kejelasan audio dan mic tidak mempengaruhi markah akhir buat masa ini."
+                          : "Graph menunjukkan bentuk pitch/alunan. Markah akhir turut mengambil kira timing ayat, corak tonal, kejelasan audio dan kestabilan mikrofon."}
                       </p>
                     </div>
                   )}

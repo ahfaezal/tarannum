@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { HelpCircle, X, TrendingUp, Music, Volume2, Target } from "lucide-react";
 
 interface ScoreBreakdown {
+  scoringVersion?: string;
   pitch?: number; // Pitch accuracy (0-100)
   timing?: number; // Segment/timing consistency (0-100)
   pronunciation?: number; // Legacy key: audio feature match (0-100)
@@ -9,6 +10,7 @@ interface ScoreBreakdown {
   consistency?: number; // Segment/ayah consistency (0-100)
   pitchContour?: number;
   ayatTiming?: number;
+  graphStability?: number;
   tonalPattern?: number;
   audioClarity?: number;
   micStability?: number;
@@ -53,8 +55,10 @@ const ScoreExplanation: React.FC<ScoreExplanationProps> = ({
   };
 
   const breakdownData = getBreakdown();
+  const isGraphOnly = breakdownData.scoringVersion === "v2_graph_only";
   const pitchContourScore = breakdownData.pitchContour ?? breakdownData.pitch;
   const timingScore = breakdownData.ayatTiming ?? breakdownData.consistency ?? breakdownData.timing;
+  const graphStabilityScore = breakdownData.graphStability ?? pitchContourScore;
   const tonalScore = breakdownData.tonalPattern ?? breakdownData.audioMatch ?? breakdownData.pronunciation;
   const clarityScore = breakdownData.audioClarity ?? breakdownData.pronunciation ?? breakdownData.audioMatch;
   const micScore = breakdownData.micStability ?? breakdownData.consistency ?? breakdownData.timing;
@@ -69,6 +73,15 @@ const ScoreExplanation: React.FC<ScoreExplanationProps> = ({
     }
     if ((timingScore || 0) < threshold) {
       areas.push("Timing ayat - latih mula ayat, pertukaran ayat dan panjang pendek bacaan");
+    }
+    if (isGraphOnly && (graphStabilityScore || 0) < threshold) {
+      areas.push("Kestabilan graph - kurangkan spike dan pastikan alunan lebih terkawal");
+    }
+    if (isGraphOnly) {
+      if (areas.length === 0) {
+        areas.push("Teruskan latihan untuk kekalkan prestasi bacaan");
+      }
+      return areas;
     }
     if ((tonalScore || 0) < threshold) {
       areas.push("Tonal / maqam - dengar semula rasa maqam dan arah nada qari");
@@ -175,10 +188,16 @@ const ScoreExplanation: React.FC<ScoreExplanationProps> = ({
                     <strong>Segment & timing consistency:</strong> How well each
                     ayah section stays aligned with the reference timing
                   </li>
-                  <li>
-                    <strong>Audio quality:</strong> How clear and stable your
-                    recording is while following the reference
-                  </li>
+                  {isGraphOnly ? (
+                    <li>
+                      <strong>Graph stability:</strong> How controlled the pitch graph is without excessive spikes
+                    </li>
+                  ) : (
+                    <li>
+                      <strong>Audio quality:</strong> How clear and stable your
+                      recording is while following the reference
+                    </li>
+                  )}
                 </ul>
                 <p className="mt-2 text-sm text-slate-600 italic">
                   A higher score indicates a closer match across all these dimensions. 
@@ -249,8 +268,37 @@ const ScoreExplanation: React.FC<ScoreExplanationProps> = ({
                     </div>
                   </div>
 
+                  {isGraphOnly && (
+                    <div className="flex items-center gap-4">
+                      <div className="flex-shrink-0 w-12 h-12 bg-emerald-100 rounded-lg flex items-center justify-center">
+                        <Target className="text-emerald-600" size={20} />
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-sm font-medium text-slate-700">
+                            Graph Stability
+                          </span>
+                          <span className="text-sm font-bold text-slate-800">
+                            {graphStabilityScore?.toFixed(1) || "N/A"}%
+                          </span>
+                        </div>
+                        <div className="w-full bg-slate-200 rounded-full h-2">
+                          <div
+                            className="bg-emerald-500 h-2 rounded-full transition-all"
+                            style={{
+                              width: `${Math.min(100, graphStabilityScore || 0)}%`,
+                            }}
+                          />
+                        </div>
+                        <p className="text-xs text-slate-500 mt-1">
+                          Kestabilan graph dan kawalan spike yang terlalu ketara
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Tonal / Maqam */}
-                  <div className="flex items-center gap-4">
+                  {!isGraphOnly && <div className="flex items-center gap-4">
                     <div className="flex-shrink-0 w-12 h-12 bg-emerald-100 rounded-lg flex items-center justify-center">
                       <Volume2 className="text-emerald-600" size={20} />
                     </div>
@@ -278,10 +326,10 @@ const ScoreExplanation: React.FC<ScoreExplanationProps> = ({
                         Corak nada: rasa maqam dan arah nada bacaan
                       </p>
                     </div>
-                  </div>
+                  </div>}
 
                   {/* Audio Clarity */}
-                  <div className="flex items-center gap-4">
+                  {!isGraphOnly && <div className="flex items-center gap-4">
                     <div className="flex-shrink-0 w-12 h-12 bg-cyan-100 rounded-lg flex items-center justify-center">
                       <Volume2 className="text-cyan-600" size={20} />
                     </div>
@@ -306,10 +354,10 @@ const ScoreExplanation: React.FC<ScoreExplanationProps> = ({
                         Kejelasan bacaan: suara jelas, sebutan dapat dikesan, corak audio kemas
                       </p>
                     </div>
-                  </div>
+                  </div>}
 
                   {/* Mic Stability */}
-                  <div className="flex items-center gap-4">
+                  {!isGraphOnly && <div className="flex items-center gap-4">
                     <div className="flex-shrink-0 w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center">
                       <Target className="text-amber-600" size={20} />
                     </div>
@@ -334,7 +382,7 @@ const ScoreExplanation: React.FC<ScoreExplanationProps> = ({
                         Signal mic stabil dan bersih
                       </p>
                     </div>
-                  </div>
+                  </div>}
 
                   {/* Overall Score */}
                   <div className="pt-4 border-t border-slate-200">
