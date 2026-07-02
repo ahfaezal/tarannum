@@ -267,11 +267,17 @@ export const analyzeRecitation = async (
           pronunciation: data.scoreBreakdown.pronunciation || 0,
           consistency: data.scoreBreakdown.consistency,
           audioMatch: data.scoreBreakdown.audioMatch,
+          pitchContour: data.scoreBreakdown.pitchContour,
+          ayatTiming: data.scoreBreakdown.ayatTiming,
+          tonalPattern: data.scoreBreakdown.tonalPattern,
+          audioClarity: data.scoreBreakdown.audioClarity,
+          micStability: data.scoreBreakdown.micStability,
           rawBase: data.scoreBreakdown.rawBase,
           rawPitch: data.scoreBreakdown.rawPitch,
           segmentOverall: data.scoreBreakdown.segmentOverall,
           finalAfterSegmentFusion: data.scoreBreakdown.finalAfterSegmentFusion,
           weights: data.scoreBreakdown.weights,
+          featureScores: data.scoreBreakdown.featureScores,
         }
       : undefined;
 

@@ -73,6 +73,7 @@ export interface SegmentFeedback {
   score: number;
   label: string;
   message: string;
+  text?: string;
   issues?: string[]; // NEW: Specific issues (pitch_too_high, pitch_too_low, timing_too_fast, timing_too_slow)
   practiceTechnique?: string; // NEW: Suggested practice technique
 }
@@ -84,6 +85,7 @@ export interface TrainingFeedback {
   strengths: string[];
   focus_areas: string[];
   segment_feedback?: SegmentFeedback[];
+  ayat_feedback?: SegmentFeedback[];
 
   // NEW: Enhanced feedback features
   progress?: {
@@ -168,11 +170,17 @@ export interface AnalysisResult {
     pronunciation: number; // Legacy key: audio feature match (0-100)
     consistency?: number; // Segment/ayah consistency (0-100)
     audioMatch?: number; // Audio feature match (0-100)
+    pitchContour?: number;
+    ayatTiming?: number;
+    tonalPattern?: number;
+    audioClarity?: number;
+    micStability?: number;
     rawBase?: number;
     rawPitch?: number;
     segmentOverall?: number;
     finalAfterSegmentFusion?: number;
     weights?: Record<string, number>;
+    featureScores?: Record<string, number>;
   };
 }
 

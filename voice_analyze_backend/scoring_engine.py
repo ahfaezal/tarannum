@@ -3785,9 +3785,11 @@ def calculate_similarity_score(reference_path: str, user_path: str, return_segme
         
         # Log individual feature contributions
         feature_contributions = {}
+        feature_scores = {}
         for feature_name, similarity in feature_similarities.items():
             weight = feature_weights.get(feature_name, 0.0)
             contribution = similarity * weight * 100
+            feature_scores[feature_name] = round(similarity * 100.0, 2)
             feature_contributions[feature_name] = {
                 'similarity': round(similarity, 3),
                 'weight': weight,
@@ -4010,6 +4012,7 @@ def calculate_similarity_score(reference_path: str, user_path: str, return_segme
                 'segment_consistency_score': (round(segment_based_overall, 2) if isinstance(segment_based_overall, (int, float)) else None),
                 'raw_base_score': round(raw_base_score, 2),
                 'raw_pitch_contour_score': round(raw_pitch_contour_score, 2),
+                'feature_scores': feature_scores,
                 'blended_score_before_rescaling': round(blended_score_before_rescaling, 2),
                 'final_score_after_rescaling': round(final_score_after_rescaling, 2),
                 'final_score_after_segment_fusion': round(final_score, 2),

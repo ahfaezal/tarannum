@@ -251,16 +251,55 @@ Rationale:
 
 The frontend should avoid presenting the score as a full tajwid or pronunciation judgment.
 
-Approved labels:
+Approved student-facing Score Breakdown labels:
 
-| Label | Meaning |
-|---|---|
-| Pitch Accuracy or Pitch Contour | How closely the student follows the qari's melodic contour |
-| Segment & Timing | How well the student's attempt aligns with ayah or segment timing |
-| Audio Match | Tone, clarity, and audio-feature similarity to the reference |
-| Overall Similarity | Combined Assessment Score |
+| Label | Student Explanation | Technical Source |
+|---|---|---|
+| Pitch Contour | Alunan suara: naik, turun, mendatar, lenggok | Pitch contour similarity |
+| Ayat Timing | Masa bacaan ayat: mula ayat, pertukaran ayat, panjang pendek bacaan | Segment or ayat consistency score |
+| Tonal / Maqam Pattern | Corak nada: rasa maqam dan arah nada bacaan | Chroma score, with fallback to audio feature score |
+| Audio Clarity | Kejelasan bacaan: suara jelas, sebutan dapat dikesan, corak audio kemas | MFCC score, with fallback to audio feature score |
+| Mic Stability | Kualiti rakaman: signal mic stabil, bersih, tidak terlalu bising atau putus-putus | Spectral contrast, ZCR, and Tonnetz average, with fallback to audio feature score |
 
 Avoid implying that the score fully verifies Quran correctness, tajwid correctness, or pronunciation correctness. Those require a more specialized correctness engine and teacher review.
+
+Student-facing note:
+
+> Graph menunjukkan bentuk pitch/alunan. Markah akhir turut mengambil kira timing ayat, corak tonal, kejelasan audio dan kestabilan mikrofon.
+
+This note is important because a graph that looks visually close may still lose marks in timing, tonal pattern, audio clarity, or mic stability. A graph that looks less smooth may still score better if the measurable timing and audio components are stronger.
+
+## Ayat Feedback
+
+The old student-facing `Segment Feedback` label should be renamed to `Ayat Feedback`.
+
+Ayat Feedback should not be generated from score percentage only. It should use:
+
+- ayat or segment score
+- the main detected issue, when available
+
+Example outputs:
+
+| Example | Meaning |
+|---|---|
+| Ayat 1: 72% - Alunan baik, timing sedikit lambat | Score is acceptable, but the main issue is timing |
+| Ayat 2: 65% - Mula ayat hampir tepat | Timing is close enough, but still has room to improve |
+| Ayat 3: 58% - Pitch kurang stabil | Main detected issue is pitch stability |
+
+Known issue codes may include:
+
+| Issue Code | Student-Facing Meaning |
+|---|---|
+| pitch_too_high | Alunan cenderung terlalu tinggi |
+| pitch_too_low | Alunan cenderung terlalu rendah |
+| timing_too_slow | Timing sedikit lambat berbanding rujukan |
+| timing_too_fast | Timing sedikit cepat berbanding rujukan |
+
+## Segment Breakdown Visibility
+
+The old `Segment Breakdown` panel showed raw timestamp ranges and progress bars. This should be hidden from the main student-facing result because students practise by ayat, not by arbitrary timestamp range.
+
+Segment-level data may still remain in the backend response and may still be used internally for scoring, debugging, teacher tools, or future admin review. It should not be the primary explanation shown to students.
 
 ## Current Implementation Notes
 
@@ -271,11 +310,18 @@ Current implementation exposes diagnostic fields such as:
 - pronunciation, retained as a legacy compatibility key
 - consistency
 - audioMatch
+- pitchContour
+- ayatTiming
+- tonalPattern
+- audioClarity
+- micStability
+- featureScores
 - rawBase
 - rawPitch
 - segmentOverall
 - finalAfterSegmentFusion
 - weights
+- ayat_feedback
 
 The legacy `pronunciation` field should be treated as audio feature match, not a complete pronunciation or tajwid verdict.
 

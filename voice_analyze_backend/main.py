@@ -767,38 +767,66 @@ async def score_performance(
             # The original training_feedback was generated with unvalidated segments
             if validated_segments and len(validated_segments) > 0 and isinstance(training_feedback, dict):
                 logger.info("Regenerating segment feedback with validated segments...")
+                original_feedback_by_index = {}
+                for old_fb in training_feedback.get('segment_feedback') or []:
+                    try:
+                        original_feedback_by_index[int(old_fb.get('segment_index', len(original_feedback_by_index)))] = old_fb
+                    except (TypeError, ValueError):
+                        continue
+
+                def _ayat_feedback_message(seg_score, issues):
+                    issues = issues or []
+                    if 'timing_too_slow' in issues:
+                        return 'Timing sedikit lambat berbanding rujukan'
+                    if 'timing_too_fast' in issues:
+                        return 'Timing sedikit cepat berbanding rujukan'
+                    if 'pitch_too_high' in issues:
+                        return 'Alunan cenderung terlalu tinggi'
+                    if 'pitch_too_low' in issues:
+                        return 'Alunan cenderung terlalu rendah'
+                    if seg_score >= 80:
+                        return 'Alunan dan timing hampir tepat'
+                    if seg_score >= 65:
+                        return 'Alunan baik, terus kemaskan timing'
+                    if seg_score >= 50:
+                        return 'Pitch kurang stabil, ulang ayat ini perlahan-lahan'
+                    return 'Fokus semula pada alunan dan timing ayat ini'
+
+                def _ayat_feedback_label(seg_score):
+                    if seg_score >= 80:
+                        return 'Kuat'
+                    if seg_score >= 65:
+                        return 'Baik'
+                    if seg_score >= 50:
+                        return 'Perlu kemas'
+                    return 'Perlu ulang'
+
                 segment_feedback = []
                 for i, seg in enumerate(validated_segments):
                     seg_score = seg.get('score', 0.0)
                     seg_accuracy = seg.get('accuracy', 'low')
+                    old_fb = original_feedback_by_index.get(i, {})
+                    issues = old_fb.get('issues') or []
+                    practice_technique = old_fb.get('practiceTechnique') or ''
 
                     seg_fb = {
                         'segment_index': i,
                         'start': seg.get('start', 0.0),
                         'end': seg.get('end', 0.0),
                         'score': seg_score,
-                        'label': '',
-                        'message': ''
+                        'label': _ayat_feedback_label(seg_score),
+                        'message': _ayat_feedback_message(seg_score, issues),
+                        'issues': issues,
+                        'practiceTechnique': practice_technique,
                     }
-
-                    # Non-judgmental segment feedback based on validated score
-                    if seg_score >= 80:
-                        seg_fb['label'] = 'Strong'
-                        seg_fb['message'] = 'This section matches well'
-                    elif seg_score >= 60:
-                        seg_fb['label'] = 'Good'
-                        seg_fb['message'] = 'This section is coming along'
-                    elif seg_score >= 40:
-                        seg_fb['label'] = 'Developing'
-                        seg_fb['message'] = 'Keep practicing this section'
-                    else:
-                        seg_fb['label'] = 'Practice'
-                        seg_fb['message'] = 'Focus on this section'
+                    if seg.get('text') is not None:
+                        seg_fb['text'] = seg.get('text')
 
                     segment_feedback.append(seg_fb)
 
                 # Update the training_feedback with regenerated segment_feedback
                 training_feedback['segment_feedback'] = segment_feedback
+                training_feedback['ayat_feedback'] = segment_feedback
                 logger.info(f"Regenerated segment feedback with {len(validated_segments)} validated segments")
 
             # Prepare regions array for pitch visualization (same as segments but with different naming)
@@ -825,6 +853,23 @@ async def score_performance(
                 # These fields are assessment components, not full tajwid judgment.
                 # Keep legacy pitch/timing/pronunciation keys for frontend compatibility,
                 # while exposing clearer tarannum-aware fields for debugging/UI.
+                feature_scores = breakdown.get('feature_scores') or {}
+                chroma_score = feature_scores.get('chroma')
+                mfcc_score = feature_scores.get('mfcc')
+                spectral_score = feature_scores.get('spectral_contrast')
+                tonnetz_score = feature_scores.get('tonnetz')
+                zcr_score = feature_scores.get('zcr')
+
+                tonal_pattern_val = chroma_score if chroma_score is not None else base_score_val
+                audio_clarity_val = mfcc_score if mfcc_score is not None else base_score_val
+                stability_components = [
+                    val for val in [spectral_score, zcr_score, tonnetz_score]
+                    if isinstance(val, (int, float))
+                ]
+                mic_stability_val = (
+                    sum(stability_components) / len(stability_components)
+                    if stability_components else base_score_val
+                )
 
                 score_breakdown = {
                     "pitch": round(pitch_score_val, 2),
@@ -832,11 +877,17 @@ async def score_performance(
                     "pronunciation": round(base_score_val, 2),
                     "consistency": round(segment_score_val, 2),
                     "audioMatch": round(base_score_val, 2),
+                    "pitchContour": round(pitch_score_val, 2),
+                    "ayatTiming": round(segment_score_val, 2),
+                    "tonalPattern": round(tonal_pattern_val, 2),
+                    "audioClarity": round(audio_clarity_val, 2),
+                    "micStability": round(mic_stability_val, 2),
                     "rawBase": round(breakdown.get('raw_base_score', base_score_val), 2),
                     "rawPitch": round(breakdown.get('raw_pitch_contour_score', pitch_score_val), 2),
                     "segmentOverall": round(segment_score_val, 2),
                     "finalAfterSegmentFusion": round(breakdown.get('final_score_after_segment_fusion', final_score), 2),
-                    "weights": breakdown.get('assessment_weights')
+                    "weights": breakdown.get('assessment_weights'),
+                    "featureScores": feature_scores,
                 }
 
             # Normalized overall score 0-100 (Milestone 5)
@@ -854,6 +905,7 @@ async def score_performance(
                 "regions": regions,
                 "ayatTiming": ayah_timing,
                 "feedback": training_feedback,
+                "ayatFeedback": training_feedback.get('ayat_feedback') if isinstance(training_feedback, dict) else None,
                 "scoreBreakdown": score_breakdown,
             }
 

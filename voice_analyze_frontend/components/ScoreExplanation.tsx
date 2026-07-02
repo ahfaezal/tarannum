@@ -7,6 +7,11 @@ interface ScoreBreakdown {
   pronunciation?: number; // Legacy key: audio feature match (0-100)
   audioMatch?: number; // Audio feature match (0-100)
   consistency?: number; // Segment/ayah consistency (0-100)
+  pitchContour?: number;
+  ayatTiming?: number;
+  tonalPattern?: number;
+  audioClarity?: number;
+  micStability?: number;
   overall: number; // Overall score (0-100)
 }
 
@@ -21,7 +26,7 @@ interface ScoreExplanationProps {
  * 
  * Displays a help icon next to the score that opens a modal explaining:
  * - What the score represents
- * - Score breakdown (Pitch, Segment/Timing, Audio Match)
+ * - Score breakdown (Pitch Contour, Ayat Timing, Tonal/Maqam, Audio Clarity, Mic Stability)
  * - Teacher-friendly explanation
  * - What to focus on suggestions
  */
@@ -48,26 +53,35 @@ const ScoreExplanation: React.FC<ScoreExplanationProps> = ({
   };
 
   const breakdownData = getBreakdown();
-  const timingScore = breakdownData.consistency ?? breakdownData.timing;
-  const audioMatchScore = breakdownData.audioMatch ?? breakdownData.pronunciation;
+  const pitchContourScore = breakdownData.pitchContour ?? breakdownData.pitch;
+  const timingScore = breakdownData.ayatTiming ?? breakdownData.consistency ?? breakdownData.timing;
+  const tonalScore = breakdownData.tonalPattern ?? breakdownData.audioMatch ?? breakdownData.pronunciation;
+  const clarityScore = breakdownData.audioClarity ?? breakdownData.pronunciation ?? breakdownData.audioMatch;
+  const micScore = breakdownData.micStability ?? breakdownData.consistency ?? breakdownData.timing;
 
   // Determine focus areas based on breakdown
   const getFocusAreas = (): string[] => {
     const areas: string[] = [];
     const threshold = 70;
 
-    if ((breakdownData.pitch || 0) < threshold) {
-      areas.push("Pitch accuracy - focus on matching the melodic contour");
+    if ((pitchContourScore || 0) < threshold) {
+      areas.push("Alunan - latih naik, turun, mendatar dan lenggok mengikut rujukan");
     }
     if ((timingScore || 0) < threshold) {
-      areas.push("Segment timing - practice each ayah with the reference audio");
+      areas.push("Timing ayat - latih mula ayat, pertukaran ayat dan panjang pendek bacaan");
     }
-    if ((audioMatchScore || 0) < threshold) {
-      areas.push("Audio match - keep your tone, clarity, and voice shape closer to the reference");
+    if ((tonalScore || 0) < threshold) {
+      areas.push("Tonal / maqam - dengar semula rasa maqam dan arah nada qari");
+    }
+    if ((clarityScore || 0) < threshold) {
+      areas.push("Kejelasan audio - pastikan suara jelas dan corak audio stabil");
+    }
+    if ((micScore || 0) < threshold) {
+      areas.push("Signal mic - pastikan mikrofon dekat, bersih dan tidak terlalu bising");
     }
 
     if (areas.length === 0) {
-      areas.push("Continue practicing to maintain your excellent performance");
+      areas.push("Teruskan latihan untuk kekalkan prestasi bacaan");
     }
 
     return areas;
@@ -162,8 +176,8 @@ const ScoreExplanation: React.FC<ScoreExplanationProps> = ({
                     ayah section stays aligned with the reference timing
                   </li>
                   <li>
-                    <strong>Audio match:</strong> How close your tone, clarity,
-                    and voice features are to the reference recording
+                    <strong>Audio quality:</strong> How clear and stable your
+                    recording is while following the reference
                   </li>
                 </ul>
                 <p className="mt-2 text-sm text-slate-600 italic">
@@ -179,7 +193,7 @@ const ScoreExplanation: React.FC<ScoreExplanationProps> = ({
                   Score Breakdown
                 </h3>
                 <div className="space-y-4">
-                  {/* Pitch Accuracy */}
+                  {/* Pitch Contour */}
                   <div className="flex items-center gap-4">
                     <div className="flex-shrink-0 w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
                       <Music className="text-purple-600" size={20} />
@@ -187,22 +201,22 @@ const ScoreExplanation: React.FC<ScoreExplanationProps> = ({
                     <div className="flex-1">
                       <div className="flex items-center justify-between mb-1">
                         <span className="text-sm font-medium text-slate-700">
-                          Pitch Accuracy
+                          Pitch Contour
                         </span>
                         <span className="text-sm font-bold text-slate-800">
-                          {breakdownData.pitch?.toFixed(1) || "N/A"}%
+                          {pitchContourScore?.toFixed(1) || "N/A"}%
                         </span>
                       </div>
                       <div className="w-full bg-slate-200 rounded-full h-2">
                         <div
                           className="bg-purple-500 h-2 rounded-full transition-all"
                           style={{
-                            width: `${Math.min(100, breakdownData.pitch || 0)}%`,
+                            width: `${Math.min(100, pitchContourScore || 0)}%`,
                           }}
                         />
                       </div>
                       <p className="text-xs text-slate-500 mt-1">
-                        How well your pitch contour matches the reference melody
+                        Alunan suara: naik, turun, mendatar, lenggok
                       </p>
                     </div>
                   </div>
@@ -215,7 +229,7 @@ const ScoreExplanation: React.FC<ScoreExplanationProps> = ({
                     <div className="flex-1">
                       <div className="flex items-center justify-between mb-1">
                         <span className="text-sm font-medium text-slate-700">
-                          Segment & Timing
+                          Ayat Timing
                         </span>
                         <span className="text-sm font-bold text-slate-800">
                           {timingScore?.toFixed(1) || "N/A"}%
@@ -230,12 +244,12 @@ const ScoreExplanation: React.FC<ScoreExplanationProps> = ({
                         />
                       </div>
                       <p className="text-xs text-slate-500 mt-1">
-                        How well each ayah segment stays aligned with the reference
+                        Masa bacaan ayat: mula ayat, pertukaran ayat, panjang pendek bacaan
                       </p>
                     </div>
                   </div>
 
-                  {/* Audio Match */}
+                  {/* Tonal / Maqam */}
                   <div className="flex items-center gap-4">
                     <div className="flex-shrink-0 w-12 h-12 bg-emerald-100 rounded-lg flex items-center justify-center">
                       <Volume2 className="text-emerald-600" size={20} />
@@ -243,10 +257,10 @@ const ScoreExplanation: React.FC<ScoreExplanationProps> = ({
                     <div className="flex-1">
                       <div className="flex items-center justify-between mb-1">
                         <span className="text-sm font-medium text-slate-700">
-                          Audio Match
+                          Tonal / Maqam Pattern
                         </span>
                         <span className="text-sm font-bold text-slate-800">
-                          {audioMatchScore?.toFixed(1) || "N/A"}%
+                          {tonalScore?.toFixed(1) || "N/A"}%
                         </span>
                       </div>
                       <div className="w-full bg-slate-200 rounded-full h-2">
@@ -255,13 +269,69 @@ const ScoreExplanation: React.FC<ScoreExplanationProps> = ({
                           style={{
                             width: `${Math.min(
                               100,
-                              audioMatchScore || 0
+                              tonalScore || 0
                             )}%`,
                           }}
                         />
                       </div>
                       <p className="text-xs text-slate-500 mt-1">
-                        How close your tone, clarity, and voice features are to the reference
+                        Corak nada: rasa maqam dan arah nada bacaan
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Audio Clarity */}
+                  <div className="flex items-center gap-4">
+                    <div className="flex-shrink-0 w-12 h-12 bg-cyan-100 rounded-lg flex items-center justify-center">
+                      <Volume2 className="text-cyan-600" size={20} />
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-sm font-medium text-slate-700">
+                          Audio Clarity
+                        </span>
+                        <span className="text-sm font-bold text-slate-800">
+                          {clarityScore?.toFixed(1) || "N/A"}%
+                        </span>
+                      </div>
+                      <div className="w-full bg-slate-200 rounded-full h-2">
+                        <div
+                          className="bg-cyan-500 h-2 rounded-full transition-all"
+                          style={{
+                            width: `${Math.min(100, clarityScore || 0)}%`,
+                          }}
+                        />
+                      </div>
+                      <p className="text-xs text-slate-500 mt-1">
+                        Kejelasan bacaan: suara jelas, sebutan dapat dikesan, corak audio kemas
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Mic Stability */}
+                  <div className="flex items-center gap-4">
+                    <div className="flex-shrink-0 w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center">
+                      <Target className="text-amber-600" size={20} />
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-sm font-medium text-slate-700">
+                          Mic Stability
+                        </span>
+                        <span className="text-sm font-bold text-slate-800">
+                          {micScore?.toFixed(1) || "N/A"}%
+                        </span>
+                      </div>
+                      <div className="w-full bg-slate-200 rounded-full h-2">
+                        <div
+                          className="bg-amber-500 h-2 rounded-full transition-all"
+                          style={{
+                            width: `${Math.min(100, micScore || 0)}%`,
+                          }}
+                        />
+                      </div>
+                      <p className="text-xs text-slate-500 mt-1">
+                        Signal mic stabil dan bersih
                       </p>
                     </div>
                   </div>

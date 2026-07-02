@@ -4411,6 +4411,16 @@ const TrainingStudio: React.FC = () => {
                                 analysisResult.scoreBreakdown.consistency,
                               audioMatch:
                                 analysisResult.scoreBreakdown.audioMatch,
+                              pitchContour:
+                                analysisResult.scoreBreakdown.pitchContour,
+                              ayatTiming:
+                                analysisResult.scoreBreakdown.ayatTiming,
+                              tonalPattern:
+                                analysisResult.scoreBreakdown.tonalPattern,
+                              audioClarity:
+                                analysisResult.scoreBreakdown.audioClarity,
+                              micStability:
+                                analysisResult.scoreBreakdown.micStability,
                               overall: analysisResult.score,
                             }
                           : undefined
@@ -4521,6 +4531,90 @@ const TrainingStudio: React.FC = () => {
                   )}
                 </div>
                 <div className='bg-slate-50 p-4 rounded-xl border border-slate-200'>
+                  {analysisResult.scoreBreakdown && (
+                    <div className='mb-5 rounded-xl border border-emerald-200 bg-white p-4'>
+                      <div className='flex items-center gap-2 mb-3'>
+                        <BarChart2 className='w-4 h-4 text-emerald-700' />
+                        <h4 className='text-xs font-bold text-emerald-800 uppercase tracking-wider'>
+                          Score Breakdown
+                        </h4>
+                      </div>
+                      <div className='space-y-3'>
+                        {[
+                          {
+                            label: "Pitch Contour",
+                            score:
+                              analysisResult.scoreBreakdown.pitchContour ??
+                              analysisResult.scoreBreakdown.pitch,
+                            note: "Alunan suara: naik, turun, mendatar, lenggok",
+                          },
+                          {
+                            label: "Ayat Timing",
+                            score:
+                              analysisResult.scoreBreakdown.ayatTiming ??
+                              analysisResult.scoreBreakdown.timing,
+                            note: "Masa bacaan ayat: mula ayat, pertukaran ayat, panjang pendek bacaan",
+                          },
+                          {
+                            label: "Tonal / Maqam Pattern",
+                            score:
+                              analysisResult.scoreBreakdown.tonalPattern ??
+                              analysisResult.scoreBreakdown.audioMatch ??
+                              analysisResult.scoreBreakdown.pronunciation,
+                            note: "Corak nada: rasa maqam dan arah nada bacaan",
+                          },
+                          {
+                            label: "Audio Clarity",
+                            score:
+                              analysisResult.scoreBreakdown.audioClarity ??
+                              analysisResult.scoreBreakdown.pronunciation,
+                            note: "Kejelasan bacaan: suara jelas, sebutan dapat dikesan, corak audio kemas",
+                          },
+                          {
+                            label: "Mic Stability",
+                            score:
+                              analysisResult.scoreBreakdown.micStability ??
+                              analysisResult.scoreBreakdown.consistency ??
+                              analysisResult.scoreBreakdown.timing,
+                            note: "Kualiti rakaman: signal mic stabil, bersih, tidak terlalu bising atau putus-putus",
+                          },
+                        ].map((item) => {
+                          const score = Math.max(
+                            0,
+                            Math.min(100, Number(item.score || 0))
+                          );
+                          return (
+                            <div key={item.label}>
+                              <div className='flex items-center justify-between gap-3'>
+                                <div className='min-w-0'>
+                                  <div className='text-sm font-semibold text-slate-800'>
+                                    {item.label}
+                                  </div>
+                                  <div className='text-xs text-slate-500 leading-relaxed'>
+                                    {item.note}
+                                  </div>
+                                </div>
+                                <div className='text-sm font-bold text-emerald-700'>
+                                  {Math.round(score)}%
+                                </div>
+                              </div>
+                              <div className='mt-2 h-2 rounded-full bg-slate-100 overflow-hidden'>
+                                <div
+                                  className='h-full rounded-full bg-emerald-500'
+                                  style={{ width: `${score}%` }}
+                                />
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <p className='mt-4 rounded-lg bg-emerald-50 p-3 text-xs leading-relaxed text-emerald-900'>
+                        Graph menunjukkan bentuk pitch/alunan. Markah akhir turut mengambil kira timing ayat,
+                        corak tonal, kejelasan audio dan kestabilan mikrofon.
+                      </p>
+                    </div>
+                  )}
+
                   <h4 className='text-xs font-bold text-slate-500 uppercase mb-3 tracking-wider'>
                     Performance Feedback
                   </h4>
@@ -4587,15 +4681,21 @@ const TrainingStudio: React.FC = () => {
                           </div>
                         )}
 
-                      {/* Segment Feedback (if available) */}
-                      {analysisResult.feedback.segment_feedback &&
-                        analysisResult.feedback.segment_feedback.length > 0 && (
+                      {/* Ayat Feedback (if available) */}
+                      {((analysisResult.feedback.ayat_feedback &&
+                        analysisResult.feedback.ayat_feedback.length > 0) ||
+                        (analysisResult.feedback.segment_feedback &&
+                          analysisResult.feedback.segment_feedback.length > 0)) && (
                           <div className='pt-2 border-t border-slate-200'>
                             <h6 className='text-xs font-semibold text-slate-600 uppercase mb-2'>
-                              Segment Feedback
+                              Ayat Feedback
                             </h6>
                             <div className='space-y-2'>
-                              {analysisResult.feedback.segment_feedback.map(
+                              {(
+                                analysisResult.feedback.ayat_feedback ||
+                                analysisResult.feedback.segment_feedback ||
+                                []
+                              ).map(
                                 (segFb, idx) => {
                                   // Find the corresponding segment from segment breakdown
                                   const correspondingSegment =
@@ -4617,18 +4717,28 @@ const TrainingStudio: React.FC = () => {
                                   return (
                                     <div
                                       key={idx}
-                                      className='text-xs text-slate-600 bg-slate-100 p-2 rounded'
+                                      className='text-xs text-slate-600 bg-white border border-slate-200 p-3 rounded-lg'
                                     >
-                                      <span className='font-medium'>
-                                        Segment {segFb.segment_index + 1}:
-                                      </span>{" "}
-                                      <span className='text-slate-700'>
-                                        {segFb.label}
-                                      </span>{" "}
-                                      - {segFb.message}
-                                      <span className='text-slate-500 ml-1'>
-                                        ({scoreDisplay}%)
-                                      </span>
+                                      <div className='flex items-center justify-between gap-3'>
+                                        <span className='font-semibold text-slate-800'>
+                                          Ayat {segFb.segment_index + 1}
+                                        </span>
+                                        <span className='font-semibold text-emerald-700'>
+                                          {scoreDisplay}%
+                                        </span>
+                                      </div>
+                                      <div className='mt-1 text-slate-700'>
+                                        {segFb.label} - {segFb.message}
+                                      </div>
+                                      {segFb.text && (
+                                        <div
+                                          className='mt-2 text-right text-slate-500 leading-7'
+                                          dir='rtl'
+                                          lang='ar'
+                                        >
+                                          {segFb.text}
+                                        </div>
+                                      )}
                                     </div>
                                   );
                                 }
@@ -4677,87 +4787,6 @@ const TrainingStudio: React.FC = () => {
                         : "Analysis complete"}
                       "
                     </p>
-                  )}
-                </div>
-
-                <div>
-                  {analysisResult.segments.length > 0 && (
-                    <>
-                      <h4 className='text-xs font-bold text-slate-500 uppercase mb-3 tracking-wider'>
-                        Segment Breakdown
-                      </h4>
-                      <div className='space-y-3'>
-                        {analysisResult.segments.map((seg, idx) => {
-                          // Prefer normalized (0-100) from backend; fallback to score
-                          let score =
-                            seg.normalized !== undefined && seg.normalized !== null
-                              ? seg.normalized
-                              : seg.score !== undefined && seg.score !== null
-                              ? seg.score
-                              : analysisResult.score || 0;
-
-                          // Ensure score is valid (but preserve very small positive numbers)
-                          if (
-                            score === null ||
-                            score === undefined ||
-                            isNaN(score) ||
-                            !isFinite(score)
-                          ) {
-                            score = 0;
-                          }
-
-                          // Don't convert very small positive numbers to 0 - they're valid scores
-                          // Only set to 0 if it's actually 0, null, undefined, NaN, or negative
-
-                          // Clamp to valid range (segment scores capped at 100%)
-                          const normalizedScore = Math.max(
-                            0,
-                            Math.min(100, score)
-                          );
-                          const scoreDisplay = formatSegmentScore(score);
-
-                          // For progress bar, use normalized score but ensure minimum visibility
-                          const barWidth =
-                            normalizedScore < 0.01 && normalizedScore > 0
-                              ? 0.5
-                              : normalizedScore;
-
-                          return (
-                            <div
-                              key={idx}
-                              className='flex items-center text-sm'
-                            >
-                              <span className='w-24 text-slate-500 text-xs font-mono'>
-                                {formatSegmentRange(seg)}
-                              </span>
-                              <div className='flex-1 h-2.5 bg-slate-100 rounded-full mx-3 overflow-hidden'>
-                                <div
-                                  className={`h-full rounded-full shadow-sm transition-all ${
-                                    seg.accuracy === "high"
-                                      ? "bg-emerald-500"
-                                      : seg.accuracy === "medium"
-                                      ? "bg-amber-400"
-                                      : "bg-red-400"
-                                  }`}
-                                  style={{ width: `${barWidth}%` }}
-                                />
-                              </div>
-                              <span
-                                className={`w-20 text-right font-medium text-xs ${
-                                  seg.accuracy === "high"
-                                    ? "text-emerald-600"
-                                    : seg.accuracy === "medium"
-                                    ? "text-amber-600"
-                                    : "text-red-500"
-                                }`}
-                              >
-                                {scoreDisplay}%
-                              </span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </>
                   )}
                 </div>
               </div>
