@@ -278,11 +278,14 @@ export const analyzeRecitation = async (
           finalAfterSegmentFusion: data.scoreBreakdown.finalAfterSegmentFusion,
           weights: data.scoreBreakdown.weights,
           featureScores: data.scoreBreakdown.featureScores,
+          assessmentValidity: data.scoreBreakdown.assessmentValidity,
         }
       : undefined;
 
     const quranCorrectness = data.quranCorrectness || undefined;
     const aiNotes = data.aiNotes || undefined;
+    const assessmentValidity =
+      data.assessmentValidity || scoreBreakdown?.assessmentValidity || undefined;
 
     return {
       sessionId: data.session_id,
@@ -296,6 +299,7 @@ export const analyzeRecitation = async (
       scoreBreakdown,
       quranCorrectness,
       aiNotes,
+      assessmentValidity,
     };
   } catch (error) {
     const errorMessage =

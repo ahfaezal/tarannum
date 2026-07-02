@@ -3930,6 +3930,122 @@ def calculate_similarity_score(reference_path: str, user_path: str, return_segme
             except Exception as e:
                 logger.warning(f"Failed to apply segment policy recalculation: {e}", exc_info=True)
 
+        # Assessment Validity Gate:
+        # Pitch contour alone can look strong even for humming or non-recitation audio.
+        # Use supporting audio features to cap attempts that are not sufficiently valid
+        # as Quran recitation, then allow valid high-pitch/high-timing attempts to move
+        # out of the discouraging 55% plateau.
+        assessment_validity = {
+            'status': 'valid',
+            'reason': '',
+            'message': '',
+            'cap_applied': False,
+            'cap_value': None,
+            'original_score': round(float(final_score), 2) if isinstance(final_score, (int, float)) else 0.0,
+        }
+        try:
+            tonal_score = float(feature_scores.get('chroma', base_score))
+            clarity_score = float(feature_scores.get('mfcc', base_score))
+            spectral_score = feature_scores.get('spectral_contrast')
+            tonnetz_score = feature_scores.get('tonnetz')
+            zcr_score = feature_scores.get('zcr')
+            stability_values = [
+                float(v) for v in [spectral_score, tonnetz_score, zcr_score]
+                if isinstance(v, (int, float))
+            ]
+            mic_stability_score = (
+                sum(stability_values) / len(stability_values)
+                if stability_values else float(base_score)
+            )
+            timing_score = (
+                float(segment_based_overall)
+                if isinstance(segment_based_overall, (int, float))
+                else float(base_score)
+            )
+
+            validity_cap = None
+            validity_status = 'valid'
+            validity_reason = ''
+            validity_message = ''
+
+            if tonal_score < 25.0 and clarity_score < 30.0 and pitch_shape_score >= 70.0:
+                validity_cap = 45.0
+                validity_status = 'invalid'
+                validity_reason = 'pitch_high_but_audio_pattern_weak'
+                validity_message = (
+                    'Sistem mengesan pitch/alunan, tetapi corak audio tidak cukup '
+                    'menyerupai bacaan rujukan untuk assessment yang adil.'
+                )
+            elif tonal_score < 28.0 and clarity_score < 32.0 and mic_stability_score < 22.0:
+                validity_cap = 48.0
+                validity_status = 'review'
+                validity_reason = 'audio_support_too_weak'
+                validity_message = (
+                    'Rakaman dikesan kurang stabil sebagai bacaan ayat. '
+                    'Sila rakam semula dengan suara yang lebih jelas.'
+                )
+
+            if validity_cap is not None and final_score > validity_cap:
+                logger.info(
+                    "Assessment validity cap applied: original=%.2f, cap=%.2f, "
+                    "pitch=%.2f, timing=%.2f, tonal=%.2f, clarity=%.2f, mic=%.2f, reason=%s",
+                    final_score,
+                    validity_cap,
+                    pitch_shape_score,
+                    timing_score,
+                    tonal_score,
+                    clarity_score,
+                    mic_stability_score,
+                    validity_reason,
+                )
+                final_score = _clamp(validity_cap)
+                assessment_validity.update({
+                    'status': validity_status,
+                    'reason': validity_reason,
+                    'message': validity_message,
+                    'cap_applied': True,
+                    'cap_value': validity_cap,
+                })
+            elif (
+                pitch_shape_score >= 90.0
+                and timing_score >= 55.0
+                and tonal_score >= 25.0
+                and clarity_score >= 30.0
+                and final_score < 60.0
+            ):
+                before = float(final_score)
+                final_score = _clamp(60.0)
+                assessment_validity.update({
+                    'status': 'valid',
+                    'reason': 'high_pitch_and_timing_reward',
+                    'message': 'Bacaan mempunyai alunan dan timing yang baik; score dinaikkan supaya improvement lebih jelas.',
+                    'cap_applied': False,
+                    'cap_value': None,
+                })
+                logger.info(
+                    "Assessment validity reward applied: original=%.2f -> %.2f, "
+                    "pitch=%.2f, timing=%.2f, tonal=%.2f, clarity=%.2f",
+                    before,
+                    final_score,
+                    pitch_shape_score,
+                    timing_score,
+                    tonal_score,
+                    clarity_score,
+                )
+
+            assessment_validity.update({
+                'final_score': round(float(final_score), 2),
+                'signals': {
+                    'pitchContour': round(float(pitch_shape_score), 2),
+                    'ayatTiming': round(float(timing_score), 2),
+                    'tonalPattern': round(float(tonal_score), 2),
+                    'audioClarity': round(float(clarity_score), 2),
+                    'micStability': round(float(mic_stability_score), 2),
+                }
+            })
+        except Exception as e:
+            logger.warning(f"Assessment validity gate skipped: {e}", exc_info=True)
+
         # Cleanup large variables to free memory before returning
         try:
             import gc
@@ -4013,6 +4129,7 @@ def calculate_similarity_score(reference_path: str, user_path: str, return_segme
                 'raw_base_score': round(raw_base_score, 2),
                 'raw_pitch_contour_score': round(raw_pitch_contour_score, 2),
                 'feature_scores': feature_scores,
+                'assessment_validity': assessment_validity,
                 'blended_score_before_rescaling': round(blended_score_before_rescaling, 2),
                 'final_score_after_rescaling': round(final_score_after_rescaling, 2),
                 'final_score_after_segment_fusion': round(final_score, 2),

@@ -854,6 +854,7 @@ async def score_performance(
                 # Keep legacy pitch/timing/pronunciation keys for frontend compatibility,
                 # while exposing clearer tarannum-aware fields for debugging/UI.
                 feature_scores = breakdown.get('feature_scores') or {}
+                assessment_validity = breakdown.get('assessment_validity') or {}
                 chroma_score = feature_scores.get('chroma')
                 mfcc_score = feature_scores.get('mfcc')
                 spectral_score = feature_scores.get('spectral_contrast')
@@ -889,6 +890,8 @@ async def score_performance(
                     "weights": breakdown.get('assessment_weights'),
                     "featureScores": feature_scores,
                 }
+                if assessment_validity:
+                    score_breakdown["assessmentValidity"] = assessment_validity
 
             # Normalized overall score 0-100 (Milestone 5)
             normalized_overall = max(0.0, min(100.0, float(final_score)))
@@ -907,6 +910,10 @@ async def score_performance(
                 "feedback": training_feedback,
                 "ayatFeedback": training_feedback.get('ayat_feedback') if isinstance(training_feedback, dict) else None,
                 "scoreBreakdown": score_breakdown,
+                "assessmentValidity": (
+                    score_breakdown.get("assessmentValidity")
+                    if isinstance(score_breakdown, dict) else None
+                ),
             }
 
             # Log final response structure for debugging

@@ -140,6 +140,23 @@ export interface PronunciationAlert {
   note?: string; // Optional note
 }
 
+export interface AssessmentValidity {
+  status: 'valid' | 'review' | 'invalid';
+  reason?: string;
+  message?: string;
+  cap_applied?: boolean;
+  cap_value?: number | null;
+  original_score?: number;
+  final_score?: number;
+  signals?: {
+    pitchContour?: number;
+    ayatTiming?: number;
+    tonalPattern?: number;
+    audioClarity?: number;
+    micStability?: number;
+  };
+}
+
 export interface AnalysisResult {
   sessionId?: string;
   analysisResultId?: string;
@@ -164,6 +181,7 @@ export interface AnalysisResult {
   pronunciationAlerts?: PronunciationAlert[]; // Beta: Pronunciation confusion alerts
   quranCorrectness?: QuranCorrectnessResult;
   aiNotes?: AIRecitationNotes;
+  assessmentValidity?: AssessmentValidity;
   scoreBreakdown?: {
     pitch: number; // Pitch accuracy (0-100)
     timing: number; // Segment/timing consistency (0-100)
@@ -181,6 +199,7 @@ export interface AnalysisResult {
     finalAfterSegmentFusion?: number;
     weights?: Record<string, number>;
     featureScores?: Record<string, number>;
+    assessmentValidity?: AssessmentValidity;
   };
 }
 

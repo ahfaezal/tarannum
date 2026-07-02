@@ -301,6 +301,42 @@ The old `Segment Breakdown` panel showed raw timestamp ranges and progress bars.
 
 Segment-level data may still remain in the backend response and may still be used internally for scoring, debugging, teacher tools, or future admin review. It should not be the primary explanation shown to students.
 
+## Assessment Validity Gate
+
+The assessment must not rely on pitch contour alone. A student can create a visible red wave or high pitch-contour score without actually reciting the expected ayat. Therefore the system applies an Assessment Validity Gate before returning the final score.
+
+The gate uses the same components shown in Score Breakdown:
+
+| Signal | Role In Validity Gate |
+|---|---|
+| Pitch Contour | Confirms whether the visible melodic shape follows the reference |
+| Ayat Timing | Confirms whether the attempt follows the ayat timing structure |
+| Tonal / Maqam Pattern | Helps detect whether the tonal pattern resembles recitation, not just arbitrary sound |
+| Audio Clarity | Helps detect whether the audio is clear enough to assess |
+| Mic Stability | Helps explain recording quality; should warn more than punish unless combined with weak tonal/clarity signals |
+
+Initial validity rules:
+
+| Condition | Action |
+|---|---|
+| Pitch Contour >= 70, Tonal / Maqam Pattern < 25, Audio Clarity < 30 | Mark as invalid/requires review and cap score at 45% |
+| Tonal / Maqam Pattern < 28, Audio Clarity < 32, Mic Stability < 22 | Mark as review and cap score at 48% |
+| Pitch Contour >= 90, Ayat Timing >= 55, Tonal / Maqam Pattern >= 25, Audio Clarity >= 30, and score < 60 | Treat as valid improvement and raise the minimum displayed score to 60% |
+
+Rationale:
+
+- high pitch contour alone is not enough proof of valid recitation
+- weak tonal and clarity signals should prevent non-recitation or humming-like attempts from receiving a mid-level score
+- valid attempts with strong pitch contour and acceptable ayat timing should not stay trapped around 55%
+
+Student-facing messages should be non-accusatory. Preferred wording:
+
+> Sistem mengesan pitch/alunan, tetapi corak audio tidak cukup menyerupai bacaan rujukan untuk assessment yang adil.
+
+or:
+
+> Rakaman dikesan kurang stabil sebagai bacaan ayat. Sila rakam semula dengan suara yang lebih jelas.
+
 ## Current Implementation Notes
 
 Current implementation exposes diagnostic fields such as:
@@ -316,6 +352,7 @@ Current implementation exposes diagnostic fields such as:
 - audioClarity
 - micStability
 - featureScores
+- assessmentValidity
 - rawBase
 - rawPitch
 - segmentOverall

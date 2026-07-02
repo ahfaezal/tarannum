@@ -4539,6 +4539,37 @@ const TrainingStudio: React.FC = () => {
                           Score Breakdown
                         </h4>
                       </div>
+                      {analysisResult.assessmentValidity &&
+                        analysisResult.assessmentValidity.reason && (
+                          <div
+                            className={`mb-4 rounded-lg border p-3 text-xs leading-relaxed ${
+                              analysisResult.assessmentValidity.status === "invalid" ||
+                              analysisResult.assessmentValidity.status === "review"
+                                ? "border-amber-200 bg-amber-50 text-amber-900"
+                                : "border-emerald-200 bg-emerald-50 text-emerald-900"
+                            }`}
+                          >
+                            <div className='mb-1 flex items-center gap-2 font-semibold'>
+                              <Info className='h-4 w-4' />
+                              {analysisResult.assessmentValidity.status === "invalid" ||
+                              analysisResult.assessmentValidity.status === "review"
+                                ? "Semakan Validity Rakaman"
+                                : "Improvement Dikesan"}
+                            </div>
+                            <p>
+                              {analysisResult.assessmentValidity.message ||
+                                "Sistem menyemak kesesuaian rakaman sebelum markah akhir dipaparkan."}
+                            </p>
+                            {analysisResult.assessmentValidity.cap_applied &&
+                              analysisResult.assessmentValidity.cap_value != null && (
+                                <p className='mt-1 font-medium'>
+                                  Markah assessment dicap pada maksimum{" "}
+                                  {Math.round(analysisResult.assessmentValidity.cap_value)}%
+                                  untuk keputusan yang lebih adil.
+                                </p>
+                              )}
+                          </div>
+                        )}
                       <div className='space-y-3'>
                         {[
                           {
