@@ -265,6 +265,13 @@ export const analyzeRecitation = async (
           pitch: data.scoreBreakdown.pitch || 0,
           timing: data.scoreBreakdown.timing || 0,
           pronunciation: data.scoreBreakdown.pronunciation || 0,
+          consistency: data.scoreBreakdown.consistency,
+          audioMatch: data.scoreBreakdown.audioMatch,
+          rawBase: data.scoreBreakdown.rawBase,
+          rawPitch: data.scoreBreakdown.rawPitch,
+          segmentOverall: data.scoreBreakdown.segmentOverall,
+          finalAfterSegmentFusion: data.scoreBreakdown.finalAfterSegmentFusion,
+          weights: data.scoreBreakdown.weights,
         }
       : undefined;
 

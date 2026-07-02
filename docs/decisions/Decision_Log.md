@@ -2,7 +2,7 @@
 
 Version: 1.0  
 Date: 2026-06-26  
-Last Updated: 2026-06-29
+Last Updated: 2026-07-02
 
 ## Purpose
 
@@ -109,3 +109,13 @@ Status: Approved.
 Date: 2026-06-29
 
 Tarannum.ai must support organizer-paid or course-paid subscription entitlement. If a course fee includes the Tarannum.ai subscription component, students should not be required to pay again during registration. Payment source, access entitlement, qari assignment, and royalty ledger must be recorded separately. Royalty is calculated from the Tarannum.ai subscription component, not the full course fee.
+
+## Decision 011
+
+Title: Assessment Score uses a tarannum-aware scoring model.
+
+Status: Approved.
+
+Date: 2026-07-02
+
+Assessment Score is used for Recording Mode, not Practice Mode. The scoring model should reward visible improvement in pitch contour and ayah-segment timing while still protecting against silent, weak, or wrong recordings. The July 2026 adjustment reduces over-reliance on MFCC and other device-sensitive audio features, increases the effect of pitch contour and segment consistency, and updates frontend score labels to avoid implying a full tajwid or Quran correctness judgment. Detailed original and updated scoring specifications are defined in `docs/architecture/Assessment_Score_Specification_v1.md`.

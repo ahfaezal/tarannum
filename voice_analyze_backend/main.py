@@ -816,29 +816,27 @@ async def score_performance(
                 breakdown = training_feedback['scoreBreakdown']
                 base_score_val = breakdown.get('base_score', 0)
                 pitch_score_val = breakdown.get('pitch_score', 0)
+                segment_score_val = breakdown.get('segment_consistency_score')
+                if segment_score_val is None:
+                    segment_score_val = breakdown.get('segment_based_overall')
+                if segment_score_val is None:
+                    segment_score_val = base_score_val
 
-                # Calculate timing and pronunciation from base_score based on feature weights
-                # Feature weights in base_score (total = 100%):
-                # - MFCC: 50% (pronunciation/timbre)
-                # - Spectral contrast: 15% (pronunciation/spectral characteristics)
-                # - Chroma: 25% (pitch class - contributes to timing/rhythm perception)
-                # - ZCR: 5% (rhythm/tempo - timing)
-                # - Tonnetz: 5% (tonal quality - split between pronunciation and timing)
-
-                # Pronunciation: MFCC (50%) + Spectral contrast (15%) = 65% of total weight
-                # Timing: ZCR (5%) + Chroma (25%) = 30% of total weight
-                # Tonnetz (5%) split: 2.5% pronunciation + 2.5% timing
-                # Final: Pronunciation = 67.5%, Timing = 32.5%
-                pronunciation_weight = 0.675  # 67.5% of base_score (MFCC 50% + Spectral 15% + Tonnetz 2.5%)
-                timing_weight = 0.325  # 32.5% of base_score (ZCR 5% + Chroma 25% + Tonnetz 2.5%)
-
-                pronunciation_approx = base_score_val * pronunciation_weight
-                timing_approx = base_score_val * timing_weight
+                # These fields are assessment components, not full tajwid judgment.
+                # Keep legacy pitch/timing/pronunciation keys for frontend compatibility,
+                # while exposing clearer tarannum-aware fields for debugging/UI.
 
                 score_breakdown = {
                     "pitch": round(pitch_score_val, 2),
-                    "timing": round(timing_approx, 2),
-                    "pronunciation": round(pronunciation_approx, 2)
+                    "timing": round(segment_score_val, 2),
+                    "pronunciation": round(base_score_val, 2),
+                    "consistency": round(segment_score_val, 2),
+                    "audioMatch": round(base_score_val, 2),
+                    "rawBase": round(breakdown.get('raw_base_score', base_score_val), 2),
+                    "rawPitch": round(breakdown.get('raw_pitch_contour_score', pitch_score_val), 2),
+                    "segmentOverall": round(segment_score_val, 2),
+                    "finalAfterSegmentFusion": round(breakdown.get('final_score_after_segment_fusion', final_score), 2),
+                    "weights": breakdown.get('assessment_weights')
                 }
 
             # Normalized overall score 0-100 (Milestone 5)

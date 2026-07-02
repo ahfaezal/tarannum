@@ -368,7 +368,7 @@ def ensure_student_selected_recordings_table():
                 CREATE TABLE IF NOT EXISTS student_selected_recordings (
                     id UUID PRIMARY KEY,
                     student_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                    reference_id VARCHAR REFERENCES references(id) ON DELETE SET NULL,
+                    reference_id VARCHAR REFERENCES "references"(id) ON DELETE SET NULL,
                     slot_type VARCHAR NOT NULL,
                     session_id UUID NOT NULL REFERENCES user_sessions(id) ON DELETE CASCADE,
                     analysis_result_id UUID NOT NULL REFERENCES analysis_results(id) ON DELETE CASCADE,

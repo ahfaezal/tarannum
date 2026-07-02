@@ -164,8 +164,15 @@ export interface AnalysisResult {
   aiNotes?: AIRecitationNotes;
   scoreBreakdown?: {
     pitch: number; // Pitch accuracy (0-100)
-    timing: number; // Timing/rhythm (0-100)
-    pronunciation: number; // Pronunciation (0-100)
+    timing: number; // Segment/timing consistency (0-100)
+    pronunciation: number; // Legacy key: audio feature match (0-100)
+    consistency?: number; // Segment/ayah consistency (0-100)
+    audioMatch?: number; // Audio feature match (0-100)
+    rawBase?: number;
+    rawPitch?: number;
+    segmentOverall?: number;
+    finalAfterSegmentFusion?: number;
+    weights?: Record<string, number>;
   };
 }
 

@@ -2807,9 +2807,9 @@ def calculate_segment_scores(ref_features: Dict[str, np.ndarray],
                 # Blend with pitch contour when available (use seconds for pitch filtering)
                 if use_pitch:
                     pitch_100 = _segment_pitch_score(ref_pitch, user_pitch, seg_start_sec, seg_end_sec)
-                    # Segment blend: slightly favor MFCC to reduce over-penalization
-                    # from short pitch spikes while preserving pitch impact.
-                    similarity = 0.6 * mfcc_100 + 0.4 * pitch_100
+                    # Tarannum assessment: segment improvement should follow
+                    # pitch contour more than device-sensitive MFCC/timbre.
+                    similarity = 0.4 * mfcc_100 + 0.6 * pitch_100
                 else:
                     similarity = mfcc_100
                 similarity = max(0.0, min(100.0, similarity))
@@ -2918,7 +2918,7 @@ def calculate_segment_scores(ref_features: Dict[str, np.ndarray],
                 seg_start_sec = (i / num_segments) * audio_duration
                 seg_end_sec = ((i + 1) / num_segments) * audio_duration
                 pitch_100 = _segment_pitch_score(ref_pitch, user_pitch, seg_start_sec, seg_end_sec)
-                similarity = 0.6 * mfcc_100 + 0.4 * pitch_100
+                similarity = 0.4 * mfcc_100 + 0.6 * pitch_100
             else:
                 similarity = mfcc_100
             similarity = max(0.0, min(100.0, similarity))
@@ -3618,14 +3618,15 @@ def calculate_similarity_score(reference_path: str, user_path: str, return_segme
                 else:
                     return 0.0
         
-        # Weight different features (MFCC is most important for voice similarity)
-        # These weights are based on importance for Quranic recitation
+        # Weight different features for assessment scoring.
+        # Keep pronunciation/audio features meaningful, but reduce over-penalizing
+        # different microphones, voice timbre, and recording devices.
         feature_weights = {
-            'mfcc': 0.50,              # Most important - captures voice timbre and pronunciation
-            'chroma': 0.25,            # Important - captures pitch accuracy
-            'spectral_contrast': 0.15, # Important - captures spectral characteristics
-            'tonnetz': 0.05,           # Less important - tonal quality
-            'zcr': 0.05                # Less important - rhythm/tempo
+            'mfcc': 0.25,              # Pronunciation/timbre, but device-sensitive
+            'chroma': 0.35,            # Tonal/tarannum pattern
+            'spectral_contrast': 0.15, # Audio spectral match
+            'tonnetz': 0.10,           # Tonal quality
+            'zcr': 0.15                # Rhythm/tempo proxy
         }
         
         # Calculate weighted average similarity score
@@ -3675,9 +3676,11 @@ def calculate_similarity_score(reference_path: str, user_path: str, return_segme
             pitch_shape_score = 0.0
             pitch_stability_metrics = None
 
-        # --- FIXED SCORE NORMALIZATION ---
-        w_base = 0.5
-        w_pitch = 0.5
+        # --- TARANNUM-AWARE ASSESSMENT NORMALIZATION ---
+        # Assessment remains strict for silence/wrong audio, but gives more credit
+        # when the visible pitch contour and ayah segments improve.
+        w_base = 0.4
+        w_pitch = 0.6
 
         if pitch_shape_score < 15.0 and base_score > 25.0:
             logger.info(
@@ -3685,8 +3688,8 @@ def calculate_similarity_score(reference_path: str, user_path: str, return_segme
                 pitch_shape_score,
                 base_score,
             )
-            w_base = 0.7
-            w_pitch = 0.3
+            w_base = 0.6
+            w_pitch = 0.4
 
         raw_blend = _clamp(w_base * base_score + w_pitch * pitch_shape_score)
 
@@ -3695,22 +3698,22 @@ def calculate_similarity_score(reference_path: str, user_path: str, return_segme
         expanded_blend = _clamp(w_base * base_expanded + w_pitch * pitch_expanded)
 
         mismatch = abs(base_score - pitch_shape_score)
-        if mismatch >= 20.0:
-            penalty = min(18.0, (mismatch - 20.0) * (18.0 / 40.0))
+        if mismatch >= 30.0:
+            penalty = min(10.0, (mismatch - 30.0) * (10.0 / 40.0))
             expanded_blend = _clamp(expanded_blend - penalty)
             logger.info(f"Mismatch penalty: |base-pitch|={mismatch:.1f} -> -{penalty:.1f} (score={expanded_blend:.1f})")
 
         final_score = expanded_blend
 
-        if base_score >= 35.0 and pitch_shape_score >= 35.0 and 35.0 <= final_score <= 65.0:
+        if base_score >= 30.0 and pitch_shape_score >= 30.0 and 30.0 <= final_score <= 65.0:
             before = final_score
-            final_score = _midrange_rescale(final_score, 35.0, 65.0, 65.0, 92.0)
+            final_score = _midrange_rescale(final_score, 30.0, 65.0, 52.0, 88.0)
             logger.info(
                 f"Mid-range rescaling: raw={before:.1f}% -> {final_score:.1f}% (base={base_score:.1f}, pitch={pitch_shape_score:.1f})"
             )
 
-        if pitch_shape_score < 25.0 and base_score < 50.0:
-            cap = min(15.0, 0.5 * max(base_score, pitch_shape_score))
+        if pitch_shape_score < 15.0 and base_score < 35.0:
+            cap = min(12.0, 0.5 * max(base_score, pitch_shape_score))
             final_score = min(final_score, cap)
             logger.info(
                 "Wrong-content gate (strong): pitch=%.1f%%, base=%.1f%% -> cap=%.1f%%, final=%.1f%%",
@@ -3719,8 +3722,8 @@ def calculate_similarity_score(reference_path: str, user_path: str, return_segme
                 cap,
                 final_score,
             )
-        elif pitch_shape_score < 35.0 and base_score < 55.0:
-            cap = min(20.0, 0.6 * max(base_score, pitch_shape_score))
+        elif pitch_shape_score < 25.0 and base_score < 40.0:
+            cap = min(35.0, 0.9 * max(base_score, pitch_shape_score))
             final_score = min(final_score, cap)
             logger.info(
                 "Wrong-content gate: pitch=%.1f%%, base=%.1f%% -> cap=%.1f%%, final=%.1f%%",
@@ -3729,8 +3732,8 @@ def calculate_similarity_score(reference_path: str, user_path: str, return_segme
                 cap,
                 final_score,
             )
-        elif pitch_shape_score < 35.0 or base_score < 35.0:
-            cap = min(30.0, 0.8 * max(base_score, pitch_shape_score))
+        elif pitch_shape_score < 35.0 and base_score < 45.0:
+            cap = min(45.0, 1.05 * max(base_score, pitch_shape_score))
             final_score = min(final_score, cap)
             logger.info(
                 "Low-signal gate: pitch=%.1f%%, base=%.1f%% -> cap=%.1f%%, final=%.1f%%",
@@ -3739,10 +3742,20 @@ def calculate_similarity_score(reference_path: str, user_path: str, return_segme
                 cap,
                 final_score,
             )
+        elif pitch_shape_score < 35.0 or base_score < 35.0:
+            cap = min(55.0, 1.15 * max(base_score, pitch_shape_score))
+            final_score = min(final_score, cap)
+            logger.info(
+                "Soft low-component gate: pitch=%.1f%%, base=%.1f%% -> cap=%.1f%%, final=%.1f%%",
+                pitch_shape_score,
+                base_score,
+                cap,
+                final_score,
+            )
 
-        if base_score >= 45.0 and pitch_shape_score >= 45.0:
+        if base_score >= 40.0 and pitch_shape_score >= 40.0:
             avg_exp = (base_expanded + pitch_expanded) / 2.0
-            boosted = min(100.0, 50.0 + (avg_exp - 45.0) * 1.5)
+            boosted = min(100.0, 48.0 + (avg_exp - 40.0) * 1.35)
             final_score = max(final_score, boosted)
             final_score = min(100.0, final_score)
             logger.info(f"Near-perfect reward: base={base_score:.1f}%, pitch={pitch_shape_score:.1f}% -> final={final_score:.1f}%")
@@ -3833,9 +3846,9 @@ def calculate_similarity_score(reference_path: str, user_path: str, return_segme
                     # Robust blend for segment-only view (kept for diagnostics/UI).
                     segment_based_overall = _clamp(0.7 * weighted_mean + 0.3 * weighted_median)
                     pre_segment_final = float(final_score)
-                    # Policy update: total score prioritizes full-graph similarity.
-                    # Segments now provide a light stabilizer instead of dominating total.
-                    final_score = _clamp(0.85 * pre_segment_final + 0.15 * segment_based_overall)
+                    # Tarannum-aware assessment: segments/ayah timing are meaningful,
+                    # so they should move the total score visibly without dominating it.
+                    final_score = _clamp(0.75 * pre_segment_final + 0.25 * segment_based_overall)
                     logger.info(
                         "Global-first total score: weighted_mean=%.2f, weighted_median=%.2f, "
                         "segment_based_overall=%.2f, pre_segment_final=%.2f, final=%.2f",
@@ -3993,12 +4006,20 @@ def calculate_similarity_score(reference_path: str, user_path: str, return_segme
             training_feedback['scoreBreakdown'] = {
                 'base_score': round(base_score, 2),
                 'pitch_score': round(pitch_shape_score, 2),
+                'audio_match_score': round(base_score, 2),
+                'segment_consistency_score': (round(segment_based_overall, 2) if isinstance(segment_based_overall, (int, float)) else None),
                 'raw_base_score': round(raw_base_score, 2),
                 'raw_pitch_contour_score': round(raw_pitch_contour_score, 2),
                 'blended_score_before_rescaling': round(blended_score_before_rescaling, 2),
                 'final_score_after_rescaling': round(final_score_after_rescaling, 2),
                 'final_score_after_segment_fusion': round(final_score, 2),
                 'segment_based_overall': (round(segment_based_overall, 2) if isinstance(segment_based_overall, (int, float)) else None),
+                'assessment_weights': {
+                    'pitch_contour': 40,
+                    'segment_consistency': 25,
+                    'tonal_audio_features': 20,
+                    'pronunciation_like_audio_match': 15,
+                },
             }
         
         # Always include training feedback as the last element

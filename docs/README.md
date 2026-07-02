@@ -2,7 +2,7 @@
 
 Version: 1.0  
 Date: 2026-06-26  
-Last Updated: 2026-06-29
+Last Updated: 2026-07-02
 
 ## Purpose
 
@@ -18,22 +18,25 @@ Developers should use these documents before planning or implementing changes. P
 
 When a proposed change affects Practice Live, Recording Analysis, graph rendering, timing behaviour, or terminology, the change must be checked against the Practice Rendering Engine Specification and Decision Log.
 
+When a proposed change affects Recording Mode scoring, score labels, or score explanation, the change must be checked against the Assessment Score Specification.
+
 If the architecture changes, update the relevant document and record the decision in the Decision Log before implementation begins.
 
 ## Recommended Reading Order
 
 1. [Philosophy](philosophy/Philosophy.md)
 2. [Practice Rendering Engine Specification](architecture/Practice_Rendering_Engine_Spec_v1.md)
-3. [Development Principles](standards/Development_Principles.md)
-4. [Glossary](standards/Glossary.md)
-5. [Experience Modes Specification](product/Experience_Modes_Specification_v1.md)
-6. [Subscription and Royalty Model](product/Subscription_Royalty_Model_v1.md)
-7. [Decision Log](decisions/Decision_Log.md)
+3. [Assessment Score Specification](architecture/Assessment_Score_Specification_v1.md)
+4. [Development Principles](standards/Development_Principles.md)
+5. [Glossary](standards/Glossary.md)
+6. [Experience Modes Specification](product/Experience_Modes_Specification_v1.md)
+7. [Subscription and Royalty Model](product/Subscription_Royalty_Model_v1.md)
+8. [Decision Log](decisions/Decision_Log.md)
 
 ## Documentation Structure
 
 - `philosophy/` explains why Tarannum.ai exists and what learning experience it protects.
-- `architecture/` defines the agreed rendering architecture for Practice Live and Recording Analysis.
+- `architecture/` defines the agreed rendering architecture for Practice Live, Recording Analysis, graph rendering, and assessment scoring.
 - `product/` defines product experience modes, subscription policy, qari royalty, and business rules.
 - `standards/` defines shared language and development principles.
 - `decisions/` records approved architecture decisions.

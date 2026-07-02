@@ -4407,6 +4407,10 @@ const TrainingStudio: React.FC = () => {
                               timing: analysisResult.scoreBreakdown.timing,
                               pronunciation:
                                 analysisResult.scoreBreakdown.pronunciation,
+                              consistency:
+                                analysisResult.scoreBreakdown.consistency,
+                              audioMatch:
+                                analysisResult.scoreBreakdown.audioMatch,
                               overall: analysisResult.score,
                             }
                           : undefined
@@ -4414,7 +4418,7 @@ const TrainingStudio: React.FC = () => {
                     />
                   </div>
                   <div className='text-[10px] text-slate-500 text-center max-w-[220px] leading-tight'>
-                    Measures pitch, rhythm, and pronunciation similarity
+                    Measures pitch, ayah timing, and audio similarity
                   </div>
                 </div>
               </div>

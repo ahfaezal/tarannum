@@ -3,8 +3,10 @@ import { HelpCircle, X, TrendingUp, Music, Volume2, Target } from "lucide-react"
 
 interface ScoreBreakdown {
   pitch?: number; // Pitch accuracy (0-100)
-  timing?: number; // Timing/rhythm (0-100) - derived from base_score
-  pronunciation?: number; // Pronunciation (0-100) - derived from base_score
+  timing?: number; // Segment/timing consistency (0-100)
+  pronunciation?: number; // Legacy key: audio feature match (0-100)
+  audioMatch?: number; // Audio feature match (0-100)
+  consistency?: number; // Segment/ayah consistency (0-100)
   overall: number; // Overall score (0-100)
 }
 
@@ -19,7 +21,7 @@ interface ScoreExplanationProps {
  * 
  * Displays a help icon next to the score that opens a modal explaining:
  * - What the score represents
- * - Score breakdown (Pitch, Timing, Pronunciation)
+ * - Score breakdown (Pitch, Segment/Timing, Audio Match)
  * - Teacher-friendly explanation
  * - What to focus on suggestions
  */
@@ -35,18 +37,19 @@ const ScoreExplanation: React.FC<ScoreExplanationProps> = ({
   const getBreakdown = (): ScoreBreakdown => {
     if (breakdown) return breakdown;
 
-    // Estimate breakdown from overall score
-    // In reality, these come from backend: base_score (pronunciation/timing) and pitch_score
-    // For now, we'll use the overall score as approximation
     return {
-      pitch: score * 0.5, // Estimate: 50% of score
-      timing: score * 0.3, // Estimate: 30% of score
-      pronunciation: score * 0.2, // Estimate: 20% of score
+      pitch: score,
+      timing: score,
+      pronunciation: score,
+      audioMatch: score,
+      consistency: score,
       overall: score,
     };
   };
 
   const breakdownData = getBreakdown();
+  const timingScore = breakdownData.consistency ?? breakdownData.timing;
+  const audioMatchScore = breakdownData.audioMatch ?? breakdownData.pronunciation;
 
   // Determine focus areas based on breakdown
   const getFocusAreas = (): string[] => {
@@ -56,11 +59,11 @@ const ScoreExplanation: React.FC<ScoreExplanationProps> = ({
     if ((breakdownData.pitch || 0) < threshold) {
       areas.push("Pitch accuracy - focus on matching the melodic contour");
     }
-    if ((breakdownData.timing || 0) < threshold) {
-      areas.push("Timing and rhythm - practice with the reference audio");
+    if ((timingScore || 0) < threshold) {
+      areas.push("Segment timing - practice each ayah with the reference audio");
     }
-    if ((breakdownData.pronunciation || 0) < threshold) {
-      areas.push("Pronunciation clarity - listen carefully to each word");
+    if ((audioMatchScore || 0) < threshold) {
+      areas.push("Audio match - keep your tone, clarity, and voice shape closer to the reference");
     }
 
     if (areas.length === 0) {
@@ -146,21 +149,21 @@ const ScoreExplanation: React.FC<ScoreExplanationProps> = ({
                     What does this score mean?
                   </strong>
                   <br />
-                  This score measures how closely your recitation matches the
-                  reference audio across three key dimensions:
+                  This score measures how closely your recitation follows the
+                  reference audio across tarannum-focused dimensions:
                 </p>
                 <ul className="mt-2 space-y-1 text-sm text-slate-700 list-disc list-inside">
                   <li>
-                    <strong>Pitch (50%):</strong> How well your melodic contour 
-                    (the shape of your voice's pitch) matches the reference
+                    <strong>Pitch contour:</strong> How well the melodic shape
+                    of your voice follows the reference
                   </li>
                   <li>
-                    <strong>Timing & Rhythm (16%):</strong> How well your tempo, 
-                    rhythm, and timing match the reference
+                    <strong>Segment & timing consistency:</strong> How well each
+                    ayah section stays aligned with the reference timing
                   </li>
                   <li>
-                    <strong>Pronunciation (34%):</strong> How clearly and accurately 
-                    you pronounce each word, including voice timbre and clarity
+                    <strong>Audio match:</strong> How close your tone, clarity,
+                    and voice features are to the reference recording
                   </li>
                 </ul>
                 <p className="mt-2 text-sm text-slate-600 italic">
@@ -212,27 +215,27 @@ const ScoreExplanation: React.FC<ScoreExplanationProps> = ({
                     <div className="flex-1">
                       <div className="flex items-center justify-between mb-1">
                         <span className="text-sm font-medium text-slate-700">
-                          Timing & Rhythm
+                          Segment & Timing
                         </span>
                         <span className="text-sm font-bold text-slate-800">
-                          {breakdownData.timing?.toFixed(1) || "N/A"}%
+                          {timingScore?.toFixed(1) || "N/A"}%
                         </span>
                       </div>
                       <div className="w-full bg-slate-200 rounded-full h-2">
                         <div
                           className="bg-blue-500 h-2 rounded-full transition-all"
                           style={{
-                            width: `${Math.min(100, breakdownData.timing || 0)}%`,
+                            width: `${Math.min(100, timingScore || 0)}%`,
                           }}
                         />
                       </div>
                       <p className="text-xs text-slate-500 mt-1">
-                        How well your timing and rhythm match the reference
+                        How well each ayah segment stays aligned with the reference
                       </p>
                     </div>
                   </div>
 
-                  {/* Pronunciation */}
+                  {/* Audio Match */}
                   <div className="flex items-center gap-4">
                     <div className="flex-shrink-0 w-12 h-12 bg-emerald-100 rounded-lg flex items-center justify-center">
                       <Volume2 className="text-emerald-600" size={20} />
@@ -240,10 +243,10 @@ const ScoreExplanation: React.FC<ScoreExplanationProps> = ({
                     <div className="flex-1">
                       <div className="flex items-center justify-between mb-1">
                         <span className="text-sm font-medium text-slate-700">
-                          Pronunciation
+                          Audio Match
                         </span>
                         <span className="text-sm font-bold text-slate-800">
-                          {breakdownData.pronunciation?.toFixed(1) || "N/A"}%
+                          {audioMatchScore?.toFixed(1) || "N/A"}%
                         </span>
                       </div>
                       <div className="w-full bg-slate-200 rounded-full h-2">
@@ -252,13 +255,13 @@ const ScoreExplanation: React.FC<ScoreExplanationProps> = ({
                           style={{
                             width: `${Math.min(
                               100,
-                              breakdownData.pronunciation || 0
+                              audioMatchScore || 0
                             )}%`,
                           }}
                         />
                       </div>
                       <p className="text-xs text-slate-500 mt-1">
-                        How clearly and accurately you pronounce each word
+                        How close your tone, clarity, and voice features are to the reference
                       </p>
                     </div>
                   </div>
@@ -301,7 +304,7 @@ const ScoreExplanation: React.FC<ScoreExplanationProps> = ({
                           />
                         </div>
                         <p className="text-xs text-slate-500 mt-1">
-                          Combined score across all dimensions
+                          Combined assessment score across all dimensions
                         </p>
                       </div>
                     </div>
@@ -315,22 +318,23 @@ const ScoreExplanation: React.FC<ScoreExplanationProps> = ({
                   For Teachers & Trainers:
                 </h3>
                 <p className="text-sm text-slate-600 leading-relaxed mb-2">
-                  <strong>Simple explanation for students:</strong> "This score shows 
-                  how well your recitation matches the reference. It looks at three 
-                  things: the melody (pitch), the rhythm (timing), and how clearly 
-                  you pronounce the words."
+                  <strong>Simple explanation for students:</strong> "This score shows
+                  how well your recitation follows the reference. It looks at the
+                  melody shape, ayah timing, and the overall audio match."
                 </p>
                 <p className="text-sm text-slate-600 leading-relaxed">
                   <strong>How to use this:</strong> Use the breakdown above to identify 
-                  which specific areas need improvement. If pitch is low, focus on 
-                  matching the melodic contour. If timing is low, practice with the 
-                  reference rhythm. If pronunciation is low, emphasize clear articulation.
+                  which specific areas need improvement. If pitch is low, focus on
+                  matching the melodic contour. If segment timing is low, practice
+                  each ayah with the reference rhythm. If audio match is low, focus
+                  on tone stability, clarity, and consistency.
                 </p>
                 <div className="mt-2 pt-2 border-t border-slate-300">
                   <p className="text-xs text-slate-500">
-                    <strong>Score Weighting:</strong> Pitch (50%) + Timing (16%) + 
-                    Pronunciation (34%) = 100% overall score. Segment scores are 
-                    each capped at 0–100% for consistency.
+                    <strong>Score Weighting:</strong> The assessment gives stronger
+                    emphasis to pitch contour and ayah-segment consistency, while
+                    audio-feature matching remains a supporting signal. Segment
+                    scores are normalized to 0-100% for consistency.
                   </p>
                 </div>
               </div>
