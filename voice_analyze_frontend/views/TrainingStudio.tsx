@@ -4419,6 +4419,8 @@ const TrainingStudio: React.FC = () => {
                                 analysisResult.scoreBreakdown.ayatTiming,
                               graphStability:
                                 analysisResult.scoreBreakdown.graphStability,
+                              graphPosition:
+                                analysisResult.scoreBreakdown.graphPosition,
                               tonalPattern:
                                 analysisResult.scoreBreakdown.tonalPattern,
                               audioClarity:
@@ -4575,14 +4577,22 @@ const TrainingStudio: React.FC = () => {
                           </div>
                         )}
                       <div className='space-y-3'>
-                        {(analysisResult.scoreBreakdown.scoringVersion === "v2_graph_only"
+                        {((analysisResult.scoreBreakdown.scoringVersion || "").startsWith("v2")
                           ? [
                               {
-                                label: "Pitch Contour",
+                                label: "Pitch Shape",
                                 score:
                                   analysisResult.scoreBreakdown.pitchContour ??
                                   analysisResult.scoreBreakdown.pitch,
-                                note: "Alunan graph: naik, turun, mendatar, lenggok",
+                                note: "Bentuk alunan graph: naik, turun, mendatar, lenggok",
+                              },
+                              {
+                                label: "Pitch Position",
+                                score:
+                                  analysisResult.scoreBreakdown.graphPosition ??
+                                  analysisResult.scoreBreakdown.pitchContour ??
+                                  analysisResult.scoreBreakdown.pitch,
+                                note: "Jarak menegak graph merah berbanding graph hijau",
                               },
                               {
                                 label: "Ayat Timing",
@@ -4669,8 +4679,8 @@ const TrainingStudio: React.FC = () => {
                         })}
                       </div>
                       <p className='mt-4 rounded-lg bg-emerald-50 p-3 text-xs leading-relaxed text-emerald-900'>
-                        {analysisResult.scoreBreakdown.scoringVersion === "v2_graph_only"
-                          ? "Scoring V2 menilai graph sahaja: pitch contour, timing ayat dan kestabilan graph. Tonal, kejelasan audio dan mic tidak mempengaruhi markah akhir buat masa ini."
+                        {(analysisResult.scoreBreakdown.scoringVersion || "").startsWith("v2")
+                          ? "Scoring V2.1 menilai graph sahaja: bentuk alunan, kedudukan graph merah-hijau, timing ayat dan kestabilan graph. Tonal, kejelasan audio dan mic tidak mempengaruhi markah akhir buat masa ini."
                           : "Graph menunjukkan bentuk pitch/alunan. Markah akhir turut mengambil kira timing ayat, corak tonal, kejelasan audio dan kestabilan mikrofon."}
                       </p>
                     </div>

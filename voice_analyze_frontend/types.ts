@@ -192,6 +192,7 @@ export interface AnalysisResult {
     pitchContour?: number;
     ayatTiming?: number;
     graphStability?: number;
+    graphPosition?: number;
     tonalPattern?: number;
     audioClarity?: number;
     micStability?: number;

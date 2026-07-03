@@ -11,6 +11,7 @@ interface ScoreBreakdown {
   pitchContour?: number;
   ayatTiming?: number;
   graphStability?: number;
+  graphPosition?: number;
   tonalPattern?: number;
   audioClarity?: number;
   micStability?: number;
@@ -55,10 +56,11 @@ const ScoreExplanation: React.FC<ScoreExplanationProps> = ({
   };
 
   const breakdownData = getBreakdown();
-  const isGraphOnly = breakdownData.scoringVersion === "v2_graph_only";
+  const isGraphOnly = (breakdownData.scoringVersion || "").startsWith("v2");
   const pitchContourScore = breakdownData.pitchContour ?? breakdownData.pitch;
   const timingScore = breakdownData.ayatTiming ?? breakdownData.consistency ?? breakdownData.timing;
   const graphStabilityScore = breakdownData.graphStability ?? pitchContourScore;
+  const graphPositionScore = breakdownData.graphPosition ?? pitchContourScore;
   const tonalScore = breakdownData.tonalPattern ?? breakdownData.audioMatch ?? breakdownData.pronunciation;
   const clarityScore = breakdownData.audioClarity ?? breakdownData.pronunciation ?? breakdownData.audioMatch;
   const micScore = breakdownData.micStability ?? breakdownData.consistency ?? breakdownData.timing;
@@ -70,6 +72,9 @@ const ScoreExplanation: React.FC<ScoreExplanationProps> = ({
 
     if ((pitchContourScore || 0) < threshold) {
       areas.push("Alunan - latih naik, turun, mendatar dan lenggok mengikut rujukan");
+    }
+    if (isGraphOnly && (graphPositionScore || 0) < threshold) {
+      areas.push("Kedudukan graph - pastikan graph merah lebih dekat dengan graph hijau");
     }
     if ((timingScore || 0) < threshold) {
       areas.push("Timing ayat - latih mula ayat, pertukaran ayat dan panjang pendek bacaan");
@@ -181,7 +186,7 @@ const ScoreExplanation: React.FC<ScoreExplanationProps> = ({
                 </p>
                 <ul className="mt-2 space-y-1 text-sm text-slate-700 list-disc list-inside">
                   <li>
-                    <strong>Pitch contour:</strong> How well the melodic shape
+                    <strong>Pitch shape:</strong> How well the melodic shape
                     of your voice follows the reference
                   </li>
                   <li>
@@ -212,7 +217,7 @@ const ScoreExplanation: React.FC<ScoreExplanationProps> = ({
                   Score Breakdown
                 </h3>
                 <div className="space-y-4">
-                  {/* Pitch Contour */}
+                  {/* Pitch Shape */}
                   <div className="flex items-center gap-4">
                     <div className="flex-shrink-0 w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
                       <Music className="text-purple-600" size={20} />
@@ -220,7 +225,7 @@ const ScoreExplanation: React.FC<ScoreExplanationProps> = ({
                     <div className="flex-1">
                       <div className="flex items-center justify-between mb-1">
                         <span className="text-sm font-medium text-slate-700">
-                          Pitch Contour
+                          Pitch Shape
                         </span>
                         <span className="text-sm font-bold text-slate-800">
                           {pitchContourScore?.toFixed(1) || "N/A"}%
@@ -235,11 +240,40 @@ const ScoreExplanation: React.FC<ScoreExplanationProps> = ({
                         />
                       </div>
                       <p className="text-xs text-slate-500 mt-1">
-                        Alunan suara: naik, turun, mendatar, lenggok
+                        Bentuk alunan graph: naik, turun, mendatar, lenggok
                       </p>
                     </div>
                   </div>
 
+                  {/* Pitch Position */}
+                  {isGraphOnly && (
+                    <div className="flex items-center gap-4">
+                      <div className="flex-shrink-0 w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center">
+                        <Target className="text-amber-600" size={20} />
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-sm font-medium text-slate-700">
+                            Pitch Position
+                          </span>
+                          <span className="text-sm font-bold text-slate-800">
+                            {graphPositionScore?.toFixed(1) || "N/A"}%
+                          </span>
+                        </div>
+                        <div className="w-full bg-slate-200 rounded-full h-2">
+                          <div
+                            className="bg-amber-500 h-2 rounded-full transition-all"
+                            style={{
+                              width: `${Math.min(100, graphPositionScore || 0)}%`,
+                            }}
+                          />
+                        </div>
+                        <p className="text-xs text-slate-500 mt-1">
+                          Jarak menegak graph merah berbanding graph hijau
+                        </p>
+                      </div>
+                    </div>
+                  )}
                   {/* Timing/Rhythm */}
                   <div className="flex items-center gap-4">
                     <div className="flex-shrink-0 w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">

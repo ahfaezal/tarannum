@@ -886,6 +886,7 @@ async def score_performance(
                     "pitchContour": round(pitch_score_val, 2),
                     "ayatTiming": round(segment_score_val, 2),
                     "graphStability": round(breakdown.get('graph_stability_score', pitch_score_val) or pitch_score_val, 2),
+                    "graphPosition": round(breakdown.get('graph_position_score', pitch_score_val) or pitch_score_val, 2),
                     "tonalPattern": round(tonal_pattern_val, 2),
                     "audioClarity": round(audio_clarity_val, 2),
                     "micStability": round(mic_stability_val, 2),
