@@ -2729,6 +2729,104 @@ def _pitch_position_score(ref_pitch: List[Dict], user_pitch: List[Dict]) -> floa
     except Exception as e:
         logger.warning(f"Error computing pitch position similarity: {e}", exc_info=True)
         return 0.0
+
+def _contour_detail_score(ref_pitch: List[Dict], user_pitch: List[Dict]) -> float:
+    """Score local contour detail (0-100) using slope/direction agreement.
+
+    The main Pitch Shape score uses DTW and range normalization, which is useful
+    for broad melodic shape but can be too forgiving. This companion score checks
+    whether the red graph moves up/down/flat at roughly the same moments as the
+    reference, so different alunan patterns are penalized more clearly.
+    """
+    if not ref_pitch or not user_pitch:
+        return 0.0
+
+    try:
+        def _arrays(pitch_list: List[Dict]):
+            times = np.array([p.get('time', 0.0) for p in pitch_list], dtype=float)
+            values = np.array([p.get('f_hz') if p.get('f_hz') is not None else 0.0 for p in pitch_list], dtype=float)
+            confidence = np.array([p.get('confidence', 1.0) for p in pitch_list], dtype=float)
+            mask = (times >= 0.0) & (values > 0.0) & np.isfinite(values) & (confidence >= 0.15)
+            return times[mask], values[mask]
+
+        ref_times, ref_values = _arrays(ref_pitch)
+        user_times, user_values = _arrays(user_pitch)
+        if ref_values.size < 12 or user_values.size < 12:
+            return 0.0
+
+        overlap_start = max(float(np.min(ref_times)), float(np.min(user_times)))
+        overlap_end = min(float(np.max(ref_times)), float(np.max(user_times)))
+        if overlap_end - overlap_start <= 0.5:
+            return 0.0
+
+        sample_count = int(max(120, min(800, (overlap_end - overlap_start) * 14)))
+        grid = np.linspace(overlap_start, overlap_end, sample_count)
+        ref_interp = np.interp(grid, ref_times, ref_values)
+        user_interp = np.interp(grid, user_times, user_values)
+        valid = (ref_interp > 0.0) & (user_interp > 0.0) & np.isfinite(ref_interp) & np.isfinite(user_interp)
+        if np.sum(valid) < 30:
+            return 0.0
+
+        ref_midi = 69.0 + 12.0 * np.log2(ref_interp[valid] / 440.0)
+        user_midi = 69.0 + 12.0 * np.log2(user_interp[valid] / 440.0)
+
+        def _smooth(arr: np.ndarray) -> np.ndarray:
+            if arr.size < 7:
+                return arr
+            kernel = np.array([0.08, 0.17, 0.50, 0.17, 0.08], dtype=float)
+            return np.convolve(arr, kernel, mode='same')
+
+        def _robust_normalize(arr: np.ndarray) -> np.ndarray:
+            centered = arr - float(np.median(arr))
+            scale = float(np.percentile(centered, 90) - np.percentile(centered, 10))
+            if scale < 0.75:
+                scale = max(float(np.std(centered)), 0.75)
+            return centered / scale
+
+        ref_norm = _smooth(_robust_normalize(ref_midi))
+        user_norm = _smooth(_robust_normalize(user_midi))
+
+        ref_slope = np.gradient(ref_norm)
+        user_slope = np.gradient(user_norm)
+        if ref_slope.size < 10 or user_slope.size < 10:
+            return 0.0
+
+        ref_std = float(np.std(ref_slope))
+        user_std = float(np.std(user_slope))
+        if ref_std < 1e-6 or user_std < 1e-6:
+            corr_score = 50.0
+        else:
+            corr = float(np.corrcoef(ref_slope, user_slope)[0, 1])
+            if not np.isfinite(corr):
+                corr = 0.0
+            corr_score = _clamp(((corr + 1.0) / 2.0) * 100.0)
+
+        movement_threshold = max(0.008, float(np.percentile(np.abs(ref_slope), 35)) * 0.75)
+        movement_mask = (np.abs(ref_slope) > movement_threshold) | (np.abs(user_slope) > movement_threshold)
+        if np.sum(movement_mask) >= 10:
+            sign_match = np.mean(np.sign(ref_slope[movement_mask]) == np.sign(user_slope[movement_mask]))
+            sign_score = float(sign_match * 100.0)
+        else:
+            sign_score = 50.0
+
+        ref_range = max(float(np.percentile(ref_midi, 90) - np.percentile(ref_midi, 10)), 0.1)
+        user_range = max(float(np.percentile(user_midi, 90) - np.percentile(user_midi, 10)), 0.1)
+        range_ratio = user_range / ref_range
+        range_score = _clamp(100.0 - min(100.0, abs(np.log2(range_ratio)) * 45.0))
+
+        detail_score = _clamp(0.50 * corr_score + 0.35 * sign_score + 0.15 * range_score)
+        logger.info(
+            "Contour detail similarity: corr=%.2f, sign=%.2f, range=%.2f, score=%.2f%%",
+            corr_score,
+            sign_score,
+            range_score,
+            detail_score,
+        )
+        return float(detail_score)
+    except Exception as e:
+        logger.warning(f"Error computing contour detail similarity: {e}", exc_info=True)
+        return 0.0
+
 def _segment_pitch_coverage_score(
     user_pitch: List[Dict],
     text_segments: List[Dict] = None,
@@ -4087,7 +4185,7 @@ def calculate_similarity_score(reference_path: str, user_path: str, return_segme
         graph_timing_score = None
         graph_stability_score = None
         graph_position_score = None
-        scoring_version = 'v2_1_graph_position'
+        scoring_version = 'v2_2_contour_detail'
         if return_segments:
             logger.info("Calculating per-segment scores (MFCC + pitch blend)...")
             ref_duration = len(ref_audio_processed) / float(ref_sr) if ref_sr > 0 else 0.0
@@ -4147,14 +4245,17 @@ def calculate_similarity_score(reference_path: str, user_path: str, return_segme
                         final_score,
                     )
 
-        # Scoring V2.1: graph-only assessment with vertical graph matching.
+        # Scoring V2.2: graph-only assessment with vertical graph matching
+        # and local contour detail.
         # Final score is based on visible pitch graph behaviour only:
-        # - Pitch shape/contour similarity: 35%
-        # - Pitch position / vertical graph match: 35%
-        # - Ayat/timing alignment from pitch graph: 20%
+        # - Pitch shape/contour similarity: 25%
+        # - Contour detail / local movement match: 25%
+        # - Pitch position / vertical graph match: 25%
+        # - Ayat/timing alignment from pitch graph: 15%
         # - Graph stability/spike control: 10%
         # Audio feature scores remain available as diagnostics but do not decide
         # the final score in this version.
+        contour_detail_score = pitch_shape_score
         try:
             graph_ref_duration = len(ref_audio_processed) / float(ref_sr) if ref_sr > 0 else 0.0
             ref_pitch_for_graph = pitch_data.get('reference', []) if isinstance(pitch_data, dict) else []
@@ -4220,15 +4321,29 @@ def calculate_similarity_score(reference_path: str, user_path: str, return_segme
             if graph_position_score <= 0:
                 graph_position_score = _clamp(float(pitch_shape_score))
 
+            contour_detail_score = _contour_detail_score(ref_pitch_for_graph, user_pitch_for_graph)
+            if contour_detail_score <= 0:
+                contour_detail_score = _clamp(float(pitch_shape_score))
+
             graph_only_score = _clamp(
-                0.35 * float(pitch_shape_score)
-                + 0.35 * float(graph_position_score)
-                + 0.20 * float(graph_timing_score)
+                0.25 * float(pitch_shape_score)
+                + 0.25 * float(contour_detail_score)
+                + 0.25 * float(graph_position_score)
+                + 0.15 * float(graph_timing_score)
                 + 0.10 * float(graph_stability_score)
             )
+
+            # Extra guardrail: a graph that is far from the Qari and also has weak
+            # local contour detail should not score like a valid close recitation.
+            if graph_position_score < 18.0 and contour_detail_score < 50.0:
+                graph_only_score = min(graph_only_score, 55.0)
+            elif graph_position_score < 25.0 and contour_detail_score < 55.0:
+                graph_only_score = min(graph_only_score, 60.0)
+
             logger.info(
-                "Scoring V2.1 graph-only: shape=%.2f, position=%.2f, timing=%.2f, stability=%.2f, final=%.2f",
+                "Scoring V2.2 graph-only: shape=%.2f, detail=%.2f, position=%.2f, timing=%.2f, stability=%.2f, final=%.2f",
                 pitch_shape_score,
+                contour_detail_score,
                 graph_position_score,
                 graph_timing_score,
                 graph_stability_score,
@@ -4383,6 +4498,7 @@ def calculate_similarity_score(reference_path: str, user_path: str, return_segme
                 'metrics': gate.get('metrics', {}),
                 'signals': {
                     'pitchShape': round(float(pitch_shape_score), 2),
+                    'contourDetail': round(float(contour_detail_score), 2) if isinstance(contour_detail_score, (int, float)) else None,
                     'pitchPosition': round(float(graph_position_score), 2) if isinstance(graph_position_score, (int, float)) else None,
                     'ayatTiming': round(float(timing_score), 2),
                     'graphStability': round(float(graph_stability_score), 2) if isinstance(graph_stability_score, (int, float)) else None,
@@ -4480,6 +4596,7 @@ def calculate_similarity_score(reference_path: str, user_path: str, return_segme
                 'graph_timing_score': (round(graph_timing_score, 2) if isinstance(graph_timing_score, (int, float)) else None),
                 'graph_stability_score': (round(graph_stability_score, 2) if isinstance(graph_stability_score, (int, float)) else None),
                 'graph_position_score': (round(graph_position_score, 2) if isinstance(graph_position_score, (int, float)) else None),
+                'contour_detail_score': (round(contour_detail_score, 2) if isinstance(contour_detail_score, (int, float)) else None),
                 'segment_coverage_score': (round(segment_coverage_score, 2) if isinstance(segment_coverage_score, (int, float)) else None),
                 'recitation_validity_score': (round(recitation_validity_score, 2) if isinstance(recitation_validity_score, (int, float)) else None),
                 'raw_base_score': round(raw_base_score, 2),
@@ -4491,9 +4608,10 @@ def calculate_similarity_score(reference_path: str, user_path: str, return_segme
                 'final_score_after_segment_fusion': round(final_score, 2),
                 'segment_based_overall': (round(segment_based_overall, 2) if isinstance(segment_based_overall, (int, float)) else None),
                 'assessment_weights': {
-                    'pitch_contour': 35,
-                    'graph_position': 35,
-                    'graph_timing': 20,
+                    'pitch_contour': 25,
+                    'contour_detail': 25,
+                    'graph_position': 25,
+                    'graph_timing': 15,
                     'graph_stability': 10,
                     'tonal_audio_features': 0,
                     'pronunciation_like_audio_match': 0,

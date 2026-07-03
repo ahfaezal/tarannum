@@ -159,6 +159,7 @@ export interface AssessmentValidity {
   signals?: {
     pitchContour?: number;
     pitchShape?: number;
+    contourDetail?: number;
     pitchPosition?: number;
     ayatTiming?: number;
     tonalPattern?: number;
@@ -206,6 +207,7 @@ export interface AnalysisResult {
     ayatTiming?: number;
     graphStability?: number;
     graphPosition?: number;
+    contourDetail?: number;
     segmentCoverage?: number;
     recitationValidity?: number;
     tonalPattern?: number;

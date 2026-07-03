@@ -9,6 +9,7 @@ interface ScoreBreakdown {
   audioMatch?: number; // Audio feature match (0-100)
   consistency?: number; // Segment/ayah consistency (0-100)
   pitchContour?: number;
+  contourDetail?: number;
   ayatTiming?: number;
   graphStability?: number;
   graphPosition?: number;
@@ -31,7 +32,7 @@ interface ScoreExplanationProps {
  * 
  * Displays a help icon next to the score that opens a modal explaining:
  * - What the score represents
- * - Score breakdown (Pitch Contour, Ayat Timing, Tonal/Maqam, Audio Clarity, Mic Stability)
+ * - Score breakdown (Pitch Shape, Contour Detail, Ayat Timing, Tonal/Maqam, Audio Clarity, Mic Stability)
  * - Teacher-friendly explanation
  * - What to focus on suggestions
  */
@@ -63,6 +64,7 @@ const ScoreExplanation: React.FC<ScoreExplanationProps> = ({
   const timingScore = breakdownData.ayatTiming ?? breakdownData.consistency ?? breakdownData.timing;
   const graphStabilityScore = breakdownData.graphStability ?? pitchContourScore;
   const graphPositionScore = breakdownData.graphPosition ?? pitchContourScore;
+  const contourDetailScore = breakdownData.contourDetail ?? pitchContourScore;
   const segmentCoverageScore = breakdownData.segmentCoverage;
   const recitationValidityScore = breakdownData.recitationValidity;
   const tonalScore = breakdownData.tonalPattern ?? breakdownData.audioMatch ?? breakdownData.pronunciation;
@@ -79,6 +81,9 @@ const ScoreExplanation: React.FC<ScoreExplanationProps> = ({
     }
     if (isGraphOnly && (graphPositionScore || 0) < threshold) {
       areas.push("Kedudukan graph - pastikan graph merah lebih dekat dengan graph hijau");
+    }
+    if (isGraphOnly && (contourDetailScore || 0) < threshold) {
+      areas.push("Lenggok halus - latih arah naik turun kecil supaya lebih sama dengan qari");
     }
     if ((timingScore || 0) < threshold) {
       areas.push("Timing ayat - latih mula ayat, pertukaran ayat dan panjang pendek bacaan");
@@ -254,6 +259,36 @@ const ScoreExplanation: React.FC<ScoreExplanationProps> = ({
                       </p>
                     </div>
                   </div>
+
+                  {/* Contour Detail */}
+                  {isGraphOnly && (
+                    <div className="flex items-center gap-4">
+                      <div className="flex-shrink-0 w-12 h-12 bg-cyan-100 rounded-lg flex items-center justify-center">
+                        <TrendingUp className="text-cyan-600" size={20} />
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-sm font-medium text-slate-700">
+                            Contour Detail
+                          </span>
+                          <span className="text-sm font-bold text-slate-800">
+                            {contourDetailScore?.toFixed(1) || "N/A"}%
+                          </span>
+                        </div>
+                        <div className="w-full bg-slate-200 rounded-full h-2">
+                          <div
+                            className="bg-cyan-500 h-2 rounded-full transition-all"
+                            style={{
+                              width: `${Math.min(100, contourDetailScore || 0)}%`,
+                            }}
+                          />
+                        </div>
+                        <p className="text-xs text-slate-500 mt-1">
+                          Lenggok halus graph: arah naik, turun dan mendatar pada masa yang sama
+                        </p>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Pitch Position */}
                   {isGraphOnly && (

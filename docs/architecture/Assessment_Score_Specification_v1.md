@@ -131,24 +131,27 @@ This created a product risk:
 
 The system should still reject poor recordings, silence, or wrong audio, but genuine tarannum improvement should move the score more visibly.
 
-## Scoring Version 2.1: Graph-Only With Pitch Position
+## Scoring Version 2.2: Graph-Only With Contour Detail
 
 As of the V2 scoring experiment, Assessment Score is simplified to graph-only scoring. The purpose is to restore user trust by making the final score follow what students can see on the graph.
 
 V2.0 only measured graph shape, ayat timing, and graph stability. During testing, a problem was observed: a student could receive a higher score by following a similar graph shape while staying consistently too low or too high compared with the qari reference. This made the score feel unfair because the red graph was visibly far from the green graph.
 
-V2.1 keeps graph-only scoring, but separates graph shape from graph position.
+V2.1 kept graph-only scoring, but separated graph shape from graph position.
 
-V2.1 final score uses:
+V2.2 adds Contour Detail because Pitch Shape can still be too generous after range normalization. Contour Detail checks whether the student's local graph movement follows the qari at the same moments: small rises, drops, flat sections, and lenggok direction.
+
+V2.2 final score uses:
 
 | Component | Weight | Meaning |
 |---|---:|---|
-| Pitch Shape | 35% | How closely the student's red graph follows the qari reference graph shape: naik, turun, mendatar, lenggok |
-| Pitch Position / Vertical Match | 35% | How close the red graph stays vertically to the green graph at the same time point |
-| Ayat Timing | 20% | How well the graph follows the reference timing and ayat changes |
+| Pitch Shape | 25% | How closely the student's red graph follows the broad qari reference graph shape: naik, turun, mendatar, lenggok |
+| Contour Detail | 25% | How closely the student's local graph movement follows the qari: small rises, drops, flat parts, and fine lenggok direction |
+| Pitch Position / Vertical Match | 25% | How close the red graph stays vertically to the green graph at the same time point |
+| Ayat Timing | 15% | How well the graph follows the reference timing and ayat changes |
 | Graph Stability | 10% | How stable the student graph is, including spike control |
 
-The following signals are kept as diagnostics only in V2.1 and should not affect the final score:
+The following signals are kept as diagnostics only in V2.2 and should not affect the final score:
 
 - MFCC
 - Chroma
@@ -162,14 +165,15 @@ Rationale:
 
 - students judge improvement primarily through the visible graph
 - if the red graph gets closer to the green graph, the score should move accordingly
-- graph-only scoring must include both shape and vertical distance
+- graph-only scoring must include broad shape, local contour detail, and vertical distance
 - a graph with similar shape but consistently too low or too high should not beat a closer real recitation
+- a graph that only follows rough shape but misses fine lenggok should not receive an inflated score
 - audio-feature-heavy scoring was too difficult to explain and could reduce trust
 - additional scoring elements should only be reintroduced one at a time after graph-only scoring is trusted
 
 ### Recitation Validity Gate
 
-V2.1 also adds a safety layer before the final score is returned. This gate checks whether the student recording is plausible as an actual ayat recitation, because random sound can still produce a pitch graph.
+V2.2 also keeps the safety layer before the final score is returned. This gate checks whether the student recording is plausible as an actual ayat recitation, because random sound can still produce a pitch graph.
 
 The gate does not replace the graph score. It only caps the score when the recording appears invalid or requires review.
 
