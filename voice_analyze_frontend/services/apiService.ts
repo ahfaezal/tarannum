@@ -272,6 +272,8 @@ export const analyzeRecitation = async (
           ayatTiming: data.scoreBreakdown.ayatTiming,
           graphStability: data.scoreBreakdown.graphStability,
           graphPosition: data.scoreBreakdown.graphPosition,
+          segmentCoverage: data.scoreBreakdown.segmentCoverage,
+          recitationValidity: data.scoreBreakdown.recitationValidity,
           tonalPattern: data.scoreBreakdown.tonalPattern,
           audioClarity: data.scoreBreakdown.audioClarity,
           micStability: data.scoreBreakdown.micStability,

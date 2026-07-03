@@ -4421,6 +4421,10 @@ const TrainingStudio: React.FC = () => {
                                 analysisResult.scoreBreakdown.graphStability,
                               graphPosition:
                                 analysisResult.scoreBreakdown.graphPosition,
+                              segmentCoverage:
+                                analysisResult.scoreBreakdown.segmentCoverage,
+                              recitationValidity:
+                                analysisResult.scoreBreakdown.recitationValidity,
                               tonalPattern:
                                 analysisResult.scoreBreakdown.tonalPattern,
                               audioClarity:
@@ -4609,6 +4613,16 @@ const TrainingStudio: React.FC = () => {
                                   analysisResult.scoreBreakdown.pitch,
                                 note: "Kestabilan graph dan kawalan spike yang terlalu ketara",
                               },
+                              {
+                                label: "Segment Coverage",
+                                score: analysisResult.scoreBreakdown.segmentCoverage,
+                                note: "Liputan pitch bacaan dalam setiap ayat yang dijangka",
+                              },
+                              {
+                                label: "Recitation Validity",
+                                score: analysisResult.scoreBreakdown.recitationValidity,
+                                note: "Semakan sama ada rakaman cukup menyerupai bacaan sebenar",
+                              },
                             ]
                           : [
                               {
@@ -4680,7 +4694,7 @@ const TrainingStudio: React.FC = () => {
                       </div>
                       <p className='mt-4 rounded-lg bg-emerald-50 p-3 text-xs leading-relaxed text-emerald-900'>
                         {(analysisResult.scoreBreakdown.scoringVersion || "").startsWith("v2")
-                          ? "Scoring V2.1 menilai graph sahaja: bentuk alunan, kedudukan graph merah-hijau, timing ayat dan kestabilan graph. Tonal, kejelasan audio dan mic tidak mempengaruhi markah akhir buat masa ini."
+                          ? "Scoring V2.1 menilai graph utama dan validity rakaman: bentuk alunan, kedudukan graph merah-hijau, timing ayat, kestabilan graph, liputan ayat dan kesahihan bacaan. Tonal, kejelasan audio dan mic kekal sebagai diagnostik."
                           : "Graph menunjukkan bentuk pitch/alunan. Markah akhir turut mengambil kira timing ayat, corak tonal, kejelasan audio dan kestabilan mikrofon."}
                       </p>
                     </div>

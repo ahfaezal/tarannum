@@ -148,12 +148,25 @@ export interface AssessmentValidity {
   cap_value?: number | null;
   original_score?: number;
   final_score?: number;
+  recitation_validity_score?: number;
+  segment_coverage?: {
+    score?: number;
+    covered?: number;
+    total?: number;
+    ratios?: number[];
+  };
+  metrics?: Record<string, number>;
   signals?: {
     pitchContour?: number;
+    pitchShape?: number;
+    pitchPosition?: number;
     ayatTiming?: number;
     tonalPattern?: number;
     audioClarity?: number;
     micStability?: number;
+    graphStability?: number;
+    segmentCoverage?: number;
+    recitationValidity?: number;
   };
 }
 
@@ -193,6 +206,8 @@ export interface AnalysisResult {
     ayatTiming?: number;
     graphStability?: number;
     graphPosition?: number;
+    segmentCoverage?: number;
+    recitationValidity?: number;
     tonalPattern?: number;
     audioClarity?: number;
     micStability?: number;

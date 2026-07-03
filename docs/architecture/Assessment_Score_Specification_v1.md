@@ -167,6 +167,28 @@ Rationale:
 - audio-feature-heavy scoring was too difficult to explain and could reduce trust
 - additional scoring elements should only be reintroduced one at a time after graph-only scoring is trusted
 
+### Recitation Validity Gate
+
+V2.1 also adds a safety layer before the final score is returned. This gate checks whether the student recording is plausible as an actual ayat recitation, because random sound can still produce a pitch graph.
+
+The gate does not replace the graph score. It only caps the score when the recording appears invalid or requires review.
+
+| Signal | Meaning |
+|---|---|
+| Pitch coverage | Percentage of recording with usable voice pitch |
+| Segment coverage | Whether usable pitch appears across the expected ayat segments |
+| Pitch plausibility | Whether the detected pitch range, high pitch values, and pitch jumps are plausible for recitation |
+| Graph distance context | Whether a very far red graph is also paired with implausible pitch behaviour |
+
+Gate rules are intentionally conservative:
+
+- insufficient voice pitch can cap the score around 30%
+- insufficient ayat coverage can cap the score around 35%
+- implausible/random pitch behaviour can cap the score around 35%
+- far graph plus implausible pitch can cap the score around 40%
+
+This is designed to reduce cases where background sound, humming, or random audio receives a score that looks like a valid recitation attempt.
+
 ## Updated Tarannum-Aware Assessment Score
 
 The following tarannum-aware audio-feature model is retained as historical reference and diagnostic context. It is not the current V2 final-score formula.

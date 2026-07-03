@@ -12,6 +12,8 @@ interface ScoreBreakdown {
   ayatTiming?: number;
   graphStability?: number;
   graphPosition?: number;
+  segmentCoverage?: number;
+  recitationValidity?: number;
   tonalPattern?: number;
   audioClarity?: number;
   micStability?: number;
@@ -61,6 +63,8 @@ const ScoreExplanation: React.FC<ScoreExplanationProps> = ({
   const timingScore = breakdownData.ayatTiming ?? breakdownData.consistency ?? breakdownData.timing;
   const graphStabilityScore = breakdownData.graphStability ?? pitchContourScore;
   const graphPositionScore = breakdownData.graphPosition ?? pitchContourScore;
+  const segmentCoverageScore = breakdownData.segmentCoverage;
+  const recitationValidityScore = breakdownData.recitationValidity;
   const tonalScore = breakdownData.tonalPattern ?? breakdownData.audioMatch ?? breakdownData.pronunciation;
   const clarityScore = breakdownData.audioClarity ?? breakdownData.pronunciation ?? breakdownData.audioMatch;
   const micScore = breakdownData.micStability ?? breakdownData.consistency ?? breakdownData.timing;
@@ -81,6 +85,12 @@ const ScoreExplanation: React.FC<ScoreExplanationProps> = ({
     }
     if (isGraphOnly && (graphStabilityScore || 0) < threshold) {
       areas.push("Kestabilan graph - kurangkan spike dan pastikan alunan lebih terkawal");
+    }
+    if (isGraphOnly && segmentCoverageScore != null && segmentCoverageScore < threshold) {
+      areas.push("Liputan ayat - pastikan semua ayat dibaca dengan pitch yang jelas");
+    }
+    if (isGraphOnly && recitationValidityScore != null && recitationValidityScore < threshold) {
+      areas.push("Validity rakaman - rakam semula jika sistem mengesan bunyi yang tidak cukup menyerupai bacaan");
     }
     if (isGraphOnly) {
       if (areas.length === 0) {

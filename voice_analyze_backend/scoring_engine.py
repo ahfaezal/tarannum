@@ -2729,6 +2729,218 @@ def _pitch_position_score(ref_pitch: List[Dict], user_pitch: List[Dict]) -> floa
     except Exception as e:
         logger.warning(f"Error computing pitch position similarity: {e}", exc_info=True)
         return 0.0
+def _segment_pitch_coverage_score(
+    user_pitch: List[Dict],
+    text_segments: List[Dict] = None,
+    audio_duration: float = 0.0,
+) -> Dict[str, object]:
+    """Estimate whether student produced usable pitch across the expected ayat segments."""
+    if not user_pitch:
+        return {'score': 0.0, 'covered': 0, 'total': 0, 'ratios': []}
+
+    valid_points = [
+        p for p in user_pitch
+        if p.get('f_hz') is not None and p.get('f_hz', 0) > 0 and p.get('confidence', 1.0) >= 0.15
+    ]
+    if not valid_points:
+        return {'score': 0.0, 'covered': 0, 'total': 0, 'ratios': []}
+
+    duration = float(audio_duration or 0.0)
+    if duration <= 0:
+        duration = max(float(p.get('time', 0.0)) for p in user_pitch) if user_pitch else 0.0
+
+    windows = []
+    if text_segments:
+        for seg in text_segments:
+            start = float(seg.get('start', 0.0))
+            end = float(seg.get('end', 0.0))
+            if end <= start:
+                continue
+            if end <= 1.0 and duration > 0:
+                start *= duration
+                end *= duration
+            windows.append((start, end))
+    elif duration > 0:
+        count = calculate_dynamic_segments(duration)
+        windows = [((i / count) * duration, ((i + 1) / count) * duration) for i in range(count)]
+
+    if not windows:
+        quality = calculate_pitch_quality_metrics(user_pitch)
+        return {
+            'score': float(min(100.0, quality.get('coverage', 0.0) * 1.2)),
+            'covered': 0,
+            'total': 0,
+            'ratios': [],
+        }
+
+    covered = 0
+    ratios = []
+    valid_times = [float(p.get('time', 0.0)) for p in valid_points]
+    all_times = [float(p.get('time', 0.0)) for p in user_pitch]
+    for start, end in windows:
+        dur = max(0.001, end - start)
+        total_in_window = sum(1 for t in all_times if start <= t <= end)
+        valid_in_window = sum(1 for t in valid_times if start <= t <= end)
+        ratio = valid_in_window / max(1, total_in_window)
+        ratios.append(float(ratio))
+        min_points = max(3, int(dur * 1.5))
+        if valid_in_window >= min_points and ratio >= 0.12:
+            covered += 1
+
+    coverage_ratio = covered / max(1, len(windows))
+    ratio_mean = sum(ratios) / len(ratios) if ratios else 0.0
+    score = _clamp((coverage_ratio * 75.0) + (min(1.0, ratio_mean * 2.0) * 25.0))
+    return {
+        'score': float(score),
+        'covered': int(covered),
+        'total': int(len(windows)),
+        'ratios': [round(r, 3) for r in ratios],
+    }
+
+
+def _recitation_validity_gate(
+    current_score: float,
+    pitch_shape_score: float,
+    graph_position_score: float,
+    graph_timing_score: float,
+    graph_stability_score: float,
+    user_pitch: List[Dict],
+    text_segments: List[Dict] = None,
+    audio_duration: float = 0.0,
+    user_audio: np.ndarray = None,
+    user_sr: int = None,
+) -> Dict[str, object]:
+    """Decide whether a recording is valid enough for assessment.
+
+    This gate is deliberately separate from graph similarity. A random sound can
+    sometimes produce a pitch graph, so the system must also check whether the
+    pitch signal behaves like a plausible recitation across the expected ayat.
+    """
+    result = {
+        'score': float(_clamp(current_score)),
+        'status': 'valid',
+        'reason': '',
+        'message': '',
+        'cap_applied': False,
+        'cap_value': None,
+        'segment_coverage': {'score': 0.0, 'covered': 0, 'total': 0, 'ratios': []},
+        'recitation_validity_score': 100.0,
+        'metrics': {},
+    }
+
+    try:
+        quality = calculate_pitch_quality_metrics(user_pitch, user_audio, user_sr)
+        segment_coverage = _segment_pitch_coverage_score(user_pitch, text_segments, audio_duration)
+        valid = [
+            p for p in (user_pitch or [])
+            if p.get('f_hz') is not None and p.get('f_hz', 0) > 0 and p.get('confidence', 1.0) >= 0.15
+        ]
+
+        metrics = {
+            'pitchCoverage': round(float(quality.get('coverage', 0.0)), 2),
+            'pitchQuality': round(float(quality.get('qualityScore', 0.0)), 2),
+            'confidenceMean': round(float(quality.get('confidenceMean', 0.0)), 3),
+            'snrEstimate': round(float(quality.get('snrEstimate', 0.0)), 2),
+            'medianHz': 0.0,
+            'p95Hz': 0.0,
+            'pitchRangeSemitones': 0.0,
+            'largeJumpRate': 0.0,
+        }
+
+        if valid:
+            ordered = sorted(valid, key=lambda p: float(p.get('time', 0.0)))
+            hz = np.array([float(p.get('f_hz', 0.0)) for p in ordered], dtype=float)
+            hz = hz[(hz > 0.0) & np.isfinite(hz)]
+            if hz.size > 0:
+                midi = 69.0 + 12.0 * np.log2(hz / 440.0)
+                metrics['medianHz'] = round(float(np.median(hz)), 2)
+                metrics['p95Hz'] = round(float(np.percentile(hz, 95)), 2)
+                metrics['pitchRangeSemitones'] = round(float(np.percentile(midi, 95) - np.percentile(midi, 5)), 2)
+                if midi.size > 2:
+                    jumps = np.abs(np.diff(midi))
+                    metrics['largeJumpRate'] = round(float(np.mean(jumps > 4.0)), 3)
+
+        plausibility = 100.0
+        if metrics['p95Hz'] > 560.0:
+            plausibility -= 45.0
+        elif metrics['p95Hz'] > 480.0:
+            plausibility -= 25.0
+        if metrics['medianHz'] > 340.0:
+            plausibility -= 25.0
+        if metrics['pitchRangeSemitones'] > 24.0:
+            plausibility -= 45.0
+        elif metrics['pitchRangeSemitones'] > 18.0:
+            plausibility -= 25.0
+        elif metrics['pitchRangeSemitones'] > 15.0:
+            plausibility -= 10.0
+        if metrics['largeJumpRate'] > 0.25:
+            plausibility -= 40.0
+        elif metrics['largeJumpRate'] > 0.12:
+            plausibility -= 20.0
+        plausibility = _clamp(plausibility)
+
+        recitation_validity = _clamp(
+            0.30 * float(quality.get('qualityScore', 0.0))
+            + 0.35 * float(segment_coverage.get('score', 0.0))
+            + 0.35 * plausibility
+        )
+
+        result['segment_coverage'] = segment_coverage
+        result['recitation_validity_score'] = round(float(recitation_validity), 2)
+        result['metrics'] = metrics
+
+        cap = None
+        status = 'valid'
+        reason = ''
+        message = ''
+
+        if float(quality.get('coverage', 0.0)) < 18.0:
+            cap = 30.0
+            status = 'invalid'
+            reason = 'insufficient_voice_pitch'
+            message = 'Rakaman tidak mempunyai pitch suara yang mencukupi untuk assessment.'
+        elif float(segment_coverage.get('score', 0.0)) < 45.0:
+            cap = 35.0
+            status = 'invalid'
+            reason = 'insufficient_ayat_coverage'
+            message = 'Rakaman tidak meliputi ayat yang mencukupi untuk assessment.'
+        elif (
+            metrics['p95Hz'] > 560.0
+            or metrics['pitchRangeSemitones'] > 24.0
+            or metrics['largeJumpRate'] > 0.25
+        ):
+            cap = 35.0
+            status = 'invalid'
+            reason = 'implausible_pitch_signal'
+            message = 'Sistem mengesan pitch yang terlalu liar/tinggi dan tidak cukup menyerupai bacaan.'
+        elif (
+            graph_position_score < 18.0
+            and (metrics['p95Hz'] > 460.0 or metrics['pitchRangeSemitones'] > 16.0 or metrics['medianHz'] > 300.0)
+        ):
+            cap = 40.0
+            status = 'review'
+            reason = 'graph_far_and_pitch_implausible'
+            message = 'Graph terlalu jauh daripada rujukan dan pitch rakaman kelihatan tidak stabil sebagai bacaan.'
+        elif recitation_validity < 45.0:
+            cap = 40.0
+            status = 'review'
+            reason = 'low_recitation_validity'
+            message = 'Rakaman dikesan kurang menyerupai bacaan ayat untuk assessment yang adil.'
+
+        if cap is not None and current_score > cap:
+            result.update({
+                'score': float(_clamp(cap)),
+                'status': status,
+                'reason': reason,
+                'message': message,
+                'cap_applied': True,
+                'cap_value': float(cap),
+            })
+
+        return result
+    except Exception as e:
+        logger.warning(f"Recitation validity gate failed: {e}", exc_info=True)
+        return result
 
 def calculate_segment_scores(ref_features: Dict[str, np.ndarray], 
                              user_features: Dict[str, np.ndarray],
@@ -4095,9 +4307,8 @@ def calculate_similarity_score(reference_path: str, user_path: str, return_segme
             except Exception as e:
                 logger.warning(f"Failed to apply segment policy recalculation: {e}", exc_info=True)
 
-        # Scoring V2 keeps audio feature validity as diagnostics only.
-        # It must not cap or boost the final score while we are validating
-        # whether graph-only scoring is trusted by users.
+        # Recitation Validity Gate: graph-only scoring still needs a safety layer
+        # to reject noise/humming/random pitch that is not a plausible ayat recitation.
         assessment_validity = {
             'status': 'valid',
             'reason': '',
@@ -4106,6 +4317,9 @@ def calculate_similarity_score(reference_path: str, user_path: str, return_segme
             'cap_value': None,
             'original_score': round(float(final_score), 2) if isinstance(final_score, (int, float)) else 0.0,
         }
+        recitation_validity_score = None
+        segment_coverage_score = None
+        segment_coverage_detail = {'score': 0.0, 'covered': 0, 'total': 0, 'ratios': []}
         try:
             tonal_score = float(feature_scores.get('chroma', base_score))
             clarity_score = float(feature_scores.get('mfcc', base_score))
@@ -4121,86 +4335,59 @@ def calculate_similarity_score(reference_path: str, user_path: str, return_segme
                 if stability_values else float(base_score)
             )
             timing_score = (
-                float(segment_based_overall)
+                float(graph_timing_score)
+                if isinstance(graph_timing_score, (int, float))
+                else float(segment_based_overall)
                 if isinstance(segment_based_overall, (int, float))
                 else float(base_score)
             )
+            graph_duration_for_gate = len(ref_audio_processed) / float(ref_sr) if ref_sr > 0 else 0.0
+            student_pitch_for_gate = pitch_data.get('student', []) if isinstance(pitch_data, dict) else []
+            gate = _recitation_validity_gate(
+                float(final_score),
+                float(pitch_shape_score),
+                float(graph_position_score) if isinstance(graph_position_score, (int, float)) else float(pitch_shape_score),
+                float(timing_score),
+                float(graph_stability_score) if isinstance(graph_stability_score, (int, float)) else float(pitch_shape_score),
+                student_pitch_for_gate,
+                text_segments=text_segments,
+                audio_duration=graph_duration_for_gate,
+                user_audio=user_audio_processed,
+                user_sr=user_sr,
+            )
+            recitation_validity_score = float(gate.get('recitation_validity_score', 100.0))
+            segment_coverage_detail = gate.get('segment_coverage') or segment_coverage_detail
+            segment_coverage_score = float(segment_coverage_detail.get('score', 0.0))
 
-            validity_cap = None
-            validity_status = 'valid'
-            validity_reason = ''
-            validity_message = ''
-
-            if False and tonal_score < 25.0 and clarity_score < 30.0 and pitch_shape_score >= 70.0:
-                validity_cap = 45.0
-                validity_status = 'invalid'
-                validity_reason = 'pitch_high_but_audio_pattern_weak'
-                validity_message = (
-                    'Sistem mengesan pitch/alunan, tetapi corak audio tidak cukup '
-                    'menyerupai bacaan rujukan untuk assessment yang adil.'
-                )
-            elif False and tonal_score < 28.0 and clarity_score < 32.0 and mic_stability_score < 22.0:
-                validity_cap = 48.0
-                validity_status = 'review'
-                validity_reason = 'audio_support_too_weak'
-                validity_message = (
-                    'Rakaman dikesan kurang stabil sebagai bacaan ayat. '
-                    'Sila rakam semula dengan suara yang lebih jelas.'
-                )
-
-            if validity_cap is not None and final_score > validity_cap:
-                logger.info(
-                    "Assessment validity cap applied: original=%.2f, cap=%.2f, "
-                    "pitch=%.2f, timing=%.2f, tonal=%.2f, clarity=%.2f, mic=%.2f, reason=%s",
-                    final_score,
-                    validity_cap,
-                    pitch_shape_score,
-                    timing_score,
-                    tonal_score,
-                    clarity_score,
-                    mic_stability_score,
-                    validity_reason,
-                )
-                final_score = _clamp(validity_cap)
-                assessment_validity.update({
-                    'status': validity_status,
-                    'reason': validity_reason,
-                    'message': validity_message,
-                    'cap_applied': True,
-                    'cap_value': validity_cap,
-                })
-            elif False and (
-                pitch_shape_score >= 90.0
-                and timing_score >= 55.0
-                and tonal_score >= 25.0
-                and clarity_score >= 30.0
-                and final_score < 60.0
-            ):
+            if gate.get('cap_applied'):
                 before = float(final_score)
-                final_score = _clamp(60.0)
-                assessment_validity.update({
-                    'status': 'valid',
-                    'reason': 'high_pitch_and_timing_reward',
-                    'message': 'Bacaan mempunyai alunan dan timing yang baik; score dinaikkan supaya improvement lebih jelas.',
-                    'cap_applied': False,
-                    'cap_value': None,
-                })
+                final_score = _clamp(float(gate.get('score', final_score)))
                 logger.info(
-                    "Assessment validity reward applied: original=%.2f -> %.2f, "
-                    "pitch=%.2f, timing=%.2f, tonal=%.2f, clarity=%.2f",
+                    "Recitation validity cap applied: original=%.2f -> %.2f, reason=%s, validity=%.2f, segmentCoverage=%.2f",
                     before,
                     final_score,
-                    pitch_shape_score,
-                    timing_score,
-                    tonal_score,
-                    clarity_score,
+                    gate.get('reason', ''),
+                    recitation_validity_score,
+                    segment_coverage_score,
                 )
 
             assessment_validity.update({
+                'status': gate.get('status', 'valid'),
+                'reason': gate.get('reason', ''),
+                'message': gate.get('message', ''),
+                'cap_applied': bool(gate.get('cap_applied', False)),
+                'cap_value': gate.get('cap_value'),
                 'final_score': round(float(final_score), 2),
+                'recitation_validity_score': round(float(recitation_validity_score), 2),
+                'segment_coverage': segment_coverage_detail,
+                'metrics': gate.get('metrics', {}),
                 'signals': {
-                    'pitchContour': round(float(pitch_shape_score), 2),
+                    'pitchShape': round(float(pitch_shape_score), 2),
+                    'pitchPosition': round(float(graph_position_score), 2) if isinstance(graph_position_score, (int, float)) else None,
                     'ayatTiming': round(float(timing_score), 2),
+                    'graphStability': round(float(graph_stability_score), 2) if isinstance(graph_stability_score, (int, float)) else None,
+                    'segmentCoverage': round(float(segment_coverage_score), 2),
+                    'recitationValidity': round(float(recitation_validity_score), 2),
                     'tonalPattern': round(float(tonal_score), 2),
                     'audioClarity': round(float(clarity_score), 2),
                     'micStability': round(float(mic_stability_score), 2),
@@ -4293,6 +4480,8 @@ def calculate_similarity_score(reference_path: str, user_path: str, return_segme
                 'graph_timing_score': (round(graph_timing_score, 2) if isinstance(graph_timing_score, (int, float)) else None),
                 'graph_stability_score': (round(graph_stability_score, 2) if isinstance(graph_stability_score, (int, float)) else None),
                 'graph_position_score': (round(graph_position_score, 2) if isinstance(graph_position_score, (int, float)) else None),
+                'segment_coverage_score': (round(segment_coverage_score, 2) if isinstance(segment_coverage_score, (int, float)) else None),
+                'recitation_validity_score': (round(recitation_validity_score, 2) if isinstance(recitation_validity_score, (int, float)) else None),
                 'raw_base_score': round(raw_base_score, 2),
                 'raw_pitch_contour_score': round(raw_pitch_contour_score, 2),
                 'feature_scores': feature_scores,
