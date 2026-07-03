@@ -161,6 +161,7 @@ export interface AssessmentValidity {
     pitchShape?: number;
     contourDetail?: number;
     pitchPosition?: number;
+    ayatGraph?: number;
     ayatTiming?: number;
     tonalPattern?: number;
     audioClarity?: number;
@@ -208,6 +209,7 @@ export interface AnalysisResult {
     graphStability?: number;
     graphPosition?: number;
     contourDetail?: number;
+    ayatGraph?: number;
     segmentCoverage?: number;
     recitationValidity?: number;
     tonalPattern?: number;

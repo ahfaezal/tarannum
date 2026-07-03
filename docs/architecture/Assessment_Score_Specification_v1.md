@@ -131,7 +131,7 @@ This created a product risk:
 
 The system should still reject poor recordings, silence, or wrong audio, but genuine tarannum improvement should move the score more visibly.
 
-## Scoring Version 2.2: Graph-Only With Contour Detail
+## Scoring Version 2.3: Graph-Only With Ayat Graph Similarity
 
 As of the V2 scoring experiment, Assessment Score is simplified to graph-only scoring. The purpose is to restore user trust by making the final score follow what students can see on the graph.
 
@@ -141,17 +141,20 @@ V2.1 kept graph-only scoring, but separated graph shape from graph position.
 
 V2.2 adds Contour Detail because Pitch Shape can still be too generous after range normalization. Contour Detail checks whether the student's local graph movement follows the qari at the same moments: small rises, drops, flat sections, and lenggok direction.
 
-V2.2 final score uses:
+V2.3 adds Ayat Graph Similarity. Each ayat is scored separately using shape, contour detail, and vertical position. The final ayat score blends the average, median, and lower-percentile ayat score so a weak or deliberately wrong ayat cannot disappear inside a global average.
+
+V2.3 final score uses:
 
 | Component | Weight | Meaning |
 |---|---:|---|
-| Pitch Shape | 25% | How closely the student's red graph follows the broad qari reference graph shape: naik, turun, mendatar, lenggok |
-| Contour Detail | 25% | How closely the student's local graph movement follows the qari: small rises, drops, flat parts, and fine lenggok direction |
-| Pitch Position / Vertical Match | 25% | How close the red graph stays vertically to the green graph at the same time point |
-| Ayat Timing | 15% | How well the graph follows the reference timing and ayat changes |
+| Pitch Shape | 15% | How closely the student's red graph follows the broad qari reference graph shape: naik, turun, mendatar, lenggok |
+| Contour Detail | 15% | How closely the student's local graph movement follows the qari: small rises, drops, flat parts, and fine lenggok direction |
+| Pitch Position / Vertical Match | 20% | How close the red graph stays vertically to the green graph at the same time point |
+| Ayat Graph Similarity | 35% | How close each ayat graph is to the qari, including penalty for weak ayat |
+| Ayat Timing | 5% | How well the graph follows the reference timing and ayat changes |
 | Graph Stability | 10% | How stable the student graph is, including spike control |
 
-The following signals are kept as diagnostics only in V2.2 and should not affect the final score:
+The following signals are kept as diagnostics only in V2.3 and should not affect the final score:
 
 - MFCC
 - Chroma
@@ -166,6 +169,7 @@ Rationale:
 - students judge improvement primarily through the visible graph
 - if the red graph gets closer to the green graph, the score should move accordingly
 - graph-only scoring must include broad shape, local contour detail, and vertical distance
+- ayat-by-ayat scoring is needed because global scoring can hide deliberate mistakes in specific ayat
 - a graph with similar shape but consistently too low or too high should not beat a closer real recitation
 - a graph that only follows rough shape but misses fine lenggok should not receive an inflated score
 - audio-feature-heavy scoring was too difficult to explain and could reduce trust
@@ -173,7 +177,7 @@ Rationale:
 
 ### Recitation Validity Gate
 
-V2.2 also keeps the safety layer before the final score is returned. This gate checks whether the student recording is plausible as an actual ayat recitation, because random sound can still produce a pitch graph.
+V2.3 also keeps the safety layer before the final score is returned. This gate checks whether the student recording is plausible as an actual ayat recitation, because random sound can still produce a pitch graph.
 
 The gate does not replace the graph score. It only caps the score when the recording appears invalid or requires review.
 
@@ -190,6 +194,8 @@ Gate rules are intentionally conservative:
 - insufficient ayat coverage can cap the score around 35%
 - implausible/random pitch behaviour can cap the score around 35%
 - far graph plus implausible pitch can cap the score around 40%
+
+High-pitch child voices are handled more carefully in V2.3. A high pitch is not automatically treated as invalid if the recording has strong ayat coverage and stable pitch behaviour. The graph score can still be low if the pitch position is far from the qari, but the validity gate should avoid forcing a child voice down to an invalid score solely because the frequency is high.
 
 This is designed to reduce cases where background sound, humming, or random audio receives a score that looks like a valid recitation attempt.
 

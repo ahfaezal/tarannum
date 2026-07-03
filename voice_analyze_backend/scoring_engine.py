@@ -2827,6 +2827,126 @@ def _contour_detail_score(ref_pitch: List[Dict], user_pitch: List[Dict]) -> floa
         logger.warning(f"Error computing contour detail similarity: {e}", exc_info=True)
         return 0.0
 
+
+def _score_ayat_graph_similarity(
+    ref_pitch: List[Dict],
+    user_pitch: List[Dict],
+    text_segments: List[Dict] = None,
+    audio_duration: float = 0.0,
+) -> Dict[str, object]:
+    """Score graph similarity per ayat/segment and aggregate conservatively.
+
+    Global graph scores can hide local mistakes. This function scores every ayat
+    window separately, then blends mean, median and lower-percentile scores so a
+    deliberately wrong ayat lowers the final assessment more visibly.
+    """
+    result = {
+        'score': 0.0,
+        'mean': 0.0,
+        'median': 0.0,
+        'p25': 0.0,
+        'min': 0.0,
+        'count': 0,
+        'segments': [],
+    }
+    if not ref_pitch or not user_pitch:
+        return result
+
+    try:
+        duration = float(audio_duration or 0.0)
+        if duration <= 0:
+            ref_times = [float(p.get('time', 0.0)) for p in ref_pitch if p.get('time') is not None]
+            duration = max(ref_times) if ref_times else 0.0
+
+        windows = []
+        if text_segments:
+            for idx, seg in enumerate(text_segments):
+                start = float(seg.get('start', 0.0))
+                end = float(seg.get('end', 0.0))
+                if end <= start:
+                    continue
+                if end <= 1.0 and duration > 0:
+                    start *= duration
+                    end *= duration
+                windows.append((idx + 1, start, end, seg.get('text', '')))
+        elif duration > 0:
+            count = calculate_dynamic_segments(duration)
+            windows = [
+                (i + 1, (i / count) * duration, ((i + 1) / count) * duration, '')
+                for i in range(count)
+            ]
+
+        if not windows:
+            return result
+
+        scores = []
+        weights = []
+        segment_details = []
+        for idx, start, end, text in windows:
+            dur = max(0.001, end - start)
+            shape = _segment_pitch_score(ref_pitch, user_pitch, start, end)
+            if shape <= 0:
+                continue
+            ref_slice = [p for p in ref_pitch if start <= float(p.get('time', 0.0)) <= end]
+            user_slice = [p for p in user_pitch if start <= float(p.get('time', 0.0)) <= end]
+            detail = _contour_detail_score(ref_slice, user_slice)
+            if detail <= 0:
+                detail = shape
+            position = _pitch_position_score(ref_slice, user_slice)
+            if position <= 0:
+                position = shape
+
+            segment_score = _clamp(0.30 * shape + 0.35 * detail + 0.35 * position)
+            scores.append(float(segment_score))
+            weights.append(dur)
+            segment_details.append({
+                'index': idx,
+                'start': round(float(start), 3),
+                'end': round(float(end), 3),
+                'score': round(float(segment_score), 2),
+                'shape': round(float(shape), 2),
+                'detail': round(float(detail), 2),
+                'position': round(float(position), 2),
+                'text': text,
+            })
+
+        if not scores:
+            return result
+
+        total_weight = float(sum(weights))
+        mean_score = (
+            sum(score * weight for score, weight in zip(scores, weights)) / total_weight
+            if total_weight > 0 else float(np.mean(scores))
+        )
+        median_score = float(np.median(scores))
+        p25_score = float(np.percentile(scores, 25))
+        min_score = float(np.min(scores))
+        aggregate = _clamp(0.50 * mean_score + 0.25 * median_score + 0.25 * p25_score)
+
+        result.update({
+            'score': round(float(aggregate), 2),
+            'mean': round(float(mean_score), 2),
+            'median': round(float(median_score), 2),
+            'p25': round(float(p25_score), 2),
+            'min': round(float(min_score), 2),
+            'count': len(scores),
+            'segments': segment_details,
+        })
+        logger.info(
+            "Ayat graph similarity: mean=%.2f, median=%.2f, p25=%.2f, min=%.2f, score=%.2f, count=%d",
+            mean_score,
+            median_score,
+            p25_score,
+            min_score,
+            aggregate,
+            len(scores),
+        )
+        return result
+    except Exception as e:
+        logger.warning(f"Error computing ayat graph similarity: {e}", exc_info=True)
+        return result
+
+
 def _segment_pitch_coverage_score(
     user_pitch: List[Dict],
     text_segments: List[Dict] = None,
@@ -2943,6 +3063,7 @@ def _recitation_validity_gate(
             'p95Hz': 0.0,
             'pitchRangeSemitones': 0.0,
             'largeJumpRate': 0.0,
+            'childLikeHighVoice': False,
         }
 
         if valid:
@@ -2958,17 +3079,25 @@ def _recitation_validity_gate(
                     jumps = np.abs(np.diff(midi))
                     metrics['largeJumpRate'] = round(float(np.mean(jumps > 4.0)), 3)
 
+        child_like_high_voice = (
+            float(segment_coverage.get('score', 0.0)) >= 80.0
+            and float(quality.get('coverage', 0.0)) >= 35.0
+            and metrics['p95Hz'] > 480.0
+            and metrics['largeJumpRate'] <= 0.18
+        )
+        metrics['childLikeHighVoice'] = bool(child_like_high_voice)
+
         plausibility = 100.0
         if metrics['p95Hz'] > 560.0:
-            plausibility -= 45.0
+            plausibility -= 20.0 if child_like_high_voice else 45.0
         elif metrics['p95Hz'] > 480.0:
-            plausibility -= 25.0
+            plausibility -= 10.0 if child_like_high_voice else 25.0
         if metrics['medianHz'] > 340.0:
-            plausibility -= 25.0
+            plausibility -= 10.0 if child_like_high_voice else 25.0
         if metrics['pitchRangeSemitones'] > 24.0:
-            plausibility -= 45.0
+            plausibility -= 25.0 if child_like_high_voice else 45.0
         elif metrics['pitchRangeSemitones'] > 18.0:
-            plausibility -= 25.0
+            plausibility -= 15.0 if child_like_high_voice else 25.0
         elif metrics['pitchRangeSemitones'] > 15.0:
             plausibility -= 10.0
         if metrics['largeJumpRate'] > 0.25:
@@ -3003,9 +3132,12 @@ def _recitation_validity_gate(
             reason = 'insufficient_ayat_coverage'
             message = 'Rakaman tidak meliputi ayat yang mencukupi untuk assessment.'
         elif (
-            metrics['p95Hz'] > 560.0
-            or metrics['pitchRangeSemitones'] > 24.0
-            or metrics['largeJumpRate'] > 0.25
+            not child_like_high_voice
+            and (
+                metrics['p95Hz'] > 560.0
+                or metrics['pitchRangeSemitones'] > 24.0
+                or metrics['largeJumpRate'] > 0.25
+            )
         ):
             cap = 35.0
             status = 'invalid'
@@ -4185,7 +4317,7 @@ def calculate_similarity_score(reference_path: str, user_path: str, return_segme
         graph_timing_score = None
         graph_stability_score = None
         graph_position_score = None
-        scoring_version = 'v2_2_contour_detail'
+        scoring_version = 'v2_3_ayat_graph_similarity'
         if return_segments:
             logger.info("Calculating per-segment scores (MFCC + pitch blend)...")
             ref_duration = len(ref_audio_processed) / float(ref_sr) if ref_sr > 0 else 0.0
@@ -4245,17 +4377,20 @@ def calculate_similarity_score(reference_path: str, user_path: str, return_segme
                         final_score,
                     )
 
-        # Scoring V2.2: graph-only assessment with vertical graph matching
-        # and local contour detail.
+        # Scoring V2.3: graph-only assessment with vertical graph matching,
+        # local contour detail and ayat-by-ayat graph similarity.
         # Final score is based on visible pitch graph behaviour only:
-        # - Pitch shape/contour similarity: 25%
-        # - Contour detail / local movement match: 25%
-        # - Pitch position / vertical graph match: 25%
-        # - Ayat/timing alignment from pitch graph: 15%
+        # - Pitch shape/contour similarity: 15%
+        # - Contour detail / local movement match: 15%
+        # - Pitch position / vertical graph match: 20%
+        # - Ayat-by-ayat graph similarity: 35%
+        # - Ayat/timing alignment from pitch graph: 5%
         # - Graph stability/spike control: 10%
         # Audio feature scores remain available as diagnostics but do not decide
         # the final score in this version.
         contour_detail_score = pitch_shape_score
+        ayat_graph_score = pitch_shape_score
+        ayat_graph_detail = {'score': 0.0, 'mean': 0.0, 'median': 0.0, 'p25': 0.0, 'min': 0.0, 'count': 0, 'segments': []}
         try:
             graph_ref_duration = len(ref_audio_processed) / float(ref_sr) if ref_sr > 0 else 0.0
             ref_pitch_for_graph = pitch_data.get('reference', []) if isinstance(pitch_data, dict) else []
@@ -4325,11 +4460,22 @@ def calculate_similarity_score(reference_path: str, user_path: str, return_segme
             if contour_detail_score <= 0:
                 contour_detail_score = _clamp(float(pitch_shape_score))
 
+            ayat_graph_detail = _score_ayat_graph_similarity(
+                ref_pitch_for_graph,
+                user_pitch_for_graph,
+                text_segments=text_segments,
+                audio_duration=graph_ref_duration,
+            )
+            ayat_graph_score = float(ayat_graph_detail.get('score', 0.0) or 0.0)
+            if ayat_graph_score <= 0:
+                ayat_graph_score = _clamp(float(graph_timing_score))
+
             graph_only_score = _clamp(
-                0.25 * float(pitch_shape_score)
-                + 0.25 * float(contour_detail_score)
-                + 0.25 * float(graph_position_score)
-                + 0.15 * float(graph_timing_score)
+                0.15 * float(pitch_shape_score)
+                + 0.15 * float(contour_detail_score)
+                + 0.20 * float(graph_position_score)
+                + 0.35 * float(ayat_graph_score)
+                + 0.05 * float(graph_timing_score)
                 + 0.10 * float(graph_stability_score)
             )
 
@@ -4339,12 +4485,22 @@ def calculate_similarity_score(reference_path: str, user_path: str, return_segme
                 graph_only_score = min(graph_only_score, 55.0)
             elif graph_position_score < 25.0 and contour_detail_score < 55.0:
                 graph_only_score = min(graph_only_score, 60.0)
+            if ayat_graph_detail.get('count', 0) >= 3:
+                ayat_p25 = float(ayat_graph_detail.get('p25', ayat_graph_score) or ayat_graph_score)
+                ayat_min = float(ayat_graph_detail.get('min', ayat_graph_score) or ayat_graph_score)
+                if ayat_p25 < 35.0:
+                    graph_only_score = min(graph_only_score, 55.0)
+                elif ayat_p25 < 45.0:
+                    graph_only_score = min(graph_only_score, 62.0)
+                if ayat_min < 25.0:
+                    graph_only_score = min(graph_only_score, 58.0)
 
             logger.info(
-                "Scoring V2.2 graph-only: shape=%.2f, detail=%.2f, position=%.2f, timing=%.2f, stability=%.2f, final=%.2f",
+                "Scoring V2.3 graph-only: shape=%.2f, detail=%.2f, position=%.2f, ayat=%.2f, timing=%.2f, stability=%.2f, final=%.2f",
                 pitch_shape_score,
                 contour_detail_score,
                 graph_position_score,
+                ayat_graph_score,
                 graph_timing_score,
                 graph_stability_score,
                 graph_only_score,
@@ -4500,6 +4656,7 @@ def calculate_similarity_score(reference_path: str, user_path: str, return_segme
                     'pitchShape': round(float(pitch_shape_score), 2),
                     'contourDetail': round(float(contour_detail_score), 2) if isinstance(contour_detail_score, (int, float)) else None,
                     'pitchPosition': round(float(graph_position_score), 2) if isinstance(graph_position_score, (int, float)) else None,
+                    'ayatGraph': round(float(ayat_graph_score), 2) if isinstance(ayat_graph_score, (int, float)) else None,
                     'ayatTiming': round(float(timing_score), 2),
                     'graphStability': round(float(graph_stability_score), 2) if isinstance(graph_stability_score, (int, float)) else None,
                     'segmentCoverage': round(float(segment_coverage_score), 2),
@@ -4597,6 +4754,8 @@ def calculate_similarity_score(reference_path: str, user_path: str, return_segme
                 'graph_stability_score': (round(graph_stability_score, 2) if isinstance(graph_stability_score, (int, float)) else None),
                 'graph_position_score': (round(graph_position_score, 2) if isinstance(graph_position_score, (int, float)) else None),
                 'contour_detail_score': (round(contour_detail_score, 2) if isinstance(contour_detail_score, (int, float)) else None),
+                'ayat_graph_score': (round(ayat_graph_score, 2) if isinstance(ayat_graph_score, (int, float)) else None),
+                'ayat_graph_detail': ayat_graph_detail,
                 'segment_coverage_score': (round(segment_coverage_score, 2) if isinstance(segment_coverage_score, (int, float)) else None),
                 'recitation_validity_score': (round(recitation_validity_score, 2) if isinstance(recitation_validity_score, (int, float)) else None),
                 'raw_base_score': round(raw_base_score, 2),
@@ -4608,10 +4767,11 @@ def calculate_similarity_score(reference_path: str, user_path: str, return_segme
                 'final_score_after_segment_fusion': round(final_score, 2),
                 'segment_based_overall': (round(segment_based_overall, 2) if isinstance(segment_based_overall, (int, float)) else None),
                 'assessment_weights': {
-                    'pitch_contour': 25,
-                    'contour_detail': 25,
-                    'graph_position': 25,
-                    'graph_timing': 15,
+                    'pitch_contour': 15,
+                    'contour_detail': 15,
+                    'graph_position': 20,
+                    'ayat_graph_similarity': 35,
+                    'graph_timing': 5,
                     'graph_stability': 10,
                     'tonal_audio_features': 0,
                     'pronunciation_like_audio_match': 0,

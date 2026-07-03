@@ -15,6 +15,7 @@ interface ScoreBreakdown {
   graphPosition?: number;
   segmentCoverage?: number;
   recitationValidity?: number;
+  ayatGraph?: number;
   tonalPattern?: number;
   audioClarity?: number;
   micStability?: number;
@@ -65,6 +66,7 @@ const ScoreExplanation: React.FC<ScoreExplanationProps> = ({
   const graphStabilityScore = breakdownData.graphStability ?? pitchContourScore;
   const graphPositionScore = breakdownData.graphPosition ?? pitchContourScore;
   const contourDetailScore = breakdownData.contourDetail ?? pitchContourScore;
+  const ayatGraphScore = breakdownData.ayatGraph ?? timingScore;
   const segmentCoverageScore = breakdownData.segmentCoverage;
   const recitationValidityScore = breakdownData.recitationValidity;
   const tonalScore = breakdownData.tonalPattern ?? breakdownData.audioMatch ?? breakdownData.pronunciation;
@@ -87,6 +89,9 @@ const ScoreExplanation: React.FC<ScoreExplanationProps> = ({
     }
     if ((timingScore || 0) < threshold) {
       areas.push("Timing ayat - latih mula ayat, pertukaran ayat dan panjang pendek bacaan");
+    }
+    if (isGraphOnly && (ayatGraphScore || 0) < threshold) {
+      areas.push("Ayat-by-ayat - semak ayat yang graphnya paling jauh daripada qari");
     }
     if (isGraphOnly && (graphStabilityScore || 0) < threshold) {
       areas.push("Kestabilan graph - kurangkan spike dan pastikan alunan lebih terkawal");
@@ -315,6 +320,36 @@ const ScoreExplanation: React.FC<ScoreExplanationProps> = ({
                         </div>
                         <p className="text-xs text-slate-500 mt-1">
                           Jarak menegak graph merah berbanding graph hijau
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Ayat Graph */}
+                  {isGraphOnly && (
+                    <div className="flex items-center gap-4">
+                      <div className="flex-shrink-0 w-12 h-12 bg-teal-100 rounded-lg flex items-center justify-center">
+                        <Target className="text-teal-600" size={20} />
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-sm font-medium text-slate-700">
+                            Ayat Graph
+                          </span>
+                          <span className="text-sm font-bold text-slate-800">
+                            {ayatGraphScore?.toFixed(1) || "N/A"}%
+                          </span>
+                        </div>
+                        <div className="w-full bg-slate-200 rounded-full h-2">
+                          <div
+                            className="bg-teal-500 h-2 rounded-full transition-all"
+                            style={{
+                              width: `${Math.min(100, ayatGraphScore || 0)}%`,
+                            }}
+                          />
+                        </div>
+                        <p className="text-xs text-slate-500 mt-1">
+                          Kesamaan graph untuk setiap ayat, termasuk ayat yang paling lemah
                         </p>
                       </div>
                     </div>

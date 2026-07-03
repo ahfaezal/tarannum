@@ -888,6 +888,7 @@ async def score_performance(
                     "graphStability": round(breakdown.get('graph_stability_score', pitch_score_val) or pitch_score_val, 2),
                     "graphPosition": round(breakdown.get('graph_position_score', pitch_score_val) or pitch_score_val, 2),
                     "contourDetail": round(breakdown.get('contour_detail_score', pitch_score_val) or pitch_score_val, 2),
+                    "ayatGraph": round(breakdown.get('ayat_graph_score', segment_score_val) or segment_score_val, 2),
                     "segmentCoverage": round(breakdown.get('segment_coverage_score', 0) or 0, 2),
                     "recitationValidity": round(breakdown.get('recitation_validity_score', 0) or 0, 2),
                     "tonalPattern": round(tonal_pattern_val, 2),

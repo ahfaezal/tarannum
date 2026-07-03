@@ -4423,6 +4423,8 @@ const TrainingStudio: React.FC = () => {
                                 analysisResult.scoreBreakdown.graphPosition,
                               contourDetail:
                                 analysisResult.scoreBreakdown.contourDetail,
+                              ayatGraph:
+                                analysisResult.scoreBreakdown.ayatGraph,
                               segmentCoverage:
                                 analysisResult.scoreBreakdown.segmentCoverage,
                               recitationValidity:
@@ -4609,6 +4611,14 @@ const TrainingStudio: React.FC = () => {
                                 note: "Arah lenggok halus graph: naik, turun dan mendatar pada masa yang sama",
                               },
                               {
+                                label: "Ayat Graph",
+                                score:
+                                  analysisResult.scoreBreakdown.ayatGraph ??
+                                  analysisResult.scoreBreakdown.ayatTiming ??
+                                  analysisResult.scoreBreakdown.timing,
+                                note: "Kesamaan graph untuk setiap ayat, termasuk ayat yang paling lemah",
+                              },
+                              {
                                 label: "Ayat Timing",
                                 score:
                                   analysisResult.scoreBreakdown.ayatTiming ??
@@ -4704,7 +4714,7 @@ const TrainingStudio: React.FC = () => {
                       </div>
                       <p className='mt-4 rounded-lg bg-emerald-50 p-3 text-xs leading-relaxed text-emerald-900'>
                         {(analysisResult.scoreBreakdown.scoringVersion || "").startsWith("v2")
-                          ? "Scoring V2.2 menilai graph utama dan validity rakaman: bentuk alunan, lenggok halus, kedudukan graph merah-hijau, timing ayat, kestabilan graph, liputan ayat dan kesahihan bacaan. Tonal, kejelasan audio dan mic kekal sebagai diagnostik."
+                          ? "Scoring V2.3 menilai graph utama dan validity rakaman: bentuk alunan, lenggok halus, kedudukan graph merah-hijau, kesamaan graph setiap ayat, timing ayat, kestabilan graph, liputan ayat dan kesahihan bacaan. Tonal, kejelasan audio dan mic kekal sebagai diagnostik."
                           : "Graph menunjukkan bentuk pitch/alunan. Markah akhir turut mengambil kira timing ayat, corak tonal, kejelasan audio dan kestabilan mikrofon."}
                       </p>
                     </div>
