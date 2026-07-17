@@ -9,7 +9,7 @@ from typing import List, Dict, Optional
 from datetime import datetime
 import librosa
 import logging
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 from sqlalchemy import and_
 
 from database import (
@@ -681,6 +681,10 @@ class DBReferenceLibrary:
                 subquery.c.last_used.label('last_used')
             ).outerjoin(
                 subquery, Reference.id == subquery.c.reference_id
+            ).options(
+                # Load all ayah/text segments in one additional query instead of
+                # issuing one lazy query per reference (the N+1 query pattern).
+                selectinload(Reference.text_segments)
             )
             
             # Apply the same filters from the original query
