@@ -135,6 +135,8 @@ export class RealTimePitchExtractor {
   private dataArray: Float32Array<ArrayBuffer> | null = null;
   private animationFrameId: number | null = null;
   private startTime: number = 0;
+  private lastAnalysisTime: number = 0;
+  private readonly MIN_ANALYSIS_INTERVAL_MS = 80;
   private isRunning: boolean = false;
   private onPitchUpdate: ((pitch: PitchPoint) => void) | null = null;
   private stream: MediaStream | null = null;
@@ -240,7 +242,9 @@ export class RealTimePitchExtractor {
 
     // Create analyser node with optimal settings
     this.analyser = this.audioContext.createAnalyser();
-    this.analyser.fftSize = 8192; // Larger FFT for better low-frequency resolution
+    // 4096 samples still covers the 60 Hz lower bound while avoiding the
+    // severe per-frame CPU cost of an 8192-sample autocorrelation on Safari/iPad.
+    this.analyser.fftSize = 4096;
     this.analyser.smoothingTimeConstant = 0.3; // More smoothing for stability
     this.analyser.minDecibels = -100; // More sensitive to quiet sounds
     this.analyser.maxDecibels = -10;
@@ -267,7 +271,8 @@ export class RealTimePitchExtractor {
     this.dataArray = new Float32Array(this.analyser.fftSize);
 
     // Reset state
-    this.startTime = Date.now();
+    this.startTime = performance.now();
+    this.lastAnalysisTime = 0;
     this.isRunning = true;
     this.previousFrequency = null;
     this.emaFrequency = null;
@@ -291,19 +296,29 @@ export class RealTimePitchExtractor {
       return;
     }
 
+    const now = performance.now();
+    if (now - this.lastAnalysisTime < this.MIN_ANALYSIS_INTERVAL_MS) {
+      this.animationFrameId = requestAnimationFrame(this.extractPitchLoop);
+      return;
+    }
+    this.lastAnalysisTime = now;
+
     // Get time-domain data (already filtered)
     this.analyser.getFloatTimeDomainData(this.dataArray);
 
     // Calculate current time FIRST - this is the exact recording time
-    const time = (Date.now() - this.startTime) / 1000;
+    const time = (now - this.startTime) / 1000;
 
     // Calculate audio levels
-    const maxAmplitude = Math.max(...Array.from(this.dataArray).map(Math.abs));
-    const rms = Math.sqrt(
-      Array.from(this.dataArray)
-        .map((x) => x * x)
-        .reduce((a, b) => a + b, 0) / this.dataArray.length
-    );
+    let maxAmplitude = 0;
+    let sumSquares = 0;
+    for (let i = 0; i < this.dataArray.length; i++) {
+      const sample = this.dataArray[i];
+      const absolute = Math.abs(sample);
+      if (absolute > maxAmplitude) maxAmplitude = absolute;
+      sumSquares += sample * sample;
+    }
+    const rms = Math.sqrt(sumSquares / this.dataArray.length);
 
     // Debug logging (every ~1 second)
     if (Math.random() < 0.017) {
@@ -457,12 +472,17 @@ export class RealTimePitchExtractor {
     const maxPeriod = Math.floor(sampleRate / 60); // Min frequency: 60 Hz
 
     // DC removal
-    const mean = buffer.reduce((a, b) => a + b, 0) / buffer.length;
-    const normalized = Array.from(buffer).map((x) => x - mean);
+    let sampleSum = 0;
+    for (let i = 0; i < buffer.length; i++) sampleSum += buffer[i];
+    const mean = sampleSum / buffer.length;
 
     // Calculate energy
-    const energy =
-      normalized.reduce((sum, val) => sum + val * val, 0) / normalized.length;
+    let energySum = 0;
+    for (let i = 0; i < buffer.length; i++) {
+      const centered = buffer[i] - mean;
+      energySum += centered * centered;
+    }
+    const energy = energySum / buffer.length;
 
     // More lenient energy threshold
     if (energy < 0.00012) {
@@ -479,25 +499,28 @@ export class RealTimePitchExtractor {
     // Search all periods thoroughly
     for (
       let period = minPeriod;
-      period < maxPeriod && period < normalized.length / 2;
+      period < maxPeriod && period < buffer.length / 2;
       period++
     ) {
       let correlation = 0;
       let sumSquares = 0;
-      const maxOffset = Math.min(normalized.length - period, 4096);
+      const maxOffset = Math.min(buffer.length - period, 2048);
+      let sampleCount = 0;
 
-      // Full autocorrelation
-      for (let i = 0; i < maxOffset; i++) {
-        const val1 = normalized[i];
-        const val2 = normalized[i + period];
+      // Half-rate autocorrelation is sufficiently dense for a live visual
+      // guide and substantially reduces CPU pressure on mobile Safari.
+      for (let i = 0; i < maxOffset; i += 2) {
+        const val1 = buffer[i] - mean;
+        const val2 = buffer[i + period] - mean;
         correlation += val1 * val2;
         sumSquares += val2 * val2;
+        sampleCount += 1;
       }
 
       // Normalize by geometric mean
       const normalizedCorrelation =
         correlation /
-        (Math.sqrt(sumSquares * maxOffset * rmsNorm * rmsNorm) + 0.00001);
+        (Math.sqrt(sumSquares * sampleCount * rmsNorm * rmsNorm) + 0.00001);
 
       if (normalizedCorrelation > bestCorrelation) {
         secondBestCorrelation = bestCorrelation;

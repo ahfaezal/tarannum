@@ -46,7 +46,9 @@ const Recorder: React.FC<RecorderProps> = ({
   const pitchExtractorRef = useRef<RealTimePitchExtractor | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [timer, setTimer] = useState(0);
-  const timerIntervalRef = useRef<number | null>(null);
+  const timerAnimationFrameRef = useRef<number | null>(null);
+  const recordingStartedAtRef = useRef(0);
+  const lastTimerEmitRef = useRef(0);
   const autoStopTimeoutRef = useRef<number | null>(null);
   const hasStartedRef = useRef<boolean>(false); // Track if recording has been started
 
@@ -177,14 +179,21 @@ const Recorder: React.FC<RecorderProps> = ({
       setIsRecording(true);
       setTimer(0);
       onRecordingTimeUpdate?.(0);
-
-      timerIntervalRef.current = window.setInterval(() => {
-        setTimer((prev) => {
-          const next = prev + 1;
-          onRecordingTimeUpdate?.(next);
-          return next;
-        });
-      }, 1000);
+      recordingStartedAtRef.current = performance.now();
+      lastTimerEmitRef.current = 0;
+      const updateRecordingClock = (now: number) => {
+        if (!mediaRecorderRef.current || mediaRecorderRef.current.state === "inactive") return;
+        // Ten UI updates per second keeps the playhead fluid on iPad without
+        // forcing React/canvas to render at the full display refresh rate.
+        if (now - lastTimerEmitRef.current >= 100) {
+          const elapsed = Math.max(0, (now - recordingStartedAtRef.current) / 1000);
+          lastTimerEmitRef.current = now;
+          setTimer(elapsed);
+          onRecordingTimeUpdate?.(elapsed);
+        }
+        timerAnimationFrameRef.current = requestAnimationFrame(updateRecordingClock);
+      };
+      timerAnimationFrameRef.current = requestAnimationFrame(updateRecordingClock);
       if (maxDuration && maxDuration > 0) {
         autoStopTimeoutRef.current = window.setTimeout(() => stopRecording(), maxDuration * 1000);
       }
@@ -212,7 +221,10 @@ const Recorder: React.FC<RecorderProps> = ({
         pitchExtractorRef.current = null;
       }
 
-      if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+      if (timerAnimationFrameRef.current) {
+        cancelAnimationFrame(timerAnimationFrameRef.current);
+        timerAnimationFrameRef.current = null;
+      }
       if (autoStopTimeoutRef.current) {
         clearTimeout(autoStopTimeoutRef.current);
         autoStopTimeoutRef.current = null;
@@ -222,7 +234,7 @@ const Recorder: React.FC<RecorderProps> = ({
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
+    const secs = Math.floor(seconds % 60);
     return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
 
@@ -256,7 +268,7 @@ const Recorder: React.FC<RecorderProps> = ({
       if (pitchExtractorRef.current) {
         pitchExtractorRef.current.stop();
       }
-      if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+      if (timerAnimationFrameRef.current) cancelAnimationFrame(timerAnimationFrameRef.current);
       if (autoStopTimeoutRef.current) clearTimeout(autoStopTimeoutRef.current);
     };
   }, []);

@@ -329,19 +329,16 @@ export const analyzeRecitation = async (
     const errorMessage =
       error instanceof Error ? error.message : String(error || "");
     console.error("Scoring Service Error:", error);
-    return {
-      score: 0,
-      normalizedScore: 0,
-      feedback:
-        error instanceof Error
-          ? `Error: ${
-              errorMessage.toLowerCase().includes("ffmpeg not found")
-                ? "Backend ffmpeg missing for WebM conversion. Install ffmpeg or keep uploads in WAV."
-                : error.message
-            }`
-          : "Failed to connect to scoring server. Please check if the backend is running on port 8000.",
-      segments: [],
-    };
+    // A transport, conversion or backend failure is not a valid assessment.
+    // Propagate it so RecordingPage displays Retry and does not unlock the
+    // next recording mode with a fabricated empty 0% result.
+    throw new Error(
+      error instanceof Error
+        ? errorMessage.toLowerCase().includes("ffmpeg not found")
+          ? "Backend ffmpeg is unavailable for this recording format. Please retry the recording."
+          : error.message
+        : "Failed to connect to the scoring server. Please try again."
+    );
   }
 };
 
