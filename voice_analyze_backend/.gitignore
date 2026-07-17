@@ -16,3 +16,5 @@ temp_audio/*
 Railway Key.txt
 .env*
 .venv/
+*-local.log
+*-local-error.log

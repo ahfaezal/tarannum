@@ -689,7 +689,7 @@ async def create_student_activity_event(
 
 # Public/Student Content Access
 @router.get("/qaris/available")
-async def get_available_qaris(
+def get_available_qaris(
     current_user: Optional[User] = Depends(get_current_user_optional),
     db: Session = Depends(get_db)
 ):
@@ -720,7 +720,7 @@ async def get_available_qaris(
 
 
 @router.get("/content/available")
-async def get_available_content(
+def get_available_content(
     current_user: Optional[User] = Depends(get_current_user_optional),
     db: Session = Depends(get_db)
 ):

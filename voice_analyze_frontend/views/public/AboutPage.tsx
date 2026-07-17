@@ -1,0 +1,3 @@
+import React from "react";
+const AboutPage: React.FC=()=> <article className="mx-auto max-w-4xl px-4 py-16 sm:px-6"><p className="font-semibold text-emerald-700">ABOUT TARANNUM.AI</p><h1 className="mt-4 text-4xl font-bold">Technology that supports practice without replacing the teacher.</h1><div className="mt-8 space-y-5 text-lg leading-8 text-slate-600"><p>Tarannum.ai helps learners listen to reference recitations, understand melodic contours and practise independently through a structured workflow.</p><p>The assessment remains under validation. V2.3 is labelled an experimental score and is not an official result or participant ranking.</p></div></article>;
+export default AboutPage;

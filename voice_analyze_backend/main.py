@@ -3,12 +3,15 @@ from fastapi import FastAPI, UploadFile, File, HTTPException, Form, Depends, Req
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 import json
+import asyncio
 from contextlib import asynccontextmanager
 from datetime import datetime
 import shutil
 import os
 import uuid
 import gc  # For garbage collection
+import threading
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -35,7 +38,7 @@ from scoring_engine import (
 
 from reference_library import reference_library
 from db_reference_library import db_reference_library
-from database import init_db, check_db_connection, get_db, User, UserRole
+from database import init_db, check_db_connection, get_db, User, UserRole, UserSession, AnalysisResult
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
 from db_session_service import db_session_service
@@ -103,6 +106,8 @@ def guess_audio_extension(upload: UploadFile, default_ext: str = ".mp3") -> str:
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+SCORING_CONCURRENCY = max(1, int(os.getenv("SCORING_CONCURRENCY", "2")))
+scoring_semaphore = asyncio.Semaphore(SCORING_CONCURRENCY)
 
 # Import task_queue to initialize Celery (Milestone 4)
 try:
@@ -301,12 +306,40 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 app.add_middleware(SecurityHeadersMiddleware)
 logger.info("Security headers middleware enabled")
 
+
+class RequestTimingMiddleware(BaseHTTPMiddleware):
+    """Expose request latency and log slow endpoints without recording request bodies."""
+    async def dispatch(self, request, call_next):
+        request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
+        started = time.perf_counter()
+        response = await call_next(request)
+        duration_ms = (time.perf_counter() - started) * 1000
+        response.headers["X-Request-ID"] = request_id
+        response.headers["X-Response-Time-Ms"] = f"{duration_ms:.1f}"
+        if duration_ms >= float(os.getenv("SLOW_REQUEST_MS", "1000")):
+            logger.warning(
+                "Slow request method=%s path=%s status=%s duration_ms=%.1f request_id=%s",
+                request.method,
+                request.url.path,
+                response.status_code,
+                duration_ms,
+                request_id,
+            )
+        return response
+
+
+app.add_middleware(RequestTimingMiddleware)
+
 # Get the directory where this script is located (backend folder)
 BASE_DIR = Path(__file__).parent.resolve()
 
 # Create temp directory for audio files (relative to backend folder)
 TEMP_DIR = BASE_DIR / "temp_audio"
 TEMP_DIR.mkdir(exist_ok=True)
+REFERENCE_AUDIO_CACHE_DIR = TEMP_DIR / "reference_cache"
+REFERENCE_AUDIO_CACHE_DIR.mkdir(exist_ok=True)
+_reference_audio_cache_locks: dict[str, threading.Lock] = {}
+_reference_audio_cache_locks_guard = threading.Lock()
 
 # Create uploads directory for permanent storage (optional)
 UPLOADS_DIR = BASE_DIR / "uploads"
@@ -315,11 +348,43 @@ UPLOADS_DIR.mkdir(exist_ok=True)
 logger.info(f"Backend initialized. Temp directory: {TEMP_DIR}")
 logger.info(f"Temp directory exists: {TEMP_DIR.exists()}")
 
+def get_completed_recording_modes(
+    db: Session,
+    user_id: str,
+    client_session_id: str,
+    reference_id: Optional[str] = None,
+) -> dict:
+    query = (
+        db.query(UserSession, AnalysisResult)
+        .join(AnalysisResult, AnalysisResult.user_session_id == UserSession.id)
+        .filter(
+            UserSession.user_id == uuid.UUID(user_id),
+            UserSession.client_session_id == client_session_id,
+            UserSession.recording_mode.in_(["R1", "R2", "R3"]),
+        )
+    )
+    if reference_id:
+        query = query.filter(UserSession.reference_id == reference_id)
+
+    completed = {}
+    for session, analysis in query.order_by(UserSession.created_at.asc()).all():
+        completed[session.recording_mode] = {
+            "session_id": str(session.id),
+            "score": float(analysis.score),
+            "attempt": session.recording_attempt or 1,
+            "created_at": session.created_at.isoformat() if session.created_at else None,
+        }
+    return completed
+
 @app.post("/score")
 async def score_performance(
     user_audio: UploadFile = File(...),
     reference_audio: Optional[UploadFile] = File(None),
     reference_id: Optional[str] = Form(None),
+    client_session_id: Optional[str] = Form(None),
+    recording_mode: Optional[str] = Form(None),
+    scoring_version: str = Form("V2.3"),
+    recording_attempt: int = Form(1),
     current_user: Optional[User] = Depends(get_current_user_optional),
     db: Session = Depends(get_db),
 ):
@@ -327,6 +392,42 @@ async def score_performance(
     user_path = None
 
     try:
+        normalized_recording_mode = (recording_mode or "LEGACY").strip().upper()
+        if normalized_recording_mode not in {"R1", "R2", "R3", "LEGACY"}:
+            raise HTTPException(status_code=400, detail="recording_mode must be R1, R2, or R3")
+
+        normalized_scoring_version = (scoring_version or "V2.3").strip().upper()
+        if normalized_scoring_version != "V2.3":
+            raise HTTPException(status_code=400, detail="Only scoring version V2.3 is accepted")
+        if recording_attempt < 1:
+            raise HTTPException(status_code=400, detail="recording_attempt must be at least 1")
+
+        if client_session_id:
+            try:
+                uuid.UUID(client_session_id)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="client_session_id must be a valid UUID")
+        else:
+            client_session_id = str(uuid.uuid4())
+
+        if normalized_recording_mode in {"R1", "R2", "R3"}:
+            if not current_user:
+                raise HTTPException(status_code=401, detail="Authentication is required for recording sessions")
+            completed_modes = get_completed_recording_modes(
+                db,
+                str(current_user.id),
+                client_session_id,
+                reference_id,
+            )
+            required_mode = {"R2": "R1", "R3": "R2"}.get(normalized_recording_mode)
+            if required_mode and required_mode not in completed_modes:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"{required_mode} must be completed before {normalized_recording_mode}",
+                )
+            if normalized_recording_mode == "R1" and "R1" in completed_modes:
+                raise HTTPException(status_code=409, detail="R1 has already been completed for this session")
+
         # Log incoming request details
         logger.info("=" * 50)
         logger.info("Received /score request")
@@ -334,6 +435,10 @@ async def score_performance(
         logger.info(f"User audio content_type: {user_audio.content_type}")
         logger.info(f"Reference ID: {reference_id}")
         logger.info(f"Reference audio provided: {reference_audio is not None}")
+        logger.info(f"Client session ID: {client_session_id}")
+        logger.info(f"Recording mode: {normalized_recording_mode}")
+        logger.info(f"Scoring version: {normalized_scoring_version}")
+        logger.info(f"Recording attempt: {recording_attempt}")
 
         # Handle reference audio: either from library or upload
         if reference_id:
@@ -572,14 +677,16 @@ async def score_performance(
         # Calculate similarity score with segments and pitch data
         try:
             logger.info("Starting similarity calculation...")
-            result = calculate_similarity_score(
-                str(ref_path),
-                str(user_path),
-                return_segments=True,
-                return_pitch=True,
-                return_ayah_timing=False,  # Disabled - admin manually enters text in preset editor
-                text_segments=text_segments_for_scoring if text_segments_for_scoring else None  # Pass text segments if available
-            )
+            async with scoring_semaphore:
+                result = await asyncio.to_thread(
+                    calculate_similarity_score,
+                    str(ref_path),
+                    str(user_path),
+                    return_segments=True,
+                    return_pitch=True,
+                    return_ayah_timing=False,  # Disabled - admin manually enters text in preset editor
+                    text_segments=text_segments_for_scoring if text_segments_for_scoring else None,
+                )
 
             # Handle different return types
             # Since we're requesting segments, pitch, and ayah_timing, result should be a tuple
@@ -983,6 +1090,11 @@ async def score_performance(
                             user_audio_path=user_path,
                             reference_id=reference_id if reference_id else None,
                             user_id=user_id,
+                            qari_id=qari_id,
+                            client_session_id=client_session_id,
+                            recording_mode=normalized_recording_mode,
+                            scoring_version=normalized_scoring_version,
+                            recording_attempt=recording_attempt,
                             db=db
                         )
                         logger.info(f"Created user session: {user_session.id}")
@@ -1064,6 +1176,13 @@ async def score_performance(
                         # Add session ID to response for tracking
                         response_data["session_id"] = str(user_session.id)
                         response_data["analysis_result_id"] = str(analysis_result.id)
+                        response_data["client_session_id"] = client_session_id
+                        response_data["recording_mode"] = normalized_recording_mode
+                        response_data["scoring_version"] = normalized_scoring_version
+                        response_data["recording_attempt"] = recording_attempt
+                        db.refresh(user_session)
+                        response_data["data_schema_version"] = user_session.data_schema_version
+                        response_data["integrity_status"] = user_session.integrity_status
                         logger.info(f"✓ Successfully saved all data: session={user_session.id}, analysis_result={analysis_result.id}")
                     except Exception as save_error:
                         # Log the error with full details
@@ -1648,7 +1767,7 @@ async def upload_reference(
 
 
 @app.get("/api/references")
-async def list_references(
+def list_references(
     current_user: Optional[User] = Depends(get_current_user_optional),
     db: Session = Depends(get_db)
 ):
@@ -1694,7 +1813,7 @@ async def list_references(
 
 
 @app.get("/api/references/{ref_id}/pitch")
-async def get_cached_pitch_data(
+def get_cached_pitch_data(
     ref_id: str,
     current_user: Optional[User] = Depends(get_current_user_optional),
     db: Session = Depends(get_db)
@@ -1748,7 +1867,7 @@ async def get_cached_pitch_data(
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/references/{ref_id}")
-async def get_reference(
+def get_reference(
     ref_id: str,
     current_user: Optional[User] = Depends(get_current_user_optional),
     db: Session = Depends(get_db)
@@ -1888,9 +2007,25 @@ async def get_reference_audio(
                 from cloud_storage import cloud_storage
                 from pathlib import Path as PathLib
 
-                # Download from S3 to temp file
-                temp_audio_path = TEMP_DIR / f"s3_proxy_{ref_id}_{uuid.uuid4().hex}{PathLib(ref_record.filename).suffix if ref_record.filename else '.mp3'}"
-                success = cloud_storage.download_file(ref_record.cloud_storage_path, temp_audio_path)
+                extension = PathLib(ref_record.filename).suffix if ref_record.filename else ".mp3"
+                cache_version = f"{int(ref_record.file_size or 0)}_{int(ref_record.upload_date.timestamp()) if ref_record.upload_date else 0}"
+                temp_audio_path = REFERENCE_AUDIO_CACHE_DIR / f"{ref_id}_{cache_version}{extension}"
+
+                with _reference_audio_cache_locks_guard:
+                    cache_lock = _reference_audio_cache_locks.setdefault(ref_id, threading.Lock())
+
+                with cache_lock:
+                    success = temp_audio_path.exists() and temp_audio_path.stat().st_size > 0
+                    if success:
+                        logger.info(f"Reference audio cache hit for {ref_id}: {temp_audio_path.name}")
+                    else:
+                        partial_path = temp_audio_path.with_suffix(f"{temp_audio_path.suffix}.{uuid.uuid4().hex}.part")
+                        success = cloud_storage.download_file(ref_record.cloud_storage_path, partial_path)
+                        if success and partial_path.exists() and partial_path.stat().st_size > 0:
+                            partial_path.replace(temp_audio_path)
+                            logger.info(f"Reference audio cached for {ref_id}: {temp_audio_path.name}")
+                        elif partial_path.exists():
+                            partial_path.unlink(missing_ok=True)
 
                 if success and temp_audio_path.exists():
                     # Serve file through backend (avoids CORS)
@@ -1909,7 +2044,7 @@ async def get_reference_audio(
                         media_type=media_type,
                         filename=ref_record.filename or temp_audio_path.name,
                         headers={
-                            "Cache-Control": "no-store, max-age=0",
+                            "Cache-Control": "private, max-age=3600",
                             "X-Content-Type-Options": "nosniff"
                         }
                     )
@@ -1949,7 +2084,7 @@ async def get_reference_audio(
             media_type=media_type,
             filename=file_path.name,
             headers={
-                "Cache-Control": "no-store, max-age=0",
+                "Cache-Control": "private, max-age=3600",
                 "X-Content-Type-Options": "nosniff"
             }
         )
@@ -2441,8 +2576,34 @@ async def delete_preset(preset_id: str):
 
 
 # Database Query Endpoints
+@app.get("/api/recording-sessions/{client_session_id}/status")
+def get_recording_session_status(
+    client_session_id: str,
+    reference_id: Optional[str] = None,
+    current_user: User = Depends(require_registered_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        uuid.UUID(client_session_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="client_session_id must be a valid UUID")
+
+    completed = get_completed_recording_modes(
+        db,
+        str(current_user.id),
+        client_session_id,
+        reference_id,
+    )
+    return {
+        "client_session_id": client_session_id,
+        "reference_id": reference_id,
+        "completed_modes": completed,
+        "next_mode": "R1" if "R1" not in completed else "R2" if "R2" not in completed else "R3" if "R3" not in completed else None,
+        "complete": all(mode in completed for mode in ("R1", "R2", "R3")),
+    }
+
 @app.get("/api/sessions/{session_id}")
-async def get_session(
+def get_session(
     session_id: str,
     current_user: Optional[User] = Depends(get_current_user_optional),
     db: Session = Depends(get_db)
@@ -2490,8 +2651,19 @@ async def get_session(
         return {
             "id": str(session.id),
             "user_id": str(session.user_id) if session.user_id else None,
+            "qari_id": str(session.qari_id) if session.qari_id else None,
             "reference_id": session.reference_id,
+            "client_session_id": session.client_session_id,
+            "recording_mode": session.recording_mode,
+            "scoring_version": session.scoring_version,
+            "recording_attempt": session.recording_attempt,
             "file_path": session.file_path,
+            "score_storage_path": session.score_storage_path,
+            "audio_checksum": session.audio_checksum,
+            "score_checksum": session.score_checksum,
+            "data_schema_version": session.data_schema_version,
+            "integrity_status": session.integrity_status,
+            "integrity_error": session.integrity_error,
             "duration": session.duration,
             "file_size": session.file_size,
             "created_at": session.created_at.isoformat() if session.created_at else None
@@ -2619,7 +2791,7 @@ async def get_session_audio(
 
 
 @app.get("/api/sessions/{session_id}/analysis")
-async def get_analysis_result(session_id: str):
+def get_analysis_result(session_id: str):
     """Get analysis result by session ID."""
     try:
         result = db_session_service.get_analysis_result(session_id)
@@ -2789,7 +2961,7 @@ async def generate_analysis_ai_notes(
 
 
 @app.get("/api/sessions")
-async def list_sessions(
+def list_sessions(
     user_id: Optional[str] = None,
     reference_id: Optional[str] = None,
     limit: int = 100

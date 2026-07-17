@@ -175,6 +175,12 @@ export interface AssessmentValidity {
 export interface AnalysisResult {
   sessionId?: string;
   analysisResultId?: string;
+  clientSessionId?: string;
+  recordingMode?: 'R1' | 'R2' | 'R3' | 'LEGACY';
+  scoringVersion?: string;
+  recordingAttempt?: number;
+  dataSchemaVersion?: string;
+  integrityStatus?: 'pending_audio_upload' | 'pending_score_upload' | 'complete' | 'failed_audio_upload' | 'failed_score_upload';
   score: number;
   /** Normalized overall score 0-100 (Milestone 5) */
   normalizedScore?: number;

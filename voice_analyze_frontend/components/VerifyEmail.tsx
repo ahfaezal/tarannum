@@ -84,7 +84,7 @@ const VerifyEmail: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-green-50 to-blue-50 p-3 sm:p-4">
+    <div className="flex min-h-[calc(100dvh-150px)] items-center justify-center bg-gradient-to-br from-green-50 to-blue-50 p-3 sm:p-4">
       <div className="bg-white rounded-2xl shadow-xl p-5 sm:p-8 w-full max-w-md">
         <div className="text-center mb-8">
           <div className="mx-auto mb-4 w-12 h-12 rounded-full bg-emerald-100 flex items-center justify-center">
@@ -123,6 +123,8 @@ const VerifyEmail: React.FC = () => {
               <input
                 type="text"
                 inputMode="numeric"
+                autoComplete="one-time-code"
+                pattern="[0-9]{6}"
                 value={otpCode}
                 onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
                 required

@@ -45,9 +45,10 @@ const Login: React.FC<LoginProps> = ({ onSwitchToRegister, onSuccess, onClose })
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-green-50 to-blue-50 p-3 sm:p-4 relative">
+    <div className="flex min-h-[calc(100dvh-150px)] items-center justify-center bg-gradient-to-br from-green-50 to-blue-50 p-3 sm:p-4 relative">
       <div className="bg-white rounded-2xl shadow-xl p-5 sm:p-8 w-full max-w-md">
         <div className="text-center mb-8">
+          <img src="/images/logo-web.jpg" width="80" height="80" alt="Logo Tarannum AI" className="mx-auto mb-4 h-20 w-20 rounded-full object-cover shadow-md" />
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 mb-2">Tarannum AI</h1>
           <p className="text-gray-600">Sign in to your account</p>
         </div>
@@ -74,6 +75,7 @@ const Login: React.FC<LoginProps> = ({ onSwitchToRegister, onSuccess, onClose })
             <div className="relative">
               <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
               <input
+                autoComplete="email"
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -91,6 +93,7 @@ const Login: React.FC<LoginProps> = ({ onSwitchToRegister, onSuccess, onClose })
             <div className="relative">
               <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
               <input
+                autoComplete="current-password"
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}

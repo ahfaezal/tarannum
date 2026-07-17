@@ -36,6 +36,8 @@ export interface ReferenceListResponse {
 }
 
 class ReferenceLibraryService {
+  private audioBlobUrls = new Map<string, string>();
+
   /**
    * Upload a new reference audio file to the library
    */
@@ -206,6 +208,9 @@ class ReferenceLibraryService {
    */
   async getReferenceAudioBlobUrl(refId: string): Promise<string> {
     try {
+      const cachedBlobUrl = this.audioBlobUrls.get(refId);
+      if (cachedBlobUrl) return cachedBlobUrl;
+
       // Check if token exists before making request
       const token = getAuthToken();
       if (!token) {
@@ -226,9 +231,9 @@ class ReferenceLibraryService {
         throw new Error(errorMsg);
       }
       
-      const response = await fetch(`${API_BASE_URL}/api/references/${refId}/audio?v=${Date.now()}`, {
+      const response = await fetch(`${API_BASE_URL}/api/references/${refId}/audio`, {
         headers,
-        cache: 'no-store',
+        cache: 'default',
       });
 
       if (!response.ok) {
@@ -246,6 +251,7 @@ class ReferenceLibraryService {
 
       const blob = await response.blob();
       const blobUrl = URL.createObjectURL(blob);
+      this.audioBlobUrls.set(refId, blobUrl);
       return blobUrl;
     } catch (error: any) {
       console.error(`[getReferenceAudioBlobUrl] Error fetching reference audio for ${refId}:`, error);
@@ -267,6 +273,12 @@ class ReferenceLibraryService {
     if (!response.ok) {
       const error = await response.json().catch(() => ({ detail: 'Delete failed' }));
       throw new Error(error.detail || 'Failed to delete reference');
+    }
+
+    const blobUrl = this.audioBlobUrls.get(refId);
+    if (blobUrl) {
+      URL.revokeObjectURL(blobUrl);
+      this.audioBlobUrls.delete(refId);
     }
   }
 

@@ -10,6 +10,8 @@ import { PitchData } from "../types";
 interface RecorderProps {
   onRecordingComplete: (blob: Blob) => void;
   onPitchUpdate?: (pitch: PitchPoint) => void; // Real-time pitch callback
+  onRecordingTimeUpdate?: (seconds: number) => void;
+  maxDuration?: number;
   onRecordingStart?: () => void; // Countdown trigger callback (doesn't start recording immediately)
   isRecording: boolean;
   setIsRecording: (val: boolean) => void;
@@ -27,6 +29,8 @@ interface RecorderProps {
 const Recorder: React.FC<RecorderProps> = ({
   onRecordingComplete,
   onPitchUpdate,
+  onRecordingTimeUpdate,
+  maxDuration,
   onRecordingStart,
   isRecording,
   setIsRecording,
@@ -43,6 +47,7 @@ const Recorder: React.FC<RecorderProps> = ({
   const streamRef = useRef<MediaStream | null>(null);
   const [timer, setTimer] = useState(0);
   const timerIntervalRef = useRef<number | null>(null);
+  const autoStopTimeoutRef = useRef<number | null>(null);
   const hasStartedRef = useRef<boolean>(false); // Track if recording has been started
 
   const getMicrophoneStream = async () => {
@@ -101,11 +106,19 @@ const Recorder: React.FC<RecorderProps> = ({
       if (onPitchUpdate) {
         const extractor = new RealTimePitchExtractor();
         pitchExtractorRef.current = extractor;
+        const pitchWarmupStartedAt = performance.now();
         // Apply minimal filtering for voice pitch detection (similar to practice mode)
         // This ensures actual Hz values are detected and displayed correctly
         await extractor.startFromStream(
           stream,
-          onPitchUpdate,
+          (pitch) => {
+            // Ignore the microphone/pitch detector startup transient. Audio is
+            // still recorded from time zero; only unstable graph samples from
+            // the first 100 ms are excluded.
+            if (performance.now() - pitchWarmupStartedAt >= 100) {
+              onPitchUpdate(pitch);
+            }
+          },
           LIVE_PITCH_FILTER_OPTIONS
         );
       }
@@ -163,10 +176,18 @@ const Recorder: React.FC<RecorderProps> = ({
       console.log("Recording started, state:", mediaRecorder.state);
       setIsRecording(true);
       setTimer(0);
+      onRecordingTimeUpdate?.(0);
 
       timerIntervalRef.current = window.setInterval(() => {
-        setTimer((prev) => prev + 1);
+        setTimer((prev) => {
+          const next = prev + 1;
+          onRecordingTimeUpdate?.(next);
+          return next;
+        });
       }, 1000);
+      if (maxDuration && maxDuration > 0) {
+        autoStopTimeoutRef.current = window.setTimeout(() => stopRecording(), maxDuration * 1000);
+      }
     } catch (err) {
       console.error("Error accessing microphone:", err);
       if (onError) {
@@ -192,6 +213,10 @@ const Recorder: React.FC<RecorderProps> = ({
       }
 
       if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+      if (autoStopTimeoutRef.current) {
+        clearTimeout(autoStopTimeoutRef.current);
+        autoStopTimeoutRef.current = null;
+      }
     }
   };
 
@@ -232,6 +257,7 @@ const Recorder: React.FC<RecorderProps> = ({
         pitchExtractorRef.current.stop();
       }
       if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+      if (autoStopTimeoutRef.current) clearTimeout(autoStopTimeoutRef.current);
     };
   }, []);
 

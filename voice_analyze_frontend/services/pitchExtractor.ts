@@ -23,9 +23,12 @@ export interface PitchFilterOptions {
 // Keeping one source of truth prevents behavior drift between modes.
 export const LIVE_PITCH_FILTER_OPTIONS: PitchFilterOptions = {
   minHz: 60,
-  maxHz: 1200,
-  minConfidence: 0.45,
-  smoothingWindow: 2,
+  // Human recitation fundamentals are expected below this ceiling. Higher
+  // detections are normally harmonics/octave errors and should not drive the
+  // live student graph. Backend scoring continues to use the original audio.
+  maxHz: 500,
+  minConfidence: 0.6,
+  smoothingWindow: 7,
   enabled: true,
 };
 

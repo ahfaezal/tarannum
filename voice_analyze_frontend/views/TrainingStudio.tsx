@@ -1,11 +1,10 @@
 import React, { useState, useRef, useEffect, useMemo } from "react";
+import { Link } from "react-router-dom";
 import Waveform from "../components/Waveform";
-import Recorder from "../components/Recorder";
 import SegmentPractice from "../components/SegmentPractice";
 import LivePitchGraph from "../components/LivePitchGraph";
 import CombinedWaveformPitch from "../components/CombinedWaveformPitch";
 import LiveHzDisplay from "../components/LiveHzDisplay";
-import ScoreExplanation from "../components/ScoreExplanation";
 import Countdown, { primeCountdownAudioCue } from "../components/Countdown";
 import PracticeFullScreenMode from "../components/PracticeFullScreenMode";
 import RecordingFullScreenMode from "../components/RecordingFullScreenMode";
@@ -52,6 +51,11 @@ import {
   ReferenceAudio,
 } from "../services/referenceLibraryService";
 import { sendStudentActivityEvent } from "../services/studentActivityService";
+
+// Recording and assessment are intentionally loaded only by /recording.
+// Keep these lazy while the remaining legacy handlers are extracted safely.
+const Recorder = React.lazy(() => import("../components/Recorder"));
+const ScoreExplanation = React.lazy(() => import("../components/ScoreExplanation"));
 
 // Helper function to convert AudioBuffer to WAV Blob (lossless, same as voice recorder)
 const audioBufferToWav = (audioBuffer: AudioBuffer): Blob => {
@@ -3514,7 +3518,15 @@ const TrainingStudio: React.FC = () => {
             </div>
           </div>
 
-          {/* Student Audio Section */}
+          {/* Recording has moved to /recording so Training stays focused and lighter. */}
+          <div className='rounded-2xl border border-emerald-200 bg-emerald-50 p-5 sm:p-6'>
+            <h2 className='text-lg font-bold text-slate-900'>Sudah bersedia untuk merakam?</h2>
+            <p className='mt-2 text-sm text-slate-600'>Teruskan ke halaman Rakaman & Penilaian. Graph latihan tidak akan dimuatkan semula di sana.</p>
+            <Link to={`/recording${selectedRef?.id ? `?reference=${encodeURIComponent(selectedRef.id)}&mode=R2` : ""}`} className='mt-4 inline-flex rounded-xl bg-emerald-600 px-5 py-3 text-sm font-semibold text-white'>Sedia untuk Merakam</Link>
+          </div>
+
+          {/* Legacy recording UI retained temporarily for extraction, but no longer rendered here. */}
+          {false && (
             <div className='bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-slate-100'>
             <div className='flex items-center justify-between mb-4'>
               <h2 className='text-lg font-semibold text-blue-700 flex items-center gap-2'>
@@ -4166,6 +4178,7 @@ const TrainingStudio: React.FC = () => {
               </div>
             )}
           </div>
+          )}
         </div>
 
         <div className='lg:col-span-4 space-y-4 sm:space-y-6 min-w-0'>
@@ -4930,20 +4943,7 @@ const TrainingStudio: React.FC = () => {
                 Start New Session
               </button>
             </div>
-          ) : (
-            <div className='bg-white p-6 sm:p-8 rounded-2xl shadow-sm border border-slate-100 h-full flex flex-col justify-center items-center text-center text-slate-400 border-dashed border-2'>
-              <div className='w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mb-6 animate-pulse'>
-                <BarChart2 className='w-10 h-10 text-slate-300' />
-              </div>
-              <h4 className='text-lg font-semibold text-slate-600 mb-2'>
-                Ready to Score
-              </h4>
-              <p className='text-sm max-w-[200px] leading-relaxed'>
-                Record your voice mimicking the reference, then click "Score
-                Mimic" to analyze pitch, stress, and rhythm.
-              </p>
-            </div>
-          )}
+          ) : null}
         </div>
       </div>
 

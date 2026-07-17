@@ -4,6 +4,7 @@ Database service for saving user sessions and analysis results.
 import logging
 import os
 import json
+import hashlib
 from pathlib import Path
 from typing import Optional, Dict, Any
 from sqlalchemy.orm import Session
@@ -16,6 +17,18 @@ from storage_path_helper import storage_path_helper
 
 logger = logging.getLogger(__name__)
 
+DATA_SCHEMA_VERSION = "tarannum-recording-v1"
+
+
+def _sha256_file(path: Path) -> Optional[str]:
+    if not path.exists():
+        return None
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
 
 class DBSessionService:
     """Service for managing user sessions and analysis results in the database."""
@@ -25,6 +38,11 @@ class DBSessionService:
         user_audio_path: Path,
         reference_id: Optional[str] = None,
         user_id: Optional[str] = None,
+        qari_id: Optional[str] = None,
+        client_session_id: Optional[str] = None,
+        recording_mode: Optional[str] = None,
+        scoring_version: Optional[str] = None,
+        recording_attempt: Optional[int] = None,
         db: Optional[Session] = None
     ) -> UserSession:
         """
@@ -59,11 +77,26 @@ class DBSessionService:
                     user_uuid = uuid.UUID(user_id) if isinstance(user_id, str) else user_id
                 except ValueError:
                     logger.warning(f"Invalid user_id format: {user_id}, creating session without user")
+
+            qari_uuid = None
+            if qari_id:
+                try:
+                    qari_uuid = uuid.UUID(qari_id) if isinstance(qari_id, str) else qari_id
+                except ValueError:
+                    logger.warning(f"Invalid qari_id format: {qari_id}, storing session without qari")
             
             # Create user session first to get session_id
             user_session = UserSession(
                 user_id=user_uuid,
                 reference_id=reference_id,
+                qari_id=qari_uuid,
+                client_session_id=client_session_id,
+                recording_mode=recording_mode,
+                scoring_version=scoring_version,
+                recording_attempt=recording_attempt,
+                audio_checksum=_sha256_file(user_audio_path),
+                data_schema_version=DATA_SCHEMA_VERSION,
+                integrity_status="pending_audio_upload",
                 file_path=None,  # Will be set after S3 upload
                 duration=duration,
                 file_size=file_size,
@@ -80,6 +113,7 @@ class DBSessionService:
             cloud_storage_type = None
             cloud_storage_path = None
             local_file_path = None
+            integrity_error = None
             
             try:
                 from cloud_storage import cloud_storage, S3Storage
@@ -115,17 +149,21 @@ class DBSessionService:
                 else:
                     # Fallback to local storage
                     local_file_path = str(user_audio_path.relative_to(Path(__file__).parent))
+                    integrity_error = "S3 audio upload was not completed; local storage was used."
                     logger.info(f"Student recording saved to local storage: {local_file_path}")
                     
             except Exception as cloud_error:
                 # If S3 fails, use local storage
                 logger.warning(f"Could not upload student recording to S3: {cloud_error}. Using local storage.")
                 local_file_path = str(user_audio_path.relative_to(Path(__file__).parent))
+                integrity_error = str(cloud_error)[:1000]
             
             # Update session with file path
             user_session.file_path = cloud_storage_path or local_file_path
             user_session.cloud_storage_type = cloud_storage_type
             user_session.cloud_storage_path = cloud_storage_path
+            user_session.integrity_status = "pending_score_upload" if cloud_storage_path else "failed_audio_upload"
+            user_session.integrity_error = integrity_error
             db_session.commit()
             db_session.refresh(user_session)
             
@@ -243,6 +281,16 @@ class DBSessionService:
                         if user_session and user_session.user_id:
                             # Prepare scoring data as JSON
                             scoring_data = {
+                                "data_schema_version": DATA_SCHEMA_VERSION,
+                                "session_id": user_session_id,
+                                "client_session_id": user_session.client_session_id,
+                                "student_id": str(user_session.user_id),
+                                "qari_id": str(user_session.qari_id) if user_session.qari_id else None,
+                                "reference_id": reference_id,
+                                "recording_mode": user_session.recording_mode,
+                                "scoring_version": user_session.scoring_version,
+                                "recording_attempt": user_session.recording_attempt,
+                                "audio_checksum": user_session.audio_checksum,
                                 "score": float(score),
                                 "segments": segments,
                                 "pitch_data": pitch_data,
@@ -273,15 +321,32 @@ class DBSessionService:
                                 s3_url = cloud_storage.upload_file(tmp_path, s3_path)
                                 
                                 if s3_url and s3_url.startswith("s3://"):
+                                    user_session.score_storage_path = s3_url
+                                    user_session.score_checksum = _sha256_file(tmp_path)
+                                    user_session.data_schema_version = DATA_SCHEMA_VERSION
+                                    if user_session.cloud_storage_path and user_session.audio_checksum:
+                                        user_session.integrity_status = "complete"
+                                        user_session.integrity_error = None
+                                    else:
+                                        user_session.integrity_status = "failed_audio_upload"
+                                        user_session.integrity_error = user_session.integrity_error or "Audio integrity requirements were not completed."
+                                    db_session.commit()
                                     logger.info(f"✓ Scoring data uploaded to S3: {s3_url}")
                                 else:
-                                    logger.warning(f"S3 upload returned invalid URL: {s3_url}")
+                                    raise ValueError(f"S3 upload returned invalid URL: {s3_url}")
                             finally:
                                 # Clean up temp file
                                 if tmp_path.exists():
                                     tmp_path.unlink()
                                     
                 except Exception as s3_error:
+                    user_session = db_session.query(UserSession).filter(
+                        UserSession.id == user_session_uuid
+                    ).first()
+                    if user_session:
+                        user_session.integrity_status = "failed_score_upload"
+                        user_session.integrity_error = str(s3_error)[:1000]
+                        db_session.commit()
                     logger.warning(f"Could not upload scoring data to S3: {s3_error}. Data stored in database only.")
                 
                 logger.info(f"Saved analysis result for session: {user_session_id} (score: {score})")

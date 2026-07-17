@@ -40,8 +40,12 @@ if not DATABASE_URL:
 engine = create_engine(
     DATABASE_URL,
     pool_pre_ping=True,  # Verify connections before using
-    pool_size=10,
-    max_overflow=20,
+    pool_size=int(os.getenv("DB_POOL_SIZE", "10")),
+    max_overflow=int(os.getenv("DB_MAX_OVERFLOW", "10")),
+    pool_timeout=int(os.getenv("DB_POOL_TIMEOUT", "10")),
+    pool_recycle=int(os.getenv("DB_POOL_RECYCLE", "1800")),
+    pool_use_lifo=True,
+    connect_args={"connect_timeout": int(os.getenv("DB_CONNECT_TIMEOUT", "10"))},
     echo=False  # Set to True for SQL query logging
 )
 
@@ -264,6 +268,16 @@ class UserSession(Base):
     duration = Column(Float, nullable=True)
     file_size = Column(Integer, nullable=True)
     is_public_demo = Column(Boolean, default=False)  # True if from public demo content
+    client_session_id = Column(String, nullable=True, index=True)
+    recording_mode = Column(String, nullable=True, index=True)  # R1, R2, or R3
+    scoring_version = Column(String, nullable=True, index=True)
+    recording_attempt = Column(Integer, nullable=True)
+    score_storage_path = Column(String, nullable=True)
+    audio_checksum = Column(String, nullable=True)
+    score_checksum = Column(String, nullable=True)
+    data_schema_version = Column(String, nullable=True, index=True)
+    integrity_status = Column(String, nullable=True, index=True)
+    integrity_error = Column(Text, nullable=True)
     
     # Certification-grade fields (Milestone 4)
     is_assessment = Column(Boolean, default=False)  # Marks certification sessions
@@ -398,6 +412,7 @@ def init_db():
         ensure_student_selected_recordings_table()
         ensure_user_profile_columns()
         ensure_student_activity_events_table()
+        ensure_user_session_metadata_columns()
         logger.info("Database tables created successfully")
     except Exception as e:
         logger.error(f"Error creating database tables: {e}", exc_info=True)
@@ -461,6 +476,32 @@ def ensure_user_profile_columns():
         for column_name, column_def in columns.items():
             if not _column_exists(conn, "users", column_name):
                 conn.execute(text(f"ALTER TABLE users ADD COLUMN {column_name} {column_def}"))
+
+
+def ensure_user_session_metadata_columns():
+    """Add recording verification metadata without changing historical scores."""
+    columns = {
+        "client_session_id": "VARCHAR",
+        "recording_mode": "VARCHAR",
+        "scoring_version": "VARCHAR",
+        "recording_attempt": "INTEGER",
+        "score_storage_path": "VARCHAR",
+        "audio_checksum": "VARCHAR",
+        "score_checksum": "VARCHAR",
+        "data_schema_version": "VARCHAR",
+        "integrity_status": "VARCHAR",
+        "integrity_error": "TEXT",
+    }
+
+    with engine.begin() as conn:
+        for column_name, column_def in columns.items():
+            if not _column_exists(conn, "user_sessions", column_name):
+                conn.execute(text(f"ALTER TABLE user_sessions ADD COLUMN {column_name} {column_def}"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_user_sessions_client_session_id ON user_sessions (client_session_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_user_sessions_recording_mode ON user_sessions (recording_mode)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_user_sessions_scoring_version ON user_sessions (scoring_version)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_user_sessions_data_schema_version ON user_sessions (data_schema_version)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_user_sessions_integrity_status ON user_sessions (integrity_status)"))
 
 
 def ensure_student_activity_events_table():

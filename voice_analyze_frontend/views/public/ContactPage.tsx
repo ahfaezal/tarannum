@@ -1,0 +1,3 @@
+import React from "react";
+const ContactPage:React.FC=()=> <section className="mx-auto max-w-4xl px-4 py-16 sm:px-6"><h1 className="text-4xl font-bold">Hubungi Kami</h1><p className="mt-5 text-lg leading-8 text-slate-600">Untuk pertanyaan berkaitan sesi latihan, akaun atau penggunaan Tarannum.ai, hubungi Tarannum Technologies. Borang sokongan dalam aplikasi akan ditambah selepas sistem monitoring tersedia.</p><div className="mt-8 rounded-2xl border bg-white p-6"><p className="font-bold">Tarannum Technologies</p><p className="mt-2 text-slate-600">Bandar Baru Bangi, Selangor</p></div></section>;
+export default ContactPage;

@@ -71,7 +71,13 @@ export const analyzeRecitation = async (
   studentBlob: Blob,
   referenceBlob: Blob | null,
   referenceTitle: string,
-  referenceId?: string
+  referenceId?: string,
+  metadata?: {
+    clientSessionId?: string;
+    recordingMode?: 'R1' | 'R2' | 'R3';
+    scoringVersion?: 'V2.3';
+    recordingAttempt?: number;
+  }
 ): Promise<AnalysisResult> => {
   try {
     const formData = new FormData();
@@ -111,6 +117,11 @@ export const analyzeRecitation = async (
         : "mp3";
       formData.append("reference_audio", referenceBlob, `reference.${ext}`);
     }
+
+    if (metadata?.clientSessionId) formData.append("client_session_id", metadata.clientSessionId);
+    if (metadata?.recordingMode) formData.append("recording_mode", metadata.recordingMode);
+    formData.append("scoring_version", metadata?.scoringVersion || "V2.3");
+    formData.append("recording_attempt", String(metadata?.recordingAttempt || 1));
 
     // Use environment variable or default to production backend URL
     // Vite requires VITE_ prefix, but also support REACT_APP_ for compatibility
@@ -297,6 +308,12 @@ export const analyzeRecitation = async (
     return {
       sessionId: data.session_id,
       analysisResultId: data.analysis_result_id,
+      clientSessionId: data.client_session_id,
+      recordingMode: data.recording_mode,
+      scoringVersion: data.scoring_version,
+      recordingAttempt: data.recording_attempt,
+      dataSchemaVersion: data.data_schema_version,
+      integrityStatus: data.integrity_status,
       score,
       normalizedScore,
       feedback,
@@ -326,6 +343,32 @@ export const analyzeRecitation = async (
       segments: [],
     };
   }
+};
+
+export interface RecordingSessionStatus {
+  client_session_id: string;
+  reference_id?: string;
+  completed_modes: Partial<Record<'R1' | 'R2' | 'R3', {
+    session_id: string;
+    score: number;
+    attempt: number;
+    created_at?: string;
+  }>>;
+  next_mode: 'R1' | 'R2' | 'R3' | null;
+  complete: boolean;
+}
+
+export const getRecordingSessionStatus = async (
+  clientSessionId: string,
+  referenceId?: string,
+): Promise<RecordingSessionStatus> => {
+  const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+  const query = referenceId ? `?reference_id=${encodeURIComponent(referenceId)}` : "";
+  const response = await fetch(`${API_URL}/api/recording-sessions/${encodeURIComponent(clientSessionId)}/status${query}`, {
+    headers: { ...getAuthHeader() },
+  });
+  if (!response.ok) throw new Error(`Unable to restore recording session (${response.status})`);
+  return response.json();
 };
 
 export const generateAIRecitationNotes = async (

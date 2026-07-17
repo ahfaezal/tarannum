@@ -1,7 +1,7 @@
 """
 Authentication endpoints for multi-user platform.
 """
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, EmailStr
 from typing import Optional
@@ -23,6 +23,7 @@ from pathlib import Path
 import secrets
 import re
 import tempfile
+import time
 import uuid
 from sqlalchemy import and_, func
 from urllib import request, error
@@ -423,6 +424,19 @@ def _send_verification_email(email: str, otp_code: str):
         raise RuntimeError("Failed to send verification email.") from e
 
 
+def _send_verification_email_background(email: str, otp_code: str):
+    """Send OTP after responding to registration, with bounded retries."""
+    for attempt in range(1, 4):
+        try:
+            _send_verification_email(email, otp_code)
+            return
+        except RuntimeError as exc:
+            logger.warning("OTP email attempt %s failed for %s: %s", attempt, email, exc)
+            if attempt < 3:
+                time.sleep(attempt)
+    logger.error("OTP email could not be delivered after retries for %s", email)
+
+
 @debug_router.get("/email-config")
 async def get_email_config_debug():
     """Return non-secret email configuration for deployment debugging."""
@@ -435,7 +449,7 @@ async def get_email_config_debug():
 
 
 @router.get("/referral/validate")
-async def validate_referral(code: str, db: Session = Depends(get_db)):
+def validate_referral(code: str, db: Session = Depends(get_db)):
     """Validate a Qari referral code for public registration."""
     normalized_code = _normalize_referral_code(code)
     qari = _find_valid_qari_by_referral_code(db, normalized_code)
@@ -461,7 +475,11 @@ def _set_new_otp(user: User, otp_code: str, now: datetime, resend_count: int = 0
 
 
 @router.post("/register", response_model=UserResponse)
-async def register(user_data: UserRegister, db: Session = Depends(get_db)):
+def register(
+    user_data: UserRegister,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
     """Register a new user."""
     try:
         # Validate password requirements
@@ -571,14 +589,10 @@ async def register(user_data: UserRegister, db: Session = Depends(get_db)):
         )
         _set_new_otp(new_user, otp_code, now, resend_count=0)
 
-        try:
-            _send_verification_email(normalized_email, otp_code)
-        except RuntimeError as e:
-            raise HTTPException(status_code=502, detail=str(e))
-        
         db.add(new_user)
         db.commit()
         db.refresh(new_user)
+        background_tasks.add_task(_send_verification_email_background, normalized_email, otp_code)
         
         logger.info(f"New user registered: {new_user.email} (role: {new_user.role})")
         
@@ -602,7 +616,7 @@ async def register(user_data: UserRegister, db: Session = Depends(get_db)):
 
 
 @router.post("/login", response_model=Token)
-async def login(credentials: UserLogin, db: Session = Depends(get_db)):
+def login(credentials: UserLogin, db: Session = Depends(get_db)):
     """Login and get access token."""
     try:
         normalized_email = _normalize_email(credentials.email)
@@ -682,7 +696,7 @@ async def login(credentials: UserLogin, db: Session = Depends(get_db)):
 
 
 @router.post("/verify-email", response_model=MessageResponse)
-async def verify_email(payload: VerifyEmailRequest, db: Session = Depends(get_db)):
+def verify_email(payload: VerifyEmailRequest, db: Session = Depends(get_db)):
     """Verify a user's email address using a one-time OTP."""
     normalized_email = _normalize_email(payload.email)
     otp_code = payload.otp_code.strip()
@@ -726,7 +740,7 @@ async def verify_email(payload: VerifyEmailRequest, db: Session = Depends(get_db
 
 
 @router.post("/resend-otp", response_model=MessageResponse)
-async def resend_otp(payload: ResendOtpRequest, db: Session = Depends(get_db)):
+def resend_otp(payload: ResendOtpRequest, db: Session = Depends(get_db)):
     """Resend an email verification OTP with cooldown and resend limits."""
     normalized_email = _normalize_email(payload.email)
     user = get_user_by_email(db, normalized_email)
