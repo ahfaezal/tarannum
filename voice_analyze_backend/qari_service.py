@@ -4,7 +4,7 @@ Service for Qari content management and student relationships.
 import logging
 from typing import List, Dict, Optional
 from datetime import datetime
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 from sqlalchemy import and_, or_
 from uuid import UUID
 from database import (
@@ -170,23 +170,39 @@ class QariService:
             
             # Directly query Reference table by owner_id (Qari's ID) and sort by upload_date
             # This ensures we get the latest uploaded files first
-            references = db_session.query(Reference).filter(
+            references = db_session.query(Reference).options(
+                # Fetch all ayah/text segments in one batch. Without this,
+                # accessing ref.text_segments below issues one query per item.
+                selectinload(Reference.text_segments)
+            ).filter(
                 Reference.owner_id == qari_uuid
             ).order_by(
                 Reference.upload_date.desc().nullslast()  # Latest upload_date first, nulls last
             ).all()
+
+            # Fetch QariContent metadata for all references in a single query.
+            # The previous loop performed up to two QariContent queries for
+            # every reference, which made classroom requests scale as O(N).
+            reference_ids = [ref.id for ref in references]
+            content_by_reference = {}
+            if reference_ids:
+                content_rows = db_session.query(QariContent).filter(
+                    and_(
+                        QariContent.qari_id == qari_uuid,
+                        QariContent.reference_id.in_(reference_ids)
+                    )
+                ).all()
+                for content_row in content_rows:
+                    existing = content_by_reference.get(content_row.reference_id)
+                    if existing is None or (content_row.is_active and not existing.is_active):
+                        content_by_reference[content_row.reference_id] = content_row
             
             logger.info(f"Found {len(references)} references for Qari {qari_id} (sorted by upload_date desc)")
             
             result = []
             for ref in references:
-                # Check if there's any QariContent for this reference (active or inactive)
-                any_qari_content = db_session.query(QariContent).filter(
-                    and_(
-                        QariContent.reference_id == ref.id,
-                        QariContent.qari_id == qari_uuid
-                    )
-                ).first()
+                # Reuse the batch-loaded metadata instead of querying per item.
+                any_qari_content = content_by_reference.get(ref.id)
                 
                 # If QariContent exists but is inactive (soft deleted), exclude this Reference
                 if any_qari_content and not any_qari_content.is_active:
@@ -194,13 +210,7 @@ class QariService:
                     continue
                 
                 # Get active QariContent metadata if it exists (for surah/ayah settings)
-                qari_content = db_session.query(QariContent).filter(
-                    and_(
-                        QariContent.reference_id == ref.id,
-                        QariContent.qari_id == qari_uuid,
-                        QariContent.is_active == True
-                    )
-                ).first()
+                qari_content = any_qari_content if any_qari_content and any_qari_content.is_active else None
                 
                 # Get text segments if they exist, filtered by qari_id (user_id)
                 text_segments = []
