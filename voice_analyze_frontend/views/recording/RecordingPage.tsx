@@ -2,7 +2,7 @@ import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useStat
 import { Link, useSearchParams } from "react-router-dom";
 import { CheckCircle2, Headphones, Maximize2, Mic2, RotateCcw, Send, ShieldCheck } from "lucide-react";
 import { getAvailableContent } from "../../services/platformService";
-import { analyzeRecitation, extractReferencePitch, getRecordingSessionStatus } from "../../services/apiService";
+import { analyzeRecitation, extractReferencePitch, getRecordingSessionStatus, getScoringCapacity, ScoringCapacity } from "../../services/apiService";
 import { PitchPoint } from "../../services/pitchExtractor";
 import { AnalysisResult, AyahTiming, PitchData } from "../../types";
 
@@ -79,6 +79,7 @@ const RecordingPage: React.FC = () => {
   const [submitting, setSubmitting] = useState(false);
   const [scoringStage, setScoringStage] = useState<ScoringStage>("idle");
   const [scoringElapsed, setScoringElapsed] = useState(0);
+  const [scoringCapacity, setScoringCapacity] = useState<ScoringCapacity | null>(null);
   const [recordingAttempt, setRecordingAttempt] = useState(0);
   const [r1TechnicalError, setR1TechnicalError] = useState<string | null>(null);
   const [completedModes, setCompletedModes] = useState<Set<RecordingMode>>(getCompletedModes);
@@ -95,6 +96,25 @@ const RecordingPage: React.FC = () => {
       setScoringElapsed(Math.floor((Date.now() - startedAt) / 1000));
     }, 1000);
     return () => window.clearInterval(timer);
+  }, [submitting]);
+
+  useEffect(() => {
+    if (!submitting) {
+      setScoringCapacity(null);
+      return;
+    }
+    let active = true;
+    const refresh = () => {
+      getScoringCapacity()
+        .then((capacity) => { if (active) setScoringCapacity(capacity); })
+        .catch(() => { /* The score request remains authoritative. */ });
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 2500);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
   }, [submitting]);
 
   useEffect(() => {
@@ -399,6 +419,7 @@ const RecordingPage: React.FC = () => {
           <div className="h-full w-1/3 animate-pulse rounded-full bg-blue-600" />
         </div>
         <p className="mt-2 text-xs text-blue-800">Keep this page open. The original recording is being processed securely.</p>
+        {scoringCapacity && <p className="mt-1 text-xs text-blue-700">Scoring service: {scoringCapacity.active}/{scoringCapacity.limit} active{scoringCapacity.waiting > 0 ? ` · ${scoringCapacity.waiting} waiting` : ""}</p>}
       </div>}
     </div>}
 
@@ -415,6 +436,7 @@ const RecordingPage: React.FC = () => {
               <div className="h-full w-1/3 animate-pulse rounded-full bg-blue-700" />
             </div>
             <p className="mt-2 text-xs text-blue-800">Keep this page open while the original file is scored and stored.</p>
+            {scoringCapacity && <p className="mt-1 text-xs text-blue-700">Scoring service: {scoringCapacity.active}/{scoringCapacity.limit} active{scoringCapacity.waiting > 0 ? ` · ${scoringCapacity.waiting} waiting` : ""}</p>}
           </div>
         : r1TechnicalError
         ? <div className="mt-4">

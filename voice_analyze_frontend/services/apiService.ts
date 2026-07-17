@@ -67,6 +67,21 @@ const convertBlobToWav = async (blob: Blob): Promise<Blob> => {
   }
 };
 
+export type ScoringCapacity = {
+  active: number;
+  waiting: number;
+  limit: number;
+};
+
+export const getScoringCapacity = async (): Promise<ScoringCapacity> => {
+  const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+  const response = await fetch(`${API_URL}/api/scoring/capacity`, {
+    headers: getAuthHeader(),
+  });
+  if (!response.ok) throw new Error(`Scoring capacity unavailable (${response.status})`);
+  return response.json();
+};
+
 export const analyzeRecitation = async (
   studentBlob: Blob,
   referenceBlob: Blob | null,

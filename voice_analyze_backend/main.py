@@ -108,6 +108,9 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 SCORING_CONCURRENCY = max(1, int(os.getenv("SCORING_CONCURRENCY", "2")))
 scoring_semaphore = asyncio.Semaphore(SCORING_CONCURRENCY)
+_scoring_active = 0
+_scoring_waiting = 0
+_scoring_counter_lock = asyncio.Lock()
 
 # Import task_queue to initialize Celery (Milestone 4)
 try:
@@ -334,6 +337,54 @@ class RequestTimingMiddleware(BaseHTTPMiddleware):
         return response
 
 
+class ScoringAdmissionMiddleware(BaseHTTPMiddleware):
+    """Gate /score before multipart parsing, authentication and DB checkout."""
+    async def dispatch(self, request, call_next):
+        global _scoring_active, _scoring_waiting
+        if request.method != "POST" or request.url.path != "/score":
+            return await call_next(request)
+
+        queued_at = time.perf_counter()
+        async with _scoring_counter_lock:
+            _scoring_waiting += 1
+            waiting_position = _scoring_waiting
+            active_snapshot = _scoring_active
+        logger.info(
+            "Scoring admission queued position=%s active=%s limit=%s",
+            waiting_position,
+            active_snapshot,
+            SCORING_CONCURRENCY,
+        )
+
+        await scoring_semaphore.acquire()
+        queue_wait_ms = (time.perf_counter() - queued_at) * 1000
+        async with _scoring_counter_lock:
+            _scoring_waiting = max(0, _scoring_waiting - 1)
+            _scoring_active += 1
+            active_now = _scoring_active
+        logger.info(
+            "Scoring admission started queue_wait_ms=%.1f active=%s limit=%s",
+            queue_wait_ms,
+            active_now,
+            SCORING_CONCURRENCY,
+        )
+
+        try:
+            response = await call_next(request)
+            response.headers["X-Scoring-Queue-Wait-Ms"] = f"{queue_wait_ms:.1f}"
+            response.headers["X-Scoring-Concurrency-Limit"] = str(SCORING_CONCURRENCY)
+            return response
+        finally:
+            async with _scoring_counter_lock:
+                _scoring_active = max(0, _scoring_active - 1)
+                active_remaining = _scoring_active
+            scoring_semaphore.release()
+            logger.info("Scoring admission released active=%s", active_remaining)
+
+
+# RequestTiming is added last and therefore remains outermost, so its latency
+# includes time spent safely waiting for a scoring slot.
+app.add_middleware(ScoringAdmissionMiddleware)
 app.add_middleware(RequestTimingMiddleware)
 
 # Get the directory where this script is located (backend folder)
@@ -381,6 +432,18 @@ def get_completed_recording_modes(
             "created_at": session.created_at.isoformat() if session.created_at else None,
         }
     return completed
+
+
+@app.get("/api/scoring/capacity")
+async def get_scoring_capacity():
+    """Return non-sensitive live queue pressure for the recording UI."""
+    async with _scoring_counter_lock:
+        return {
+            "active": _scoring_active,
+            "waiting": _scoring_waiting,
+            "limit": SCORING_CONCURRENCY,
+        }
+
 
 @app.post("/score")
 async def score_performance(
@@ -683,16 +746,17 @@ async def score_performance(
         # Calculate similarity score with segments and pitch data
         try:
             logger.info("Starting similarity calculation...")
-            async with scoring_semaphore:
-                result = await asyncio.to_thread(
-                    calculate_similarity_score,
-                    str(ref_path),
-                    str(user_path),
-                    return_segments=True,
-                    return_pitch=True,
-                    return_ayah_timing=False,  # Disabled - admin manually enters text in preset editor
-                    text_segments=text_segments_for_scoring if text_segments_for_scoring else None,
-                )
+            # Concurrency is admitted by ScoringAdmissionMiddleware before file
+            # parsing and DB checkout. A second semaphore here would deadlock.
+            result = await asyncio.to_thread(
+                calculate_similarity_score,
+                str(ref_path),
+                str(user_path),
+                return_segments=True,
+                return_pitch=True,
+                return_ayah_timing=False,  # Disabled - admin manually enters text in preset editor
+                text_segments=text_segments_for_scoring if text_segments_for_scoring else None,
+            )
 
             # Handle different return types
             # Since we're requesting segments, pitch, and ayah_timing, result should be a tuple
