@@ -249,6 +249,9 @@ try:
         requests_per_minute = int(os.getenv("RATE_LIMIT_PER_MINUTE", "120"))
         burst_limit = int(os.getenv("RATE_LIMIT_BURST", "30"))  # Increased from 10 to 30
         requests_per_hour = int(os.getenv("RATE_LIMIT_PER_HOUR", "5000"))
+        safe_read_requests_per_minute = int(os.getenv("RATE_LIMIT_SAFE_READ_PER_MINUTE", "1200"))
+        safe_read_burst_limit = int(os.getenv("RATE_LIMIT_SAFE_READ_BURST", "300"))
+        safe_read_requests_per_hour = int(os.getenv("RATE_LIMIT_SAFE_READ_PER_HOUR", "20000"))
         exclude_localhost = os.getenv("RATE_LIMIT_EXCLUDE_LOCALHOST", "true").lower() == "true"
 
         app.add_middleware(
@@ -256,6 +259,9 @@ try:
             requests_per_minute=requests_per_minute,
             requests_per_hour=requests_per_hour,
             burst_limit=burst_limit,
+            safe_read_requests_per_minute=safe_read_requests_per_minute,
+            safe_read_requests_per_hour=safe_read_requests_per_hour,
+            safe_read_burst_limit=safe_read_burst_limit,
             exclude_localhost=exclude_localhost
         )
         localhost_note = " (localhost excluded)" if exclude_localhost else ""

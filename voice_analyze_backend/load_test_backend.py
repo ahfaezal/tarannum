@@ -1,5 +1,6 @@
 """Non-destructive concurrency test for Tarannum read-only backend endpoints."""
 import argparse
+import collections
 import concurrent.futures
 import json
 import statistics
@@ -37,6 +38,9 @@ def run_batch(base_url: str, path: str, concurrency: int, timeout: float):
     with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as executor:
         rows = list(executor.map(lambda _: request_once(url, timeout), range(concurrency)))
     elapsed = [row["elapsed_ms"] for row in rows]
+    outcomes = collections.Counter(
+        str(row.get("status", row.get("error", "unknown"))) for row in rows
+    )
     return {
         "path": path,
         "concurrency": concurrency,
@@ -46,6 +50,7 @@ def run_batch(base_url: str, path: str, concurrency: int, timeout: float):
         "p95_ms": round(percentile(elapsed, 0.95), 1),
         "max_ms": round(max(elapsed), 1),
         "batch_ms": round((time.perf_counter() - batch_started) * 1000, 1),
+        "outcomes": dict(sorted(outcomes.items())),
     }
 
 
