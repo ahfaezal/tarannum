@@ -77,9 +77,11 @@ export const analyzeRecitation = async (
     recordingMode?: 'R1' | 'R2' | 'R3';
     scoringVersion?: 'V2.3';
     recordingAttempt?: number;
+    onProgress?: (stage: 'preparing' | 'processing' | 'finalizing') => void;
   }
 ): Promise<AnalysisResult> => {
   try {
+    metadata?.onProgress?.('preparing');
     const formData = new FormData();
 
     // Always send WAV to avoid backend ffmpeg dependency for WebM conversion.
@@ -135,7 +137,10 @@ export const analyzeRecitation = async (
     if (authHeader.Authorization) {
       headers['Authorization'] = authHeader.Authorization;
     }
-    
+
+    // Fetch does not expose upload progress reliably across Safari versions, so
+    // upload and server analysis are represented as one honest processing stage.
+    metadata?.onProgress?.('processing');
     const response = await fetch(`${API_URL}/score`, {
       method: "POST",
       headers: headers,
@@ -160,6 +165,7 @@ export const analyzeRecitation = async (
       throw new Error(`Server error ${response.status}: ${errorText}`);
     }
 
+    metadata?.onProgress?.('finalizing');
     const data = await response.json();
 
     // Map backend response to AnalysisResult interface (Milestone 5: normalized 0-100)

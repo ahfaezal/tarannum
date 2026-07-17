@@ -1212,8 +1212,9 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
         let lastVoicedTime: number | null = null;
         let lastSmoothedY: number | null = null;
         let hadUnvoicedGap = false;
+        const recentRawYs: number[] = [];
         const MAX_HZ_PER_SEC = 260;
-        const EMA_ALPHA = 0.22;
+        const EMA_ALPHA = 0.18;
         const RECONNECT_RAMP_SECONDS = 0.12;
         for (const point of sortedPitch) {
           if (
@@ -1248,6 +1249,7 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
               hadUnvoicedGap = true;
             }
             lastSmoothedY = null;
+            recentRawYs.length = 0;
             continue;
           }
 
@@ -1255,7 +1257,13 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
             displayHeight -
             padding -
             ((point.frequency - finalMinFreq) / freqRange) * graphHeight;
-          let y = rawY;
+          // A three-sample median rejects single-frame pitch tremors before the
+          // EMA is applied. This affects canvas rendering only; raw pitch points
+          // and the audio submitted to V2.3 remain untouched.
+          recentRawYs.push(rawY);
+          if (recentRawYs.length > 3) recentRawYs.shift();
+          const orderedRawYs = [...recentRawYs].sort((a, b) => a - b);
+          let y = orderedRawYs[Math.floor(orderedRawYs.length / 2)];
 
           // Display-only smoothing for natural contour without mutating source pitch.
           if (lastSmoothedY !== null) {

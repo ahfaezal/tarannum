@@ -12,6 +12,7 @@ const Countdown = lazy(() => import("../../components/Countdown"));
 const RecordingFullScreenMode = lazy(() => import("../../components/RecordingFullScreenMode"));
 const AssessmentInfographic = lazy(() => import("../../components/AssessmentInfographic"));
 type RecordingMode = "R1" | "R2" | "R3";
+type ScoringStage = "idle" | "preparing" | "processing" | "finalizing";
 type ReferenceOption = {
   id: string;
   title: string;
@@ -24,6 +25,12 @@ const modeDescription: Record<RecordingMode, string> = {
   R1: "Baseline before training",
   R2: "Post-training assessment",
   R3: "Repeat assessment for consistency",
+};
+
+const scoringStageCopy: Record<Exclude<ScoringStage, "idle">, string> = {
+  preparing: "Preparing the recording",
+  processing: "Uploading and analysing the recitation",
+  finalizing: "Securing and preparing the result",
 };
 
 const getParticipantSessionId = () => {
@@ -70,6 +77,8 @@ const RecordingPage: React.FC = () => {
   const [fullScreenZoom, setFullScreenZoom] = useState(1);
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [scoringStage, setScoringStage] = useState<ScoringStage>("idle");
+  const [scoringElapsed, setScoringElapsed] = useState(0);
   const [recordingAttempt, setRecordingAttempt] = useState(0);
   const [r1TechnicalError, setR1TechnicalError] = useState<string | null>(null);
   const [completedModes, setCompletedModes] = useState<Set<RecordingMode>>(getCompletedModes);
@@ -77,6 +86,16 @@ const RecordingPage: React.FC = () => {
   useEffect(() => {
     sessionStorage.setItem("tarannum_completed_recording_modes", JSON.stringify([...completedModes]));
   }, [completedModes]);
+
+  useEffect(() => {
+    if (!submitting) return;
+    const startedAt = Date.now();
+    setScoringElapsed(0);
+    const timer = window.setInterval(() => {
+      setScoringElapsed(Math.floor((Date.now() - startedAt) / 1000));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [submitting]);
 
   useEffect(() => {
     let active = true;
@@ -193,6 +212,8 @@ const RecordingPage: React.FC = () => {
     recordingPitchCountRef.current = 0;
     setShowRecordingCountdown(false);
     setResult(null);
+    setScoringStage("idle");
+    setScoringElapsed(0);
     setTriggerStart(false);
     setError(null);
     setR1TechnicalError(null);
@@ -202,12 +223,14 @@ const RecordingPage: React.FC = () => {
     if (!audio || !selected) return;
     try {
       setSubmitting(true);
+      setScoringStage("preparing");
       setError(null);
       const analysis = await analyzeRecitation(audio, null, selected.title, selected.id, {
         clientSessionId: participantSessionId.current,
         recordingMode: mode,
         scoringVersion: "V2.3",
         recordingAttempt: Math.max(1, recordingAttemptRef.current),
+        onProgress: setScoringStage,
       });
       setResult(analysis);
       setCompletedModes((completed) => new Set(completed).add(mode));
@@ -215,6 +238,7 @@ const RecordingPage: React.FC = () => {
       setError(submitError.message || "Rakaman gagal dihantar");
     } finally {
       setSubmitting(false);
+      setScoringStage("idle");
     }
   };
 
@@ -366,13 +390,32 @@ const RecordingPage: React.FC = () => {
         <button type="button" onClick={reset} className="inline-flex items-center justify-center gap-2 rounded-xl border px-5 py-3 font-semibold"><RotateCcw size={18}/> Retake</button>
         <button type="button" onClick={() => submitAudio(blob)} disabled={submitting} className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-5 py-3 font-semibold text-white disabled:opacity-50"><Send size={18}/>{submitting ? "Processing…" : "Submit for Scoring"}</button>
       </div>
+      {submitting && scoringStage !== "idle" && <div className="mt-5 rounded-xl border border-blue-200 bg-blue-50 p-4" role="status" aria-live="polite">
+        <div className="flex items-center justify-between gap-4 text-sm font-semibold text-blue-950">
+          <span>{scoringStageCopy[scoringStage]}…</span>
+          <span className="tabular-nums text-blue-700">{scoringElapsed}s</span>
+        </div>
+        <div className="mt-3 h-2 overflow-hidden rounded-full bg-blue-100">
+          <div className="h-full w-1/3 animate-pulse rounded-full bg-blue-600" />
+        </div>
+        <p className="mt-2 text-xs text-blue-800">Keep this page open. The original recording is being processed securely.</p>
+      </div>}
     </div>}
 
     {blob && mode === "R1" && !result && <div className="mt-6 rounded-2xl border border-blue-200 bg-blue-50 p-6">
       <h2 className="text-xl font-bold text-blue-950">R1 — Automatic Submission</h2>
       <p className="mt-2 text-sm text-blue-900">The original recording is not played back, preserving baseline integrity.</p>
       {submitting
-        ? <p className="mt-4 font-semibold text-blue-800">Validation passed. Submitting the original file for scoring…</p>
+        ? <div className="mt-4" role="status" aria-live="polite">
+            <div className="flex items-center justify-between gap-4 font-semibold text-blue-900">
+              <span>{scoringStage !== "idle" ? scoringStageCopy[scoringStage] : "Starting secure assessment"}…</span>
+              <span className="tabular-nums text-blue-700">{scoringElapsed}s</span>
+            </div>
+            <div className="mt-3 h-2 overflow-hidden rounded-full bg-blue-100">
+              <div className="h-full w-1/3 animate-pulse rounded-full bg-blue-700" />
+            </div>
+            <p className="mt-2 text-xs text-blue-800">Keep this page open while the original file is scored and stored.</p>
+          </div>
         : r1TechnicalError
         ? <div className="mt-4">
             <p className="text-sm font-medium text-blue-950">Technical validation failed: {r1TechnicalError}</p>
