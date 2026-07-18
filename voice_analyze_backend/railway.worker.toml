@@ -1,3 +1,7 @@
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile.worker"
+
 [deploy]
 startCommand = "celery -A task_queue.celery_app worker --loglevel=INFO --pool=threads --concurrency=2"
 restartPolicyType = "ON_FAILURE"

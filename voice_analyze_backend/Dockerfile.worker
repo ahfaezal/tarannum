@@ -1,0 +1,25 @@
+FROM python:3.10-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg libsndfile1 build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt ./requirements.txt
+RUN python -m pip install --upgrade pip setuptools wheel \
+    && python -m pip install -r requirements.txt
+
+# The scoring task imports the same production modules as the API. Copy the
+# complete backend rather than relying on builder entry-point detection.
+COPY . /app
+RUN test -f /app/task_queue.py \
+    && test -f /app/database.py \
+    && test -f /app/cloud_storage.py \
+    && test -f /app/main.py
+
+CMD ["celery", "-A", "task_queue.celery_app", "worker", "--loglevel=INFO", "--pool=threads", "--concurrency=2"]
