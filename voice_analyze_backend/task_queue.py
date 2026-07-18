@@ -82,15 +82,21 @@ if CELERY_AVAILABLE and celery_app:
         from fastapi.encoders import jsonable_encoder
         from starlette.datastructures import Headers, UploadFile
 
-        from cloud_storage import cloud_storage
         from database import ScoringJob, SessionLocal, User
 
         db = SessionLocal()
         local_path = Path(tempfile.gettempdir()) / f"scoring_job_{job_id}.wav"
         staged_path = None
+        cloud_storage = None
         terminal = False
 
         try:
+            # Keep optional/runtime imports inside the guarded section. If a
+            # worker image is incomplete, the durable job must become failed
+            # instead of remaining in "processing" forever.
+            from cloud_storage import cloud_storage as active_cloud_storage
+            cloud_storage = active_cloud_storage
+
             job = db.query(ScoringJob).filter(ScoringJob.id == UUID(job_id)).first()
             if not job:
                 raise ValueError(f"Scoring job {job_id} not found")
@@ -171,7 +177,7 @@ if CELERY_AVAILABLE and celery_app:
                     local_path.unlink()
             except Exception as cleanup_error:
                 logger.warning("Could not delete scoring job temp file %s: %s", local_path, cleanup_error)
-            if terminal and staged_path:
+            if terminal and staged_path and cloud_storage is not None:
                 cloud_storage.delete_file(staged_path)
             db.close()
     

@@ -5,7 +5,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 import json
 import asyncio
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 import shutil
 import os
 import uuid
@@ -660,6 +660,25 @@ def get_scoring_job(
     ).first()
     if not job:
         raise HTTPException(status_code=404, detail="Scoring job not found")
+
+    # Celery enforces a five-minute hard limit. A job still marked as
+    # processing after the grace period cannot be healthy (for example, a
+    # worker can fail before its normal exception handler starts). Convert it
+    # to a recoverable terminal state so clients do not poll forever.
+    stale_after_seconds = max(330, int(os.getenv("SCORING_STALE_TIMEOUT_SECONDS", "360")))
+    if (
+        job.status == "processing"
+        and job.started_at
+        and job.started_at < datetime.utcnow() - timedelta(seconds=stale_after_seconds)
+    ):
+        job.status = "failed"
+        job.stage = "failed"
+        job.completed_at = datetime.utcnow()
+        job.error_message = (
+            "Scoring exceeded the processing time limit. "
+            "The original recording can be submitted again."
+        )
+        db.commit()
 
     queue_position = None
     if job.status == "queued":
