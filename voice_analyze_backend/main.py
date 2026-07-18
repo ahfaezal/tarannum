@@ -666,6 +666,44 @@ def get_scoring_job(
     if not job:
         raise HTTPException(status_code=404, detail="Scoring job not found")
 
+    # Recover a durable recording when Redis accepted the original task but a
+    # broken/restarted worker never claimed it. The conditional UPDATE is an
+    # atomic lease so simultaneous iPad polls cannot dispatch duplicates.
+    requeue_cutoff = datetime.utcnow() - timedelta(
+        seconds=max(60, int(os.getenv("SCORING_REQUEUE_AFTER_SECONDS", "90")))
+    )
+    if job.status == "queued" and job.queued_at < requeue_cutoff:
+        leased = db.query(ScoringJob).filter(
+            ScoringJob.id == job.id,
+            ScoringJob.status == "queued",
+            ScoringJob.queued_at < requeue_cutoff,
+        ).update({
+            ScoringJob.queued_at: datetime.utcnow(),
+            ScoringJob.stage: "requeueing",
+        }, synchronize_session=False)
+        db.commit()
+        if leased:
+            try:
+                task = process_scoring_job_async.delay(str(job.id))
+                db.query(ScoringJob).filter(ScoringJob.id == job.id).update({
+                    ScoringJob.celery_task_id: task.id,
+                    ScoringJob.stage: "queued",
+                }, synchronize_session=False)
+                db.commit()
+                logger.warning(
+                    "Recovered stale scoring job job_id=%s task_id=%s",
+                    job.id, task.id,
+                )
+            except Exception as dispatch_error:
+                db.query(ScoringJob).filter(ScoringJob.id == job.id).update({
+                    ScoringJob.status: "failed",
+                    ScoringJob.stage: "failed",
+                    ScoringJob.error_message: str(dispatch_error)[:2000],
+                    ScoringJob.completed_at: datetime.utcnow(),
+                }, synchronize_session=False)
+                db.commit()
+        job = db.query(ScoringJob).filter(ScoringJob.id == parsed_job_id).first()
+
     # Celery enforces a five-minute hard limit. A job still marked as
     # processing after the grace period cannot be healthy (for example, a
     # worker can fail before its normal exception handler starts). Convert it
