@@ -38,10 +38,11 @@ from scoring_engine import (
 
 from reference_library import reference_library
 from db_reference_library import db_reference_library
-from database import init_db, check_db_connection, get_db, User, UserRole, UserSession, AnalysisResult
+from database import init_db, check_db_connection, get_db, User, UserRole, UserSession, AnalysisResult, ScoringJob
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
 from db_session_service import db_session_service
+from cloud_storage import cloud_storage, S3Storage
 from qari_service import qari_service
 from quran_correctness_service import build_ai_recitation_notes, evaluate_quran_correctness
 from progress_service import progress_service
@@ -113,8 +114,11 @@ _scoring_waiting = 0
 _scoring_counter_lock = asyncio.Lock()
 
 # Import task_queue to initialize Celery (Milestone 4)
+celery_app = None
+CELERY_AVAILABLE = False
+process_scoring_job_async = None
 try:
-    from task_queue import celery_app, CELERY_AVAILABLE
+    from task_queue import celery_app, CELERY_AVAILABLE, process_scoring_job_async
     if CELERY_AVAILABLE:
         logger.info("✓ Celery task queue available for async processing")
     else:
@@ -502,14 +506,180 @@ def get_recording_assessment_summary(
 
 
 @app.get("/api/scoring/capacity")
-async def get_scoring_capacity():
+async def get_scoring_capacity(db: Session = Depends(get_db)):
     """Return non-sensitive live queue pressure for the recording UI."""
-    async with _scoring_counter_lock:
+    active = db.query(ScoringJob).filter(ScoringJob.status == "processing").count()
+    waiting = db.query(ScoringJob).filter(ScoringJob.status == "queued").count()
+    return {
+        "active": active,
+        "waiting": waiting,
+        "limit": max(1, int(os.getenv("SCORING_WORKER_CONCURRENCY", "2"))),
+        "mode": "asynchronous" if CELERY_AVAILABLE else "synchronous",
+    }
+
+
+@app.post("/api/scoring/jobs", status_code=202)
+async def create_scoring_job(
+    user_audio: UploadFile = File(...),
+    reference_id: str = Form(...),
+    client_session_id: str = Form(...),
+    recording_mode: str = Form(...),
+    scoring_version: str = Form("V2.3"),
+    recording_attempt: int = Form(1),
+    current_user: User = Depends(require_registered_user),
+    db: Session = Depends(get_db),
+):
+    """Stage an immutable recording and return immediately with a durable Job ID."""
+    if not CELERY_AVAILABLE:
+        raise HTTPException(status_code=503, detail="The asynchronous scoring worker is unavailable")
+    if not isinstance(cloud_storage, S3Storage):
+        raise HTTPException(status_code=503, detail="Asynchronous scoring requires S3 staging storage")
+
+    normalized_mode = (recording_mode or "").strip().upper()
+    if normalized_mode not in {"R1", "R2"}:
+        raise HTTPException(status_code=400, detail="recording_mode must be R1 or R2")
+    if (scoring_version or "").strip().upper() != "V2.3":
+        raise HTTPException(status_code=400, detail="Only scoring version V2.3 is accepted")
+    if recording_attempt < 1:
+        raise HTTPException(status_code=400, detail="recording_attempt must be at least 1")
+    try:
+        uuid.UUID(client_session_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="client_session_id must be a valid UUID")
+
+    completed_modes = get_completed_recording_modes(
+        db, str(current_user.id), client_session_id, reference_id,
+    )
+    if normalized_mode == "R2" and "R1" not in completed_modes:
+        raise HTTPException(status_code=409, detail="Baseline must be completed before Progress")
+    if normalized_mode == "R1" and "R1" in completed_modes:
+        raise HTTPException(status_code=409, detail="Baseline has already been completed for this assessment")
+
+    existing = db.query(ScoringJob).filter(
+        ScoringJob.user_id == current_user.id,
+        ScoringJob.reference_id == reference_id,
+        ScoringJob.client_session_id == client_session_id,
+        ScoringJob.recording_mode == normalized_mode,
+        ScoringJob.recording_attempt == recording_attempt,
+        ScoringJob.status.in_(["queued", "processing", "completed"]),
+    ).order_by(ScoringJob.queued_at.desc()).first()
+    if existing:
         return {
-            "active": _scoring_active,
-            "waiting": _scoring_waiting,
-            "limit": SCORING_CONCURRENCY,
+            "job_id": str(existing.id),
+            "status": existing.status,
+            "stage": existing.stage,
+            "status_url": f"/api/scoring/jobs/{existing.id}",
+            "deduplicated": True,
         }
+
+    job = ScoringJob(
+        user_id=current_user.id,
+        reference_id=reference_id,
+        client_session_id=client_session_id,
+        recording_mode=normalized_mode,
+        scoring_version="V2.3",
+        recording_attempt=recording_attempt,
+        status="queued",
+        stage="uploading",
+        original_filename=user_audio.filename or "recitation.wav",
+        content_type=user_audio.content_type or "audio/wav",
+    )
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+
+    extension = guess_audio_extension(user_audio, ".wav")
+    local_path = TEMP_DIR / f"job_upload_{job.id}{extension}"
+    staging_key = f"scoring-jobs/{current_user.id}/{job.id}/input{extension}"
+    try:
+        size = 0
+        with local_path.open("wb") as output:
+            while chunk := await user_audio.read(1024 * 1024):
+                size += len(chunk)
+                if size > MAX_FILE_SIZE:
+                    raise HTTPException(status_code=413, detail="Recording exceeds the maximum upload size")
+                output.write(chunk)
+        if size < 1000:
+            raise HTTPException(status_code=400, detail="Recording is empty or too small")
+
+        job.staging_path = cloud_storage.upload_file(local_path, staging_key)
+        job.stage = "queued"
+        db.commit()
+
+        task = process_scoring_job_async.delay(str(job.id))
+        job.celery_task_id = task.id
+        db.commit()
+        logger.info("Async scoring job queued job_id=%s task_id=%s", job.id, task.id)
+        return {
+            "job_id": str(job.id),
+            "status": "queued",
+            "stage": "queued",
+            "status_url": f"/api/scoring/jobs/{job.id}",
+            "deduplicated": False,
+        }
+    except HTTPException:
+        job.status = "failed"
+        job.stage = "failed"
+        job.error_message = "Upload validation failed"
+        job.completed_at = datetime.utcnow()
+        db.commit()
+        if job.staging_path:
+            cloud_storage.delete_file(job.staging_path)
+        raise
+    except Exception as exc:
+        job.status = "failed"
+        job.stage = "failed"
+        job.error_message = str(exc)[:2000]
+        job.completed_at = datetime.utcnow()
+        db.commit()
+        if job.staging_path:
+            cloud_storage.delete_file(job.staging_path)
+        logger.error("Could not queue async scoring job %s: %s", job.id, exc, exc_info=True)
+        raise HTTPException(status_code=503, detail="The recording was staged but could not be queued")
+    finally:
+        try:
+            if local_path.exists():
+                local_path.unlink()
+        except Exception as cleanup_error:
+            logger.warning("Could not remove staged upload temp file %s: %s", local_path, cleanup_error)
+
+
+@app.get("/api/scoring/jobs/{job_id}")
+def get_scoring_job(
+    job_id: str,
+    current_user: User = Depends(require_registered_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        parsed_job_id = uuid.UUID(job_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="job_id must be a valid UUID")
+    job = db.query(ScoringJob).filter(
+        ScoringJob.id == parsed_job_id,
+        ScoringJob.user_id == current_user.id,
+    ).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Scoring job not found")
+
+    queue_position = None
+    if job.status == "queued":
+        queue_position = db.query(ScoringJob).filter(
+            ScoringJob.status == "queued",
+            ScoringJob.queued_at < job.queued_at,
+        ).count() + 1
+    return {
+        "job_id": str(job.id),
+        "status": job.status,
+        "stage": job.stage,
+        "queue_position": queue_position,
+        "recording_mode": job.recording_mode,
+        "recording_attempt": job.recording_attempt,
+        "queued_at": job.queued_at.isoformat() if job.queued_at else None,
+        "started_at": job.started_at.isoformat() if job.started_at else None,
+        "completed_at": job.completed_at.isoformat() if job.completed_at else None,
+        "result": job.result_json if job.status == "completed" else None,
+        "error": job.error_message if job.status == "failed" else None,
+    }
 
 
 @app.post("/score")

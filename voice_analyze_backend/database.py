@@ -317,6 +317,39 @@ class AnalysisResult(Base):
     reference = relationship("Reference", back_populates="analysis_results")
 
 
+class ScoringJob(Base):
+    """Durable asynchronous scoring job.
+
+    The uploaded recording is staged in S3 before the API acknowledges the
+    request. Celery workers update this row so an iPad can safely reconnect,
+    refresh, or resume polling without resubmitting the audio.
+    """
+    __tablename__ = "scoring_jobs"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    reference_id = Column(String, ForeignKey("references.id", ondelete="SET NULL"), nullable=True, index=True)
+    client_session_id = Column(String, nullable=False, index=True)
+    recording_mode = Column(String, nullable=False, index=True)
+    scoring_version = Column(String, nullable=False, default="V2.3")
+    recording_attempt = Column(Integer, nullable=False, default=1)
+    status = Column(String, nullable=False, default="queued", index=True)  # queued | processing | completed | failed
+    stage = Column(String, nullable=False, default="queued")
+    staging_path = Column(String, nullable=True)
+    original_filename = Column(String, nullable=True)
+    content_type = Column(String, nullable=True)
+    celery_task_id = Column(String, nullable=True, index=True)
+    result_json = Column(JSON, nullable=True)
+    error_message = Column(Text, nullable=True)
+    queued_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    started_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    user = relationship("User", foreign_keys=[user_id])
+    reference = relationship("Reference", foreign_keys=[reference_id])
+
+
 class StudentSelectedRecording(Base):
     """Curated student recordings for dashboard and Qari review.
 

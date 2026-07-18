@@ -14,6 +14,7 @@ CELERY_AVAILABLE = False
 
 try:
     from celery import Celery
+    from celery.signals import worker_process_init
     
     redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
     
@@ -31,6 +32,8 @@ try:
         timezone='UTC',
         enable_utc=True,
         task_track_started=True,
+        task_acks_late=True,
+        task_reject_on_worker_lost=True,
         task_time_limit=300,  # 5 minutes max per task
         task_soft_time_limit=240,  # 4 minutes soft limit
         worker_prefetch_multiplier=1,  # Process one task at a time
@@ -40,6 +43,22 @@ try:
     CELERY_AVAILABLE = True
     logger.info("✓ Celery task queue initialized successfully")
     logger.info(f"  Redis URL: {redis_url.split('@')[1] if '@' in redis_url else 'configured'}")
+
+    @worker_process_init.connect
+    def initialize_scoring_worker(**_kwargs):
+        """Load the shared Vosk model once when a scoring worker starts."""
+        try:
+            from scoring_engine import (
+                VOSK_MODEL_AVAILABLE,
+                VOSK_MODEL_PATH,
+                set_global_vosk_model,
+            )
+            if VOSK_MODEL_AVAILABLE:
+                from vosk import Model as VoskModel
+                set_global_vosk_model(VoskModel(VOSK_MODEL_PATH))
+                logger.info("Scoring worker Vosk model loaded")
+        except Exception as model_error:
+            logger.warning("Scoring worker could not load Vosk model: %s", model_error)
     
 except ImportError:
     logger.warning("⚠ Celery not installed. Async processing disabled. Install with: pip install celery[redis]")
@@ -51,147 +70,109 @@ except Exception as e:
 
 
 if CELERY_AVAILABLE and celery_app:
-    @celery_app.task(name="process_audio_scoring", bind=True, max_retries=3)
-    def process_audio_scoring_async(
-        self,
-        user_audio_path: str,
-        reference_audio_path: str,
-        session_id: str,
-        user_id: Optional[str] = None,
-        reference_id: Optional[str] = None
-    ) -> Dict[str, Any]:
-        """
-        Process audio scoring asynchronously.
-        
-        This task runs in the background to avoid blocking the API.
-        
-        Args:
-            user_audio_path: Path to user audio file (local or cloud)
-            reference_audio_path: Path to reference audio file (local or cloud)
-            session_id: UUID of the session
-            user_id: UUID of the user (optional)
-            reference_id: Reference ID (optional)
-        
-        Returns:
-            Dictionary with scoring results
-        """
-        from scoring_engine import calculate_similarity_score
-        from database import SessionLocal, UserSession, AnalysisResult, UserRole
-        from progress_service import progress_service
-        from cloud_storage import cloud_storage
-        from pathlib import Path
+    @celery_app.task(name="process_scoring_job", bind=True, max_retries=2)
+    def process_scoring_job_async(self, job_id: str) -> Dict[str, Any]:
+        """Run the exact production V2.3 pipeline for a durable scoring job."""
+        import asyncio
         import tempfile
-        
+        from datetime import datetime
+        from pathlib import Path
+        from uuid import UUID
+
+        from fastapi.encoders import jsonable_encoder
+        from starlette.datastructures import Headers, UploadFile
+
+        from cloud_storage import cloud_storage
+        from database import ScoringJob, SessionLocal, User
+
         db = SessionLocal()
-        temp_files = []
-        
+        local_path = Path(tempfile.gettempdir()) / f"scoring_job_{job_id}.wav"
+        staged_path = None
+        terminal = False
+
         try:
-            logger.info(f"Processing audio scoring for session {session_id} (async)")
-            
-            # Download from cloud if needed
-            user_local_path = None
-            ref_local_path = None
-            
-            if user_audio_path.startswith("s3://") or user_audio_path.startswith("http"):
-                # Download from cloud
-                temp_dir = Path(tempfile.gettempdir())
-                user_local_path = temp_dir / f"user_{session_id}.wav"
-                cloud_storage.download_file(user_audio_path, user_local_path)
-                temp_files.append(user_local_path)
-            else:
-                user_local_path = Path(user_audio_path)
-            
-            if reference_audio_path.startswith("s3://") or reference_audio_path.startswith("http"):
-                # Download from cloud
-                temp_dir = Path(tempfile.gettempdir())
-                ref_local_path = temp_dir / f"ref_{session_id}.wav"
-                cloud_storage.download_file(reference_audio_path, ref_local_path)
-                temp_files.append(ref_local_path)
-            else:
-                ref_local_path = Path(reference_audio_path)
-            
-            # Perform scoring
-            result = calculate_similarity_score(
-                str(user_local_path),
-                str(ref_local_path)
-            )
-            
-            # Get session
-            from uuid import UUID
-            session_uuid = UUID(session_id) if isinstance(session_id, str) else session_id
-            session = db.query(UserSession).filter(UserSession.id == session_uuid).first()
-            
-            if not session:
-                raise ValueError(f"Session {session_id} not found")
-            
-            # Save analysis result
-            analysis = AnalysisResult(
-                user_session_id=session_uuid,
-                reference_id=reference_id,
-                score=result.get("score", 0.0),
-                segments=result.get("segments"),
-                pitch_data=result.get("pitch_data"),
-                regions=result.get("regions"),
-                ayat_timing=result.get("ayah_timing"),
-                feedback=result.get("feedback"),
-                score_breakdown=result.get("score_breakdown"),
-                pronunciation_alerts=result.get("pronunciation_alerts")
-            )
-            db.add(analysis)
+            job = db.query(ScoringJob).filter(ScoringJob.id == UUID(job_id)).first()
+            if not job:
+                raise ValueError(f"Scoring job {job_id} not found")
+            if job.status == "completed":
+                return {"status": "completed", "job_id": job_id}
+
+            staged_path = job.staging_path
+            job.status = "processing"
+            job.stage = "analysing"
+            job.started_at = job.started_at or datetime.utcnow()
+            job.error_message = None
             db.commit()
-            
-            # Save progress if student
-            if user_id:
-                try:
-                    user_uuid = UUID(user_id) if isinstance(user_id, str) else user_id
-                    user = db.query(User).filter(User.id == user_uuid).first()
-                    
-                    if user and user.role == UserRole.STUDENT:
-                        verse_scores = None
-                        if result.get("ayah_timing"):
-                            verse_scores = []
-                            for ayah in result.get("ayah_timing", []):
-                                verse_scores.append({
-                                    "start": ayah.get("start", 0),
-                                    "end": ayah.get("end", 0),
-                                    "score": 0.0,  # Will be calculated from segments
-                                    "text": ayah.get("text", "")
-                                })
-                        
-                        progress_service.save_progress(
-                            student_id=user_id,
-                            session_id=session_id,
-                            overall_score=result.get("score", 0.0),
-                            reference_id=reference_id,
-                            verse_scores=verse_scores,
-                            segments=result.get("segments"),
-                            db=db
-                        )
-                except Exception as progress_error:
-                    logger.error(f"Error saving progress (non-fatal): {progress_error}")
-            
-            logger.info(f"Completed audio scoring for session {session_id}")
-            
-            return {
-                "status": "completed",
-                "session_id": session_id,
-                "score": result.get("score", 0.0)
-            }
-            
-        except Exception as e:
-            logger.error(f"Error in async audio processing: {e}", exc_info=True)
-            # Retry on failure
-            raise self.retry(exc=e, countdown=60)  # Retry after 60 seconds
-            
+
+            if not staged_path or not cloud_storage.download_file(staged_path, local_path):
+                raise RuntimeError("The staged recording could not be downloaded")
+
+            user = db.query(User).filter(User.id == job.user_id).first()
+            if not user:
+                raise RuntimeError("The scoring job user no longer exists")
+
+            # Import lazily to avoid task_queue <-> main circular imports.
+            from main import score_performance
+
+            with local_path.open("rb") as audio_stream:
+                upload = UploadFile(
+                    file=audio_stream,
+                    filename=job.original_filename or "recitation.wav",
+                    headers=Headers({"content-type": job.content_type or "audio/wav"}),
+                )
+                result = asyncio.run(score_performance(
+                    user_audio=upload,
+                    reference_audio=None,
+                    reference_id=job.reference_id,
+                    client_session_id=job.client_session_id,
+                    recording_mode=job.recording_mode,
+                    scoring_version=job.scoring_version,
+                    recording_attempt=job.recording_attempt,
+                    current_user=user,
+                    db=db,
+                ))
+
+            encoded_result = jsonable_encoder(result)
+            if not encoded_result.get("session_id") or not encoded_result.get("analysis_result_id"):
+                raise RuntimeError(encoded_result.get("save_error") or "Scoring completed without a durable database result")
+
+            job.status = "completed"
+            job.stage = "completed"
+            job.result_json = encoded_result
+            job.completed_at = datetime.utcnow()
+            job.error_message = None
+            db.commit()
+            terminal = True
+            logger.info("Async scoring job completed job_id=%s session_id=%s", job_id, encoded_result.get("session_id"))
+            return {"status": "completed", "job_id": job_id, "session_id": encoded_result.get("session_id")}
+
+        except Exception as exc:
+            db.rollback()
+            logger.error("Async scoring job failed job_id=%s retry=%s: %s", job_id, self.request.retries, exc, exc_info=True)
+            job = db.query(ScoringJob).filter(ScoringJob.id == UUID(job_id)).first()
+            if job:
+                job.error_message = str(exc)[:2000]
+                if self.request.retries < self.max_retries:
+                    job.status = "queued"
+                    job.stage = "retrying"
+                else:
+                    job.status = "failed"
+                    job.stage = "failed"
+                    job.completed_at = datetime.utcnow()
+                    terminal = True
+                db.commit()
+            if self.request.retries < self.max_retries:
+                raise self.retry(exc=exc, countdown=15 * (self.request.retries + 1))
+            raise
+
         finally:
-            # Cleanup temp files
-            for temp_file in temp_files:
-                try:
-                    if temp_file and temp_file.exists():
-                        temp_file.unlink()
-                except Exception as e:
-                    logger.warning(f"Could not delete temp file {temp_file}: {e}")
-            
+            try:
+                if local_path.exists():
+                    local_path.unlink()
+            except Exception as cleanup_error:
+                logger.warning("Could not delete scoring job temp file %s: %s", local_path, cleanup_error)
+            if terminal and staged_path:
+                cloud_storage.delete_file(staged_path)
             db.close()
     
     @celery_app.task(name="cleanup_old_files")
@@ -222,7 +203,7 @@ if CELERY_AVAILABLE and celery_app:
 
 else:
     # Fallback functions when Celery is not available
-    def process_audio_scoring_async(*args, **kwargs):
+    def process_scoring_job_async(*args, **kwargs):
         """Fallback: raises error if Celery not available."""
         raise RuntimeError("Celery not available. Install with: pip install celery[redis]")
     

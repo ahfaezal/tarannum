@@ -2,7 +2,7 @@ import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useStat
 import { Link, useSearchParams } from "react-router-dom";
 import { CheckCircle2, Headphones, Maximize2, Mic2, RotateCcw, Send, ShieldCheck } from "lucide-react";
 import { getAvailableContent } from "../../services/platformService";
-import { analyzeRecitation, AssessmentRecordingSummary, extractReferencePitch, getRecordingSessionStatus, getScoringCapacity, restoreCompletedRecordingResult, ScoringCapacity } from "../../services/apiService";
+import { analyzeRecitation, AssessmentRecordingSummary, extractReferencePitch, getRecordingSessionStatus, getScoringCapacity, restoreCompletedRecordingResult, ScoringCapacity, ScoringJobProgress } from "../../services/apiService";
 import { PitchPoint } from "../../services/pitchExtractor";
 import { AnalysisResult, AyahTiming, PitchData } from "../../types";
 
@@ -86,6 +86,7 @@ const RecordingPage: React.FC = () => {
   const [scoringStage, setScoringStage] = useState<ScoringStage>("idle");
   const [scoringElapsed, setScoringElapsed] = useState(0);
   const [scoringCapacity, setScoringCapacity] = useState<ScoringCapacity | null>(null);
+  const [scoringJobProgress, setScoringJobProgress] = useState<ScoringJobProgress | null>(null);
   const [recordingAttempt, setRecordingAttempt] = useState(0);
   const [r1TechnicalError, setR1TechnicalError] = useState<string | null>(null);
   const [completedModes, setCompletedModes] = useState<Set<RecordingMode>>(getCompletedModes);
@@ -104,6 +105,7 @@ const RecordingPage: React.FC = () => {
     if (!submitting) return;
     const startedAt = Date.now();
     setScoringElapsed(0);
+    setScoringJobProgress(null);
     const timer = window.setInterval(() => {
       setScoringElapsed(Math.floor((Date.now() - startedAt) / 1000));
     }, 1000);
@@ -265,6 +267,7 @@ const RecordingPage: React.FC = () => {
     try {
       setSubmitting(true);
       setScoringStage("preparing");
+      setScoringJobProgress(null);
       setError(null);
       const analysis = await analyzeRecitation(audio, null, selected.title, selected.id, {
         clientSessionId: participantSessionId.current,
@@ -272,6 +275,7 @@ const RecordingPage: React.FC = () => {
         scoringVersion: "V2.3",
         recordingAttempt: Math.max(1, recordingAttemptRef.current),
         onProgress: setScoringStage,
+        onQueueUpdate: setScoringJobProgress,
       });
       setResult(analysis);
       setCompletedModes((completed) => new Set(completed).add(mode));
@@ -316,6 +320,7 @@ const RecordingPage: React.FC = () => {
     } finally {
       setSubmitting(false);
       setScoringStage("idle");
+      setScoringJobProgress(null);
     }
   };
 
@@ -503,7 +508,11 @@ const RecordingPage: React.FC = () => {
       </div>
       {submitting && scoringStage !== "idle" && <div className="mt-5 rounded-xl border border-blue-200 bg-blue-50 p-4" role="status" aria-live="polite">
         <div className="flex items-center justify-between gap-4 text-sm font-semibold text-blue-950">
-          <span>{scoringStageCopy[scoringStage]}…</span>
+          <span>{scoringJobProgress?.status === "queued"
+            ? `Queued for scoring${scoringJobProgress.queuePosition ? ` · Position ${scoringJobProgress.queuePosition}` : ""}`
+            : scoringJobProgress?.status === "processing"
+            ? "Scoring worker is analysing the recitation…"
+            : `${scoringStageCopy[scoringStage]}…`}</span>
           <span className="tabular-nums text-blue-700">{scoringElapsed}s</span>
         </div>
         <div className="mt-3 h-2 overflow-hidden rounded-full bg-blue-100">
@@ -520,7 +529,11 @@ const RecordingPage: React.FC = () => {
       {submitting
         ? <div className="mt-4" role="status" aria-live="polite">
             <div className="flex items-center justify-between gap-4 font-semibold text-blue-900">
-              <span>{scoringStage !== "idle" ? scoringStageCopy[scoringStage] : "Starting secure assessment"}…</span>
+              <span>{scoringJobProgress?.status === "queued"
+                ? `Queued for scoring${scoringJobProgress.queuePosition ? ` · Position ${scoringJobProgress.queuePosition}` : ""}`
+                : scoringJobProgress?.status === "processing"
+                ? "Scoring worker is analysing the baseline…"
+                : `${scoringStage !== "idle" ? scoringStageCopy[scoringStage] : "Starting secure assessment"}…`}</span>
               <span className="tabular-nums text-blue-700">{scoringElapsed}s</span>
             </div>
             <div className="mt-3 h-2 overflow-hidden rounded-full bg-blue-100">

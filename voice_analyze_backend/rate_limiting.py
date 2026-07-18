@@ -164,6 +164,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             "/api/references",
             "/api/platform/content/available",
             "/api/scoring/capacity",
+            "/api/scoring/jobs/",
             "/api/recording-sessions/",
         )
         is_safe_read = request.method in ("GET", "HEAD") and request.url.path.startswith(safe_read_prefixes)
