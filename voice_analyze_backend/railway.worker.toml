@@ -1,0 +1,5 @@
+[phases.setup]
+nixPkgs = ["python310", "ffmpeg"]
+
+[start]
+cmd = "celery -A task_queue.celery_app worker --loglevel=INFO --pool=threads --concurrency=2"
