@@ -106,7 +106,7 @@ def guess_audio_extension(upload: UploadFile, default_ext: str = ".mp3") -> str:
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-SCORING_CONCURRENCY = max(1, int(os.getenv("SCORING_CONCURRENCY", "2")))
+SCORING_CONCURRENCY = max(1, int(os.getenv("SCORING_CONCURRENCY", "3")))
 scoring_semaphore = asyncio.Semaphore(SCORING_CONCURRENCY)
 _scoring_active = 0
 _scoring_waiting = 0
@@ -427,9 +427,18 @@ def get_completed_recording_modes(
     for session, analysis in query.order_by(UserSession.created_at.asc()).all():
         completed[session.recording_mode] = {
             "session_id": str(session.id),
+            "analysis_result_id": str(analysis.id),
             "score": float(analysis.score),
             "attempt": session.recording_attempt or 1,
             "created_at": session.created_at.isoformat() if session.created_at else None,
+            "scoring_version": session.scoring_version,
+            "data_schema_version": session.data_schema_version,
+            "integrity_status": session.integrity_status,
+            "segments": analysis.segments or [],
+            "pitch_data": analysis.pitch_data,
+            "ayat_timing": analysis.ayat_timing or [],
+            "feedback": analysis.feedback,
+            "score_breakdown": analysis.score_breakdown,
         }
     return completed
 

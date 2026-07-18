@@ -1,4 +1,4 @@
-import { AnalysisResult, PitchDataResponse, PitchData, TrainingFeedback } from "../types";
+import { AnalysisResult, AyahTiming, PitchDataResponse, PitchData, TrainingFeedback } from "../types";
 import { getAuthHeader } from "./authService";
 
 // Helper function to convert AudioBuffer to WAV Blob
@@ -149,7 +149,7 @@ export const analyzeRecitation = async (
     // Include authentication header for authenticated users
     const headers: HeadersInit = {};
     const authHeader = getAuthHeader();
-    if (authHeader.Authorization) {
+    if ('Authorization' in authHeader && authHeader.Authorization) {
       headers['Authorization'] = authHeader.Authorization;
     }
 
@@ -368,13 +368,47 @@ export interface RecordingSessionStatus {
   reference_id?: string;
   completed_modes: Partial<Record<'R1' | 'R2' | 'R3', {
     session_id: string;
+    analysis_result_id: string;
     score: number;
     attempt: number;
     created_at?: string;
+    scoring_version?: string;
+    data_schema_version?: string;
+    integrity_status?: AnalysisResult['integrityStatus'];
+    segments?: AnalysisResult['segments'];
+    pitch_data?: PitchDataResponse;
+    ayat_timing?: AyahTiming[];
+    feedback?: AnalysisResult['feedback'];
+    score_breakdown?: AnalysisResult['scoreBreakdown'];
   }>>;
   next_mode: 'R1' | 'R2' | 'R3' | null;
   complete: boolean;
 }
+
+export const restoreCompletedRecordingResult = (
+  status: RecordingSessionStatus,
+  mode: 'R1' | 'R2' | 'R3',
+): AnalysisResult | null => {
+  const saved = status.completed_modes[mode];
+  if (!saved) return null;
+  return {
+    sessionId: saved.session_id,
+    analysisResultId: saved.analysis_result_id,
+    clientSessionId: status.client_session_id,
+    recordingMode: mode,
+    scoringVersion: saved.scoring_version || 'V2.3',
+    recordingAttempt: saved.attempt,
+    dataSchemaVersion: saved.data_schema_version,
+    integrityStatus: saved.integrity_status,
+    score: saved.score,
+    normalizedScore: saved.score,
+    feedback: saved.feedback || `Analysis complete. Score: ${saved.score}%`,
+    segments: saved.segments || [],
+    pitchData: saved.pitch_data,
+    ayatTiming: saved.ayat_timing || [],
+    scoreBreakdown: saved.score_breakdown,
+  };
+};
 
 export const getRecordingSessionStatus = async (
   clientSessionId: string,

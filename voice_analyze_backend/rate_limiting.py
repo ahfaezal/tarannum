@@ -128,6 +128,10 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         skip_paths = [
             "/health", 
             "/api/health", 
+            # CPU admission control already limits /score fairly. Applying the
+            # shared-IP burst limiter here rejects classroom submissions after
+            # they leave the queue, especially when many iPads use one Wi-Fi.
+            "/score",
             "/favicon.ico",
             "/docs",
             "/openapi.json",
