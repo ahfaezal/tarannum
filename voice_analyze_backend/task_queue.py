@@ -97,18 +97,42 @@ if CELERY_AVAILABLE and celery_app:
             from cloud_storage import cloud_storage as active_cloud_storage
             cloud_storage = active_cloud_storage
 
-            job = db.query(ScoringJob).filter(ScoringJob.id == UUID(job_id)).first()
+            parsed_job_id = UUID(job_id)
+            job = db.query(ScoringJob).filter(ScoringJob.id == parsed_job_id).first()
             if not job:
                 raise ValueError(f"Scoring job {job_id} not found")
-            if job.status == "completed":
-                return {"status": "completed", "job_id": job_id}
 
-            staged_path = job.staging_path
-            job.status = "processing"
-            job.stage = "analysing"
-            job.started_at = job.started_at or datetime.utcnow()
-            job.error_message = None
+            # Atomically claim the durable job. Celery delivery is at-least-once:
+            # retries, worker recovery, or duplicate broker messages can deliver
+            # the same job more than once. A read followed by an unconditional
+            # status update lets two worker threads score the same recording and
+            # create duplicate sessions. Only the task that changes queued to
+            # processing is allowed to continue.
+            claimed = db.query(ScoringJob).filter(
+                ScoringJob.id == parsed_job_id,
+                ScoringJob.status == "queued",
+            ).update({
+                ScoringJob.status: "processing",
+                ScoringJob.stage: "analysing",
+                ScoringJob.started_at: job.started_at or datetime.utcnow(),
+                ScoringJob.error_message: None,
+            }, synchronize_session=False)
             db.commit()
+            if not claimed:
+                db.expire_all()
+                current = db.query(ScoringJob).filter(ScoringJob.id == parsed_job_id).first()
+                current_status = current.status if current else "missing"
+                logger.warning(
+                    "Ignored duplicate scoring task job_id=%s status=%s task_id=%s",
+                    job_id,
+                    current_status,
+                    self.request.id,
+                )
+                return {"status": current_status, "job_id": job_id, "duplicate": True}
+
+            db.expire_all()
+            job = db.query(ScoringJob).filter(ScoringJob.id == parsed_job_id).first()
+            staged_path = job.staging_path
 
             if not staged_path or not cloud_storage.download_file(staged_path, local_path):
                 raise RuntimeError("The staged recording could not be downloaded")

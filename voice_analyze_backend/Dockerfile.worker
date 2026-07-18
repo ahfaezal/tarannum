@@ -3,7 +3,11 @@ FROM python:3.10-slim
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app \
-    PIP_NO_CACHE_DIR=1
+    PIP_NO_CACHE_DIR=1 \
+    OMP_NUM_THREADS=1 \
+    OPENBLAS_NUM_THREADS=1 \
+    MKL_NUM_THREADS=1 \
+    NUMEXPR_NUM_THREADS=1
 
 WORKDIR /app
 
@@ -23,4 +27,4 @@ RUN test -f /app/task_queue.py \
     && test -f /app/cloud_storage.py \
     && test -f /app/main.py
 
-CMD ["celery", "-A", "task_queue.celery_app", "worker", "--loglevel=INFO", "--pool=threads", "--concurrency=2"]
+CMD ["celery", "-A", "task_queue.celery_app", "worker", "--loglevel=INFO", "--pool=threads", "--concurrency=2", "--prefetch-multiplier=1"]
