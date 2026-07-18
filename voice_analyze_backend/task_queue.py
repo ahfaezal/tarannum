@@ -82,7 +82,7 @@ if CELERY_AVAILABLE and celery_app:
         from fastapi.encoders import jsonable_encoder
         from starlette.datastructures import Headers, UploadFile
 
-        from database import ScoringJob, SessionLocal, User
+        from database import AnalysisResult, ScoringJob, SessionLocal, User, UserSession
 
         db = SessionLocal()
         local_path = Path(tempfile.gettempdir()) / f"scoring_job_{job_id}.wav"
@@ -117,28 +117,80 @@ if CELERY_AVAILABLE and celery_app:
             if not user:
                 raise RuntimeError("The scoring job user no longer exists")
 
-            # Import lazily to avoid task_queue <-> main circular imports.
-            from main import score_performance
-
-            with local_path.open("rb") as audio_stream:
-                upload = UploadFile(
-                    file=audio_stream,
-                    filename=job.original_filename or "recitation.wav",
-                    headers=Headers({"content-type": job.content_type or "audio/wav"}),
+            # A worker may finish the legacy scoring pipeline and then restart
+            # before updating ScoringJob. Reconcile the already-durable result
+            # instead of calculating or inserting the same assessment twice.
+            existing = (
+                db.query(UserSession, AnalysisResult)
+                .join(AnalysisResult, AnalysisResult.user_session_id == UserSession.id)
+                .filter(
+                    UserSession.user_id == job.user_id,
+                    UserSession.client_session_id == job.client_session_id,
+                    UserSession.reference_id == job.reference_id,
+                    UserSession.recording_mode == job.recording_mode,
+                    UserSession.recording_attempt == job.recording_attempt,
                 )
-                result = asyncio.run(score_performance(
-                    user_audio=upload,
-                    reference_audio=None,
-                    reference_id=job.reference_id,
-                    client_session_id=job.client_session_id,
-                    recording_mode=job.recording_mode,
-                    scoring_version=job.scoring_version,
-                    recording_attempt=job.recording_attempt,
-                    current_user=user,
-                    db=db,
-                ))
+                .order_by(UserSession.created_at.desc())
+                .first()
+            )
 
-            encoded_result = jsonable_encoder(result)
+            if existing:
+                existing_session, existing_analysis = existing
+                encoded_result = {
+                    "score": existing_analysis.score,
+                    "segments": existing_analysis.segments or [],
+                    "pitchData": existing_analysis.pitch_data,
+                    "regions": existing_analysis.regions,
+                    "ayat_timing": existing_analysis.ayat_timing or [],
+                    "feedback": existing_analysis.feedback,
+                    "score_breakdown": existing_analysis.score_breakdown,
+                    "pronunciation_alerts": existing_analysis.pronunciation_alerts,
+                    "session_id": str(existing_session.id),
+                    "analysis_result_id": str(existing_analysis.id),
+                    "client_session_id": job.client_session_id,
+                    "recording_mode": job.recording_mode,
+                    "scoring_version": job.scoring_version,
+                    "recording_attempt": job.recording_attempt,
+                    "data_schema_version": existing_session.data_schema_version,
+                    "integrity_status": existing_session.integrity_status,
+                }
+                logger.warning(
+                    "Reconciled scoring job with existing durable result job_id=%s session_id=%s",
+                    job_id, existing_session.id,
+                )
+            else:
+                encoded_result = None
+
+            # Import lazily to avoid task_queue <-> main circular imports.
+            if encoded_result is None:
+                from main import score_performance
+
+                with local_path.open("rb") as audio_stream:
+                    upload = UploadFile(
+                        file=audio_stream,
+                        filename=job.original_filename or "recitation.wav",
+                        headers=Headers({"content-type": job.content_type or "audio/wav"}),
+                    )
+                    result = asyncio.run(score_performance(
+                        user_audio=upload,
+                        reference_audio=None,
+                        reference_id=job.reference_id,
+                        client_session_id=job.client_session_id,
+                        recording_mode=job.recording_mode,
+                        scoring_version=job.scoring_version,
+                        recording_attempt=job.recording_attempt,
+                        current_user=user,
+                        db=db,
+                    ))
+
+                # score_performance is an HTTP endpoint and returns a
+                # JSONResponse. jsonable_encoder(JSONResponse) serializes the
+                # response object, not its JSON body.
+                if hasattr(result, "body"):
+                    import json
+                    encoded_result = json.loads(result.body.decode("utf-8"))
+                else:
+                    encoded_result = jsonable_encoder(result)
             if not encoded_result.get("session_id") or not encoded_result.get("analysis_result_id"):
                 raise RuntimeError(encoded_result.get("save_error") or "Scoring completed without a durable database result")
 
