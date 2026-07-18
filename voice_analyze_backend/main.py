@@ -660,7 +660,7 @@ def get_scoring_capacity(db: Session = Depends(get_db)):
     return {
         "active": active,
         "waiting": waiting,
-        "limit": max(1, int(os.getenv("SCORING_WORKER_CONCURRENCY", "3"))),
+        "limit": max(1, int(os.getenv("SCORING_WORKER_CONCURRENCY", "2"))),
         "mode": "asynchronous" if CELERY_AVAILABLE else "synchronous",
     }
 
