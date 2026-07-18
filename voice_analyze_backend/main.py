@@ -106,7 +106,7 @@ def guess_audio_extension(upload: UploadFile, default_ext: str = ".mp3") -> str:
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-SCORING_CONCURRENCY = max(1, int(os.getenv("SCORING_CONCURRENCY", "3")))
+SCORING_CONCURRENCY = max(1, int(os.getenv("SCORING_CONCURRENCY", "2")))
 scoring_semaphore = asyncio.Semaphore(SCORING_CONCURRENCY)
 _scoring_active = 0
 _scoring_waiting = 0
@@ -441,6 +441,64 @@ def get_completed_recording_modes(
             "score_breakdown": analysis.score_breakdown,
         }
     return completed
+
+
+def get_recording_assessment_summary(
+    db: Session,
+    user_id: str,
+    client_session_id: str,
+    reference_id: Optional[str] = None,
+) -> dict:
+    """Return the professional Baseline/Progress view without rewriting legacy data.
+
+    R1 remains the single baseline capture. Existing R2 and R3 rows are both
+    treated as progress attempts, while new clients submit progress as R2.
+    The median is an observed attempt (nearest middle score), not a synthetic
+    average, so its original audio and score remain auditable.
+    """
+    query = (
+        db.query(UserSession, AnalysisResult)
+        .join(AnalysisResult, AnalysisResult.user_session_id == UserSession.id)
+        .filter(
+            UserSession.user_id == uuid.UUID(user_id),
+            UserSession.client_session_id == client_session_id,
+            UserSession.recording_mode.in_(["R1", "R2", "R3"]),
+        )
+    )
+    if reference_id:
+        query = query.filter(UserSession.reference_id == reference_id)
+
+    def serialize(session: UserSession, analysis: AnalysisResult) -> dict:
+        return {
+            "session_id": str(session.id),
+            "analysis_result_id": str(analysis.id),
+            "recording_mode": session.recording_mode,
+            "score": float(analysis.score),
+            "attempt": session.recording_attempt or 1,
+            "created_at": session.created_at.isoformat() if session.created_at else None,
+            "scoring_version": session.scoring_version,
+            "integrity_status": session.integrity_status,
+        }
+
+    baseline = None
+    progress = []
+    for session, analysis in query.order_by(UserSession.created_at.asc()).all():
+        item = serialize(session, analysis)
+        if session.recording_mode == "R1" and baseline is None:
+            baseline = item
+        elif session.recording_mode in {"R2", "R3"}:
+            progress.append(item)
+
+    ranked_progress = sorted(progress, key=lambda item: (item["score"], item["created_at"] or ""))
+    median_progress = ranked_progress[(len(ranked_progress) - 1) // 2] if ranked_progress else None
+    best_progress = max(progress, key=lambda item: item["score"]) if progress else None
+    return {
+        "baseline": baseline,
+        "progress_attempts": progress,
+        "progress_count": len(progress),
+        "median_progress": median_progress,
+        "best_progress": best_progress,
+    }
 
 
 @app.get("/api/scoring/capacity")
@@ -2673,12 +2731,19 @@ def get_recording_session_status(
         client_session_id,
         reference_id,
     )
+    assessment = get_recording_assessment_summary(
+        db,
+        str(current_user.id),
+        client_session_id,
+        reference_id,
+    )
     return {
         "client_session_id": client_session_id,
         "reference_id": reference_id,
         "completed_modes": completed,
-        "next_mode": "R1" if "R1" not in completed else "R2" if "R2" not in completed else "R3" if "R3" not in completed else None,
-        "complete": all(mode in completed for mode in ("R1", "R2", "R3")),
+        "assessment": assessment,
+        "next_mode": "R1" if assessment["baseline"] is None else "R2",
+        "complete": assessment["baseline"] is not None,
     }
 
 @app.get("/api/sessions/{session_id}")

@@ -2,7 +2,7 @@ import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useStat
 import { Link, useSearchParams } from "react-router-dom";
 import { CheckCircle2, Headphones, Maximize2, Mic2, RotateCcw, Send, ShieldCheck } from "lucide-react";
 import { getAvailableContent } from "../../services/platformService";
-import { analyzeRecitation, extractReferencePitch, getRecordingSessionStatus, getScoringCapacity, restoreCompletedRecordingResult, ScoringCapacity } from "../../services/apiService";
+import { analyzeRecitation, AssessmentRecordingSummary, extractReferencePitch, getRecordingSessionStatus, getScoringCapacity, restoreCompletedRecordingResult, ScoringCapacity } from "../../services/apiService";
 import { PitchPoint } from "../../services/pitchExtractor";
 import { AnalysisResult, AyahTiming, PitchData } from "../../types";
 
@@ -11,7 +11,7 @@ const LivePitchGraph = lazy(() => import("../../components/LivePitchGraph"));
 const Countdown = lazy(() => import("../../components/Countdown"));
 const RecordingFullScreenMode = lazy(() => import("../../components/RecordingFullScreenMode"));
 const AssessmentInfographic = lazy(() => import("../../components/AssessmentInfographic"));
-type RecordingMode = "R1" | "R2" | "R3";
+type RecordingMode = "R1" | "R2";
 type ScoringStage = "idle" | "preparing" | "processing" | "finalizing";
 type ReferenceOption = {
   id: string;
@@ -22,9 +22,15 @@ type ReferenceOption = {
 };
 
 const modeDescription: Record<RecordingMode, string> = {
-  R1: "Baseline before training",
-  R2: "Post-training assessment",
-  R3: "Repeat assessment for consistency",
+  R1: "Baseline assessment before training",
+  R2: "Progress recording after training",
+};
+
+type AssessmentJourney = {
+  baseline: AssessmentRecordingSummary | null;
+  progressCount: number;
+  medianProgress: AssessmentRecordingSummary | null;
+  bestProgress: AssessmentRecordingSummary | null;
 };
 
 const scoringStageCopy: Record<Exclude<ScoringStage, "idle">, string> = {
@@ -44,7 +50,7 @@ const getParticipantSessionId = () => {
 const getCompletedModes = (): Set<RecordingMode> => {
   try {
     const stored = JSON.parse(sessionStorage.getItem("tarannum_completed_recording_modes") || "[]");
-    return new Set(stored.filter((mode: string) => mode === "R1" || mode === "R2" || mode === "R3"));
+    return new Set(stored.filter((mode: string) => mode === "R1" || mode === "R2"));
   } catch {
     return new Set();
   }
@@ -59,7 +65,7 @@ const RecordingPage: React.FC = () => {
   const recordingPitchCountRef = useRef(0);
   const [references, setReferences] = useState<ReferenceOption[]>([]);
   const [referenceId, setReferenceId] = useState(params.get("reference") || "");
-  const [mode, setMode] = useState<RecordingMode>(initialMode === "R2" || initialMode === "R3" ? initialMode : "R1");
+  const [mode, setMode] = useState<RecordingMode>(initialMode === "R2" ? "R2" : "R1");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isRecording, setIsRecording] = useState(false);
@@ -83,6 +89,12 @@ const RecordingPage: React.FC = () => {
   const [recordingAttempt, setRecordingAttempt] = useState(0);
   const [r1TechnicalError, setR1TechnicalError] = useState<string | null>(null);
   const [completedModes, setCompletedModes] = useState<Set<RecordingMode>>(getCompletedModes);
+  const [assessmentJourney, setAssessmentJourney] = useState<AssessmentJourney>({
+    baseline: null,
+    progressCount: 0,
+    medianProgress: null,
+    bestProgress: null,
+  });
 
   useEffect(() => {
     sessionStorage.setItem("tarannum_completed_recording_modes", JSON.stringify([...completedModes]));
@@ -110,7 +122,7 @@ const RecordingPage: React.FC = () => {
         .catch(() => { /* The score request remains authoritative. */ });
     };
     refresh();
-    const timer = window.setInterval(refresh, 2500);
+    const timer = window.setInterval(refresh, 4000);
     return () => {
       active = false;
       window.clearInterval(timer);
@@ -123,9 +135,18 @@ const RecordingPage: React.FC = () => {
     getRecordingSessionStatus(participantSessionId.current, referenceId)
       .then((status) => {
         if (!active) return;
-        const restored = new Set(Object.keys(status.completed_modes) as RecordingMode[]);
+        const restored = new Set<RecordingMode>();
+        if (status.assessment?.baseline || status.completed_modes.R1) restored.add("R1");
+        if ((status.assessment?.progress_count || 0) > 0 || status.completed_modes.R2 || status.completed_modes.R3) restored.add("R2");
         setCompletedModes(restored);
-        if (status.next_mode) setMode(status.next_mode);
+        setAssessmentJourney({
+          baseline: status.assessment?.baseline || null,
+          progressCount: status.assessment?.progress_count || 0,
+          medianProgress: status.assessment?.median_progress || null,
+          bestProgress: status.assessment?.best_progress || null,
+        });
+        recordingAttemptRef.current = restored.has("R1") ? (status.assessment?.progress_count || 0) : 0;
+        setMode(restored.has("R1") ? "R2" : "R1");
       })
       .catch((statusError) => {
         if (active) console.warn("Recording session status could not be restored", statusError);
@@ -254,6 +275,17 @@ const RecordingPage: React.FC = () => {
       });
       setResult(analysis);
       setCompletedModes((completed) => new Set(completed).add(mode));
+      try {
+        const status = await getRecordingSessionStatus(participantSessionId.current, selected.id);
+        setAssessmentJourney({
+          baseline: status.assessment?.baseline || null,
+          progressCount: status.assessment?.progress_count || 0,
+          medianProgress: status.assessment?.median_progress || null,
+          bestProgress: status.assessment?.best_progress || null,
+        });
+      } catch (statusError) {
+        console.warn("Assessment journey could not be refreshed", statusError);
+      }
     } catch (submitError: any) {
       // A mobile connection can lose the HTTP response after the backend has
       // already saved the score. Reconcile first so Retry never duplicates R1.
@@ -264,6 +296,12 @@ const RecordingPage: React.FC = () => {
           if (restored) {
             setResult(restored);
             setCompletedModes((completed) => new Set(completed).add(mode));
+            setAssessmentJourney({
+              baseline: status.assessment?.baseline || null,
+              progressCount: status.assessment?.progress_count || 0,
+              medianProgress: status.assessment?.median_progress || null,
+              bestProgress: status.assessment?.best_progress || null,
+            });
             setError(null);
             return;
           }
@@ -307,6 +345,20 @@ const RecordingPage: React.FC = () => {
     }
   };
 
+  const startNewAssessment = () => {
+    if (!window.confirm("Start a new assessment? The current results will remain stored in your history.")) return;
+    const newSessionId = crypto.randomUUID();
+    participantSessionId.current = newSessionId;
+    sessionStorage.setItem("tarannum_recording_session_id", newSessionId);
+    sessionStorage.removeItem("tarannum_completed_recording_modes");
+    recordingAttemptRef.current = 0;
+    setRecordingAttempt(0);
+    setCompletedModes(new Set());
+    setAssessmentJourney({ baseline: null, progressCount: 0, medianProgress: null, bestProgress: null });
+    setMode("R1");
+    reset();
+  };
+
   return <section className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
     <p className="font-semibold text-emerald-700">RECORDING & ASSESSMENT</p>
     <h1 className="mt-3 text-3xl font-bold">Record only when you are fully prepared.</h1>
@@ -316,26 +368,43 @@ const RecordingPage: React.FC = () => {
       <h2 className="text-xl font-bold">1. Recording Setup</h2>
       <div className="mt-5 grid gap-4 md:grid-cols-2">
         <label className="text-sm font-semibold">Reference Audio
-          <select disabled={loading || isRecording} value={referenceId} onChange={(event) => { setReferenceId(event.target.value); recordingAttemptRef.current = 0; setRecordingAttempt(0); setCompletedModes(new Set()); reset(); }} className="mt-2 w-full rounded-xl border border-slate-300 bg-white p-3 font-normal">
+          <select disabled={loading || isRecording} value={referenceId} onChange={(event) => {
+            setReferenceId(event.target.value);
+            recordingAttemptRef.current = 0;
+            setRecordingAttempt(0);
+            setCompletedModes(new Set());
+            setAssessmentJourney({ baseline: null, progressCount: 0, medianProgress: null, bestProgress: null });
+            reset();
+          }} className="mt-2 w-full rounded-xl border border-slate-300 bg-white p-3 font-normal">
             <option value="">{loading ? "Loading…" : "Select a reference"}</option>
             {references.map((reference) => <option key={reference.id} value={reference.id}>{reference.title}</option>)}
           </select>
         </label>
         <fieldset>
           <legend className="text-sm font-semibold">Recording Session</legend>
-          <div className="mt-2 grid grid-cols-3 gap-2">
-            {(["R1", "R2", "R3"] as RecordingMode[]).map((value) => {
-              const locked = value === "R2" ? !completedModes.has("R1") : value === "R3" ? !completedModes.has("R2") : false;
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            {(["R1", "R2"] as RecordingMode[]).map((value) => {
+              const locked = value === "R2" && !completedModes.has("R1");
               const done = completedModes.has(value);
               return <button
               key={value}
               type="button"
               disabled={isRecording || locked}
               aria-pressed={mode === value}
-              onClick={() => { setMode(value); recordingAttemptRef.current = 0; setRecordingAttempt(0); reset(); }}
+              onClick={() => {
+                setMode(value);
+                recordingAttemptRef.current = value === "R2" ? assessmentJourney.progressCount : 0;
+                setRecordingAttempt(recordingAttemptRef.current);
+                reset();
+              }}
               className={`inline-flex items-center justify-center gap-2 rounded-xl border p-3 font-bold disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 ${mode === value ? "border-emerald-600 bg-emerald-50 text-emerald-700" : "border-slate-300"}`}
-            >{done && <CheckCircle2 size={17}/>} {value}</button>})}
+            >{done && <CheckCircle2 size={17}/>} {value === "R1" ? "Baseline" : "Progress"}</button>})}
           </div>
+          <p className="mt-2 text-xs text-slate-500">
+            {completedModes.has("R1")
+              ? `${assessmentJourney.progressCount} progress recording${assessmentJourney.progressCount === 1 ? "" : "s"} completed`
+              : "Complete the baseline once to unlock progress recordings"}
+          </p>
         </fieldset>
       </div>
       <div className="mt-5 grid gap-3 text-sm text-slate-600 sm:grid-cols-3">
@@ -344,10 +413,13 @@ const RecordingPage: React.FC = () => {
         <span className="flex items-center gap-2"><ShieldCheck size={18}/> Quiet recording space</span>
       </div>
       <p className="mt-4 text-xs text-slate-400">Active training session · Technical ID stored automatically</p>
+      {completedModes.has("R1") && <button type="button" onClick={startNewAssessment} disabled={isRecording || submitting} className="mt-4 inline-flex items-center gap-2 rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+        <RotateCcw size={16}/> Start New Assessment
+      </button>}
     </div>
 
     <div className="mt-6 rounded-2xl border bg-white p-6">
-      <h2 className="text-xl font-bold">2. Record Recitation — {mode}</h2>
+      <h2 className="text-xl font-bold">2. Record Recitation — {mode === "R1" ? "Baseline" : "Progress"}</h2>
       <p className="mt-2 text-sm text-slate-600">{modeDescription[mode]}</p>
       {error && <div className="mt-4 rounded-xl bg-red-50 p-4 text-sm text-red-800">{error}</div>}
       {!referenceId
@@ -443,7 +515,7 @@ const RecordingPage: React.FC = () => {
     </div>}
 
     {blob && mode === "R1" && !result && <div className="mt-6 rounded-2xl border border-blue-200 bg-blue-50 p-6">
-      <h2 className="text-xl font-bold text-blue-950">R1 — Automatic Submission</h2>
+      <h2 className="text-xl font-bold text-blue-950">Baseline — Automatic Submission</h2>
       <p className="mt-2 text-sm text-blue-900">The original recording is not played back, preserving baseline integrity.</p>
       {submitting
         ? <div className="mt-4" role="status" aria-live="polite">
@@ -495,13 +567,22 @@ const RecordingPage: React.FC = () => {
       </div>}
       <dl className="mt-5 grid gap-2 text-sm text-slate-600 sm:grid-cols-2">
         <div><dt className="font-semibold">Recording ID</dt><dd className="break-all">{result.sessionId || "—"}</dd></div>
-        <div><dt className="font-semibold">Metadata</dt><dd>{result.recordingMode || mode} · {result.scoringVersion || "V2.3"} · Attempt {result.recordingAttempt || recordingAttempt}</dd></div>
+        <div><dt className="font-semibold">Metadata</dt><dd>{(result.recordingMode || mode) === "R1" ? "Baseline" : "Progress"} · {result.scoringVersion || "V2.3"} · Attempt {result.recordingAttempt || recordingAttempt}</dd></div>
       </dl>
       {result.integrityStatus === "complete"
         ? <p className="mt-4 text-sm font-medium text-emerald-800">Data integrity verified: database, audio and score data are complete.</p>
         : result.integrityStatus
         ? <p className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm font-medium text-amber-900">The score is available, but secure data storage requires attention. Status: {result.integrityStatus}.</p>
         : null}
+      {assessmentJourney.baseline && <div className="mt-5 rounded-xl border border-emerald-200 bg-white p-4">
+        <h3 className="font-bold text-slate-900">Assessment Journey</h3>
+        <div className="mt-3 grid gap-3 text-sm sm:grid-cols-3">
+          <div><p className="text-slate-500">Baseline</p><p className="text-xl font-bold">{Math.round(assessmentJourney.baseline.score)}%</p></div>
+          <div><p className="text-slate-500">Median Progress</p><p className="text-xl font-bold">{assessmentJourney.medianProgress ? `${Math.round(assessmentJourney.medianProgress.score)}%` : "Not available"}</p></div>
+          <div><p className="text-slate-500">Best Progress</p><p className="text-xl font-bold">{assessmentJourney.bestProgress ? `${Math.round(assessmentJourney.bestProgress.score)}%` : "Not available"}</p></div>
+        </div>
+        <p className="mt-2 text-xs text-slate-500">All {assessmentJourney.progressCount} progress attempts remain securely stored. Median and best are selected from actual recordings.</p>
+      </div>}
     </div>}
 
     <Link to={`/training${referenceId ? `?reference=${encodeURIComponent(referenceId)}` : ""}`} className="mt-8 inline-block font-semibold text-emerald-700">← Back to Training</Link>

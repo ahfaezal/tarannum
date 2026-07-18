@@ -363,6 +363,17 @@ export const analyzeRecitation = async (
   }
 };
 
+export interface AssessmentRecordingSummary {
+  session_id: string;
+  analysis_result_id: string;
+  recording_mode: 'R1' | 'R2' | 'R3';
+  score: number;
+  attempt: number;
+  created_at?: string;
+  scoring_version?: string;
+  integrity_status?: AnalysisResult['integrityStatus'];
+}
+
 export interface RecordingSessionStatus {
   client_session_id: string;
   reference_id?: string;
@@ -381,7 +392,14 @@ export interface RecordingSessionStatus {
     feedback?: AnalysisResult['feedback'];
     score_breakdown?: AnalysisResult['scoreBreakdown'];
   }>>;
-  next_mode: 'R1' | 'R2' | 'R3' | null;
+  assessment?: {
+    baseline: AssessmentRecordingSummary | null;
+    progress_attempts: AssessmentRecordingSummary[];
+    progress_count: number;
+    median_progress: AssessmentRecordingSummary | null;
+    best_progress: AssessmentRecordingSummary | null;
+  };
+  next_mode: 'R1' | 'R2' | null;
   complete: boolean;
 }
 
