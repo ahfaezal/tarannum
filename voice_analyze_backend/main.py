@@ -2,6 +2,7 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException, Form, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
+from starlette.concurrency import run_in_threadpool
 import json
 import asyncio
 from contextlib import asynccontextmanager
@@ -506,7 +507,7 @@ def get_recording_assessment_summary(
 
 
 @app.get("/api/scoring/capacity")
-async def get_scoring_capacity(db: Session = Depends(get_db)):
+def get_scoring_capacity(db: Session = Depends(get_db)):
     """Return non-sensitive live queue pressure for the recording UI."""
     active = db.query(ScoringJob).filter(ScoringJob.status == "processing").count()
     waiting = db.query(ScoringJob).filter(ScoringJob.status == "queued").count()
@@ -602,11 +603,15 @@ async def create_scoring_job(
         if size < 1000:
             raise HTTPException(status_code=400, detail="Recording is empty or too small")
 
-        job.staging_path = cloud_storage.upload_file(local_path, staging_key)
+        # S3 and Redis clients are synchronous. Running them directly inside
+        # this async route blocks every other iPad request on the event loop.
+        job.staging_path = await run_in_threadpool(
+            cloud_storage.upload_file, local_path, staging_key
+        )
         job.stage = "queued"
         db.commit()
 
-        task = process_scoring_job_async.delay(str(job.id))
+        task = await run_in_threadpool(process_scoring_job_async.delay, str(job.id))
         job.celery_task_id = task.id
         db.commit()
         logger.info("Async scoring job queued job_id=%s task_id=%s", job.id, task.id)

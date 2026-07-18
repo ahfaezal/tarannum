@@ -113,23 +113,18 @@ const RecordingPage: React.FC = () => {
   }, [submitting]);
 
   useEffect(() => {
-    if (!submitting) {
+    if (!submitting || !scoringJobProgress?.jobId) {
       setScoringCapacity(null);
       return;
     }
     let active = true;
-    const refresh = () => {
-      getScoringCapacity()
-        .then((capacity) => { if (active) setScoringCapacity(capacity); })
-        .catch(() => { /* The score request remains authoritative. */ });
-    };
-    refresh();
-    const timer = window.setInterval(refresh, 4000);
+    getScoringCapacity()
+      .then((capacity) => { if (active) setScoringCapacity(capacity); })
+      .catch(() => { /* The score request remains authoritative. */ });
     return () => {
       active = false;
-      window.clearInterval(timer);
     };
-  }, [submitting]);
+  }, [submitting, scoringJobProgress?.jobId]);
 
   useEffect(() => {
     let active = true;
