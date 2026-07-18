@@ -154,6 +154,69 @@ except Exception as e:
 # Global Vosk model (loaded once at startup for Railway memory efficiency)
 vosk_model = None
 
+
+def recover_stale_queued_scoring_jobs() -> int:
+    """Re-dispatch durable scoring jobs abandoned by a failed worker deploy."""
+    if not CELERY_AVAILABLE or process_scoring_job_async is None:
+        logger.warning("Skipping stale scoring recovery because Celery is unavailable")
+        return 0
+
+    from database import SessionLocal
+
+    db = SessionLocal()
+    recovered = 0
+    try:
+        cutoff = datetime.utcnow() - timedelta(
+            seconds=max(60, int(os.getenv("SCORING_REQUEUE_AFTER_SECONDS", "90")))
+        )
+        stale_job_ids = [
+            row[0]
+            for row in db.query(ScoringJob.id).filter(
+                ScoringJob.status == "queued",
+                ScoringJob.queued_at < cutoff,
+            ).order_by(ScoringJob.queued_at.asc()).all()
+        ]
+        for job_id in stale_job_ids:
+            leased = db.query(ScoringJob).filter(
+                ScoringJob.id == job_id,
+                ScoringJob.status == "queued",
+                ScoringJob.queued_at < cutoff,
+            ).update({
+                ScoringJob.queued_at: datetime.utcnow(),
+                ScoringJob.stage: "requeueing",
+            }, synchronize_session=False)
+            db.commit()
+            if not leased:
+                continue
+            try:
+                task = process_scoring_job_async.delay(str(job_id))
+                db.query(ScoringJob).filter(ScoringJob.id == job_id).update({
+                    ScoringJob.celery_task_id: task.id,
+                    ScoringJob.stage: "queued",
+                }, synchronize_session=False)
+                db.commit()
+                recovered += 1
+                logger.warning(
+                    "Startup recovered stale scoring job job_id=%s task_id=%s",
+                    job_id, task.id,
+                )
+            except Exception as dispatch_error:
+                db.query(ScoringJob).filter(ScoringJob.id == job_id).update({
+                    ScoringJob.status: "failed",
+                    ScoringJob.stage: "failed",
+                    ScoringJob.error_message: str(dispatch_error)[:2000],
+                    ScoringJob.completed_at: datetime.utcnow(),
+                }, synchronize_session=False)
+                db.commit()
+                logger.error(
+                    "Startup could not recover scoring job job_id=%s: %s",
+                    job_id, dispatch_error,
+                    exc_info=True,
+                )
+    finally:
+        db.close()
+    return recovered
+
 # Lifespan event handler (replaces deprecated @app.on_event)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -172,6 +235,9 @@ async def lifespan(app: FastAPI):
             logger.info("✓ Database connection successful")
         else:
             logger.warning("⚠ Database connection check failed, but continuing...")
+        recovered_jobs = await run_in_threadpool(recover_stale_queued_scoring_jobs)
+        if recovered_jobs:
+            logger.warning("Startup re-dispatched %s stale scoring job(s)", recovered_jobs)
     except Exception as e:
         logger.error(f"Database initialization error: {e}", exc_info=True)
         logger.warning("Continuing without database (will use file-based storage)")
