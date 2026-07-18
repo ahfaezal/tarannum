@@ -166,6 +166,59 @@ def recover_stale_queued_scoring_jobs() -> int:
     db = SessionLocal()
     recovered = 0
     try:
+        # The legacy scoring endpoint may have committed UserSession and
+        # AnalysisResult before a worker restart. Reconcile that durable pair
+        # first so the same recording is never calculated or inserted twice.
+        unfinished_jobs = db.query(ScoringJob).filter(
+            ScoringJob.status.in_(["queued", "processing", "failed"]),
+            ScoringJob.queued_at >= datetime.utcnow() - timedelta(days=1),
+        ).all()
+        for unfinished_job in unfinished_jobs:
+            existing = (
+                db.query(UserSession, AnalysisResult)
+                .join(AnalysisResult, AnalysisResult.user_session_id == UserSession.id)
+                .filter(
+                    UserSession.user_id == unfinished_job.user_id,
+                    UserSession.client_session_id == unfinished_job.client_session_id,
+                    UserSession.reference_id == unfinished_job.reference_id,
+                    UserSession.recording_mode == unfinished_job.recording_mode,
+                    UserSession.recording_attempt == unfinished_job.recording_attempt,
+                )
+                .order_by(UserSession.created_at.desc())
+                .first()
+            )
+            if not existing:
+                continue
+            existing_session, existing_analysis = existing
+            unfinished_job.status = "completed"
+            unfinished_job.stage = "completed"
+            unfinished_job.completed_at = datetime.utcnow()
+            unfinished_job.error_message = None
+            unfinished_job.result_json = {
+                "score": existing_analysis.score,
+                "segments": existing_analysis.segments or [],
+                "pitchData": existing_analysis.pitch_data,
+                "regions": existing_analysis.regions,
+                "ayat_timing": existing_analysis.ayat_timing or [],
+                "feedback": existing_analysis.feedback,
+                "score_breakdown": existing_analysis.score_breakdown,
+                "pronunciation_alerts": existing_analysis.pronunciation_alerts,
+                "session_id": str(existing_session.id),
+                "analysis_result_id": str(existing_analysis.id),
+                "client_session_id": unfinished_job.client_session_id,
+                "recording_mode": unfinished_job.recording_mode,
+                "scoring_version": unfinished_job.scoring_version,
+                "recording_attempt": unfinished_job.recording_attempt,
+                "data_schema_version": existing_session.data_schema_version,
+                "integrity_status": existing_session.integrity_status,
+            }
+            recovered += 1
+            logger.warning(
+                "Startup reconciled scoring job job_id=%s session_id=%s",
+                unfinished_job.id, existing_session.id,
+            )
+        db.commit()
+
         cutoff = datetime.utcnow() - timedelta(
             seconds=max(60, int(os.getenv("SCORING_REQUEUE_AFTER_SECONDS", "90")))
         )
