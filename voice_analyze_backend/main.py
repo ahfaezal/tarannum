@@ -522,6 +522,33 @@ REFERENCE_AUDIO_CACHE_DIR.mkdir(exist_ok=True)
 _reference_audio_cache_locks: dict[str, threading.Lock] = {}
 _reference_audio_cache_locks_guard = threading.Lock()
 
+
+def get_cached_reference_audio(ref_record) -> Path:
+    """Return a process-local durable copy of an S3 reference audio file."""
+    extension = Path(ref_record.filename).suffix if ref_record.filename else ".mp3"
+    cache_version = (
+        f"{int(ref_record.file_size or 0)}_"
+        f"{int(ref_record.upload_date.timestamp()) if ref_record.upload_date else 0}"
+    )
+    cached_path = REFERENCE_AUDIO_CACHE_DIR / f"{ref_record.id}_{cache_version}{extension}"
+    with _reference_audio_cache_locks_guard:
+        cache_lock = _reference_audio_cache_locks.setdefault(str(ref_record.id), threading.Lock())
+    with cache_lock:
+        if cached_path.exists() and cached_path.stat().st_size > 0:
+            logger.info("Scoring reference cache hit reference_id=%s", ref_record.id)
+            return cached_path
+        partial_path = cached_path.with_suffix(f"{cached_path.suffix}.{uuid.uuid4().hex}.part")
+        try:
+            if not cloud_storage.download_file(ref_record.cloud_storage_path, partial_path):
+                raise RuntimeError(f"Could not download reference from S3: {ref_record.id}")
+            if not partial_path.exists() or partial_path.stat().st_size <= 0:
+                raise RuntimeError(f"Downloaded reference is empty: {ref_record.id}")
+            partial_path.replace(cached_path)
+            logger.info("Scoring reference cached reference_id=%s", ref_record.id)
+            return cached_path
+        finally:
+            partial_path.unlink(missing_ok=True)
+
 # Create uploads directory for permanent storage (optional)
 UPLOADS_DIR = BASE_DIR / "uploads"
 UPLOADS_DIR.mkdir(exist_ok=True)
@@ -633,7 +660,7 @@ def get_scoring_capacity(db: Session = Depends(get_db)):
     return {
         "active": active,
         "waiting": waiting,
-        "limit": max(1, int(os.getenv("SCORING_WORKER_CONCURRENCY", "2"))),
+        "limit": max(1, int(os.getenv("SCORING_WORKER_CONCURRENCY", "3"))),
         "mode": "asynchronous" if CELERY_AVAILABLE else "synchronous",
     }
 
@@ -1015,8 +1042,10 @@ async def score_performance(
                             detail=f"Reference file not found in S3. Path: {ref_record.cloud_storage_path}"
                         )
 
-                    # Download from S3
-                    success = cloud_storage.download_file(ref_record.cloud_storage_path, temp_audio_path)
+                    # Download once per worker process and reuse the immutable
+                    # reference for every concurrent scoring job.
+                    temp_audio_path = get_cached_reference_audio(ref_record)
+                    success = temp_audio_path.exists() and temp_audio_path.stat().st_size > 0
                     if success and temp_audio_path.exists():
                         ref_path = temp_audio_path
                         logger.info(f"✓ Downloaded S3 file to: {ref_path}")

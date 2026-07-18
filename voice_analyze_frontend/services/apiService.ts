@@ -104,6 +104,7 @@ export const analyzeRecitation = async (
   }
 ): Promise<AnalysisResult> => {
   try {
+    const clientStartedAt = performance.now();
     metadata?.onProgress?.('preparing');
     const formData = new FormData();
 
@@ -161,9 +162,11 @@ export const analyzeRecitation = async (
       headers['Authorization'] = authHeader.Authorization;
     }
 
+    const audioPreparedAt = performance.now();
     // Fetch does not expose upload progress reliably across Safari versions, so
     // upload and server analysis are represented as one honest processing stage.
     metadata?.onProgress?.('processing');
+    const uploadStartedAt = performance.now();
     const response = await fetch(`${API_URL}/api/scoring/jobs`, {
       method: "POST",
       headers: headers,
@@ -189,6 +192,7 @@ export const analyzeRecitation = async (
     }
 
     const submittedJob = await response.json();
+    const jobAcknowledgedAt = performance.now();
     const jobId = submittedJob.job_id as string | undefined;
     if (!jobId) throw new Error("The scoring server did not return a Job ID.");
 
@@ -196,6 +200,7 @@ export const analyzeRecitation = async (
     const maximumPollingTime = 15 * 60 * 1000;
     let transientStatusFailures = 0;
     let data: any = null;
+    let finalJobStatus: any = null;
     while (Date.now() - pollingStartedAt < maximumPollingTime) {
       try {
         const statusResponse = await fetch(`${API_URL}/api/scoring/jobs/${encodeURIComponent(jobId)}`, {
@@ -206,6 +211,7 @@ export const analyzeRecitation = async (
         }
         transientStatusFailures = 0;
         const jobStatus = await statusResponse.json();
+        finalJobStatus = jobStatus;
         if (jobStatus.status === 'completed' && jobStatus.result) {
           data = jobStatus.result;
           break;
@@ -230,6 +236,27 @@ export const analyzeRecitation = async (
       await new Promise((resolve) => window.setTimeout(resolve, 4000));
     }
     if (!data) throw new Error("Scoring is taking longer than expected. The Job ID remains safe; please retry status recovery.");
+    const resultReceivedAt = performance.now();
+    const parseServerTime = (value?: string | null) => value ? Date.parse(value) : NaN;
+    const queuedAt = parseServerTime(finalJobStatus?.queued_at);
+    const startedAt = parseServerTime(finalJobStatus?.started_at);
+    const completedAt = parseServerTime(finalJobStatus?.completed_at);
+    const timing = {
+      jobId,
+      audioPreparationMs: Math.round(audioPreparedAt - clientStartedAt),
+      uploadAndAcknowledgementMs: Math.round(jobAcknowledgedAt - uploadStartedAt),
+      pollingAfterAcknowledgementMs: Math.round(resultReceivedAt - jobAcknowledgedAt),
+      totalClientMs: Math.round(resultReceivedAt - clientStartedAt),
+      serverQueueMs: Number.isFinite(queuedAt) && Number.isFinite(startedAt) ? Math.round(startedAt - queuedAt) : null,
+      serverProcessingMs: Number.isFinite(startedAt) && Number.isFinite(completedAt) ? Math.round(completedAt - startedAt) : null,
+      capturedAt: new Date().toISOString(),
+    };
+    try {
+      localStorage.setItem('tarannum_last_scoring_timing', JSON.stringify(timing));
+    } catch {
+      // Private browsing/storage restrictions must never block scoring.
+    }
+    console.info('[Tarannum scoring timing]', timing);
     metadata?.onProgress?.('finalizing');
 
     // Map backend response to AnalysisResult interface (Milestone 5: normalized 0-100)
