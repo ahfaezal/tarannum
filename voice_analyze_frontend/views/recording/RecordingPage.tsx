@@ -2,7 +2,7 @@ import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useStat
 import { Link, useSearchParams } from "react-router-dom";
 import { CheckCircle2, Headphones, Maximize2, Mic2, RotateCcw, Send, ShieldCheck } from "lucide-react";
 import { getAvailableContent } from "../../services/platformService";
-import { analyzeRecitation, extractReferencePitch, getRecordingSessionStatus } from "../../services/apiService";
+import { analyzeRecitation, extractReferencePitch, getRecordingSessionStatus, restoreCompletedRecordingResult } from "../../services/apiService";
 import { PitchPoint } from "../../services/pitchExtractor";
 import { AnalysisResult, AyahTiming, PitchData } from "../../types";
 
@@ -212,7 +212,26 @@ const RecordingPage: React.FC = () => {
       setResult(analysis);
       setCompletedModes((completed) => new Set(completed).add(mode));
     } catch (submitError: any) {
-      setError(submitError.message || "Rakaman gagal dihantar");
+      // A mobile connection can lose the HTTP response after the backend has
+      // already saved the score. Reconcile first so Retry never duplicates R1.
+      for (let recoveryAttempt = 0; recoveryAttempt < 5; recoveryAttempt += 1) {
+        try {
+          const status = await getRecordingSessionStatus(participantSessionId.current, selected.id);
+          const restored = restoreCompletedRecordingResult(status, mode);
+          if (restored) {
+            setResult(restored);
+            setCompletedModes((completed) => new Set(completed).add(mode));
+            setError(null);
+            return;
+          }
+        } catch (recoveryError) {
+          console.warn("Completed scoring result could not be restored", recoveryError);
+        }
+        if (recoveryAttempt < 4) {
+          await new Promise((resolve) => window.setTimeout(resolve, 2000));
+        }
+      }
+      setError(submitError.message || "The recording could not be submitted.");
     } finally {
       setSubmitting(false);
     }
