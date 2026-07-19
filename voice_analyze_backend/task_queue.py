@@ -86,7 +86,12 @@ if CELERY_AVAILABLE and celery_app:
         from database import AnalysisResult, ScoringJob, SessionLocal, User, UserSession
 
         db = SessionLocal()
-        local_path = Path(tempfile.gettempdir()) / f"scoring_job_{job_id}.wav"
+        # Do not allocate a deterministic path before the durable job is
+        # claimed. Celery uses at-least-once delivery, so a duplicate task can
+        # run its ``finally`` block while the legitimate task is still reading
+        # the recording. A shared ``scoring_job_<job_id>.wav`` path allowed the
+        # duplicate to delete the active task's file.
+        local_path = None
         staged_path = None
         cloud_storage = None
         terminal = False
@@ -140,6 +145,17 @@ if CELERY_AVAILABLE and celery_app:
                 )
                 return {"status": current_status, "job_id": job_id, "duplicate": True}
             mark_job_timing("claim_ms")
+
+            # Allocate the file only for the task that won the atomic claim.
+            # NamedTemporaryFile supplies a process-safe unique name, which
+            # also isolates Celery retries and simultaneous worker processes.
+            temp_audio = tempfile.NamedTemporaryFile(
+                prefix=f"scoring_job_{job_id}_",
+                suffix=".wav",
+                delete=False,
+            )
+            local_path = Path(temp_audio.name)
+            temp_audio.close()
 
             db.expire_all()
             job = db.query(ScoringJob).filter(ScoringJob.id == parsed_job_id).first()
@@ -266,7 +282,7 @@ if CELERY_AVAILABLE and celery_app:
 
         finally:
             try:
-                if local_path.exists():
+                if local_path is not None and local_path.exists():
                     local_path.unlink()
             except Exception as cleanup_error:
                 logger.warning("Could not delete scoring job temp file %s: %s", local_path, cleanup_error)
