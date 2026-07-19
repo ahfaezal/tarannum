@@ -1595,6 +1595,7 @@ async def score_performance(
                 logger.info(f"First response segment: {first_resp_seg}")
                 logger.info(f"First response segment score: {first_resp_seg.get('score')} (type: {type(first_resp_seg.get('score'))})")
             logger.info(f"=== END VERIFICATION ===")
+            mark_request_timing("result_assembly_ms")
 
             # Save to database: Create user session and analysis result
             try:
@@ -1625,6 +1626,17 @@ async def score_performance(
                     # Save for Qari, Student, and Admin users
                     logger.info(f"✓ Saving analysis result for user: {user_id}, role: {user_role}")
                     try:
+                        persistence_timing = {}
+                        persistence_stage_started = time.perf_counter()
+
+                        def mark_persistence(stage: str) -> None:
+                            nonlocal persistence_stage_started
+                            now = time.perf_counter()
+                            persistence_timing[stage] = round(
+                                (now - persistence_stage_started) * 1000.0, 1
+                            )
+                            persistence_stage_started = now
+
                         # Create user session
                         user_session = db_session_service.create_user_session(
                             user_audio_path=user_path,
@@ -1637,6 +1649,7 @@ async def score_performance(
                             recording_attempt=recording_attempt,
                             db=db
                         )
+                        mark_persistence("session_and_audio_s3_ms")
                         logger.info(f"Created user session: {user_session.id}")
 
                         # Save analysis result to analysis_results table
@@ -1653,6 +1666,7 @@ async def score_performance(
                             pronunciation_alerts=pronunciation_alerts,
                             db=db
                         )
+                        mark_persistence("analysis_result_ms")
                         logger.info(f"✓ Saved analysis result to analysis_results table (ID: {analysis_result.id}, Session: {user_session.id})")
 
                         # Maintain the curated lowest/median/highest student recording slots.
@@ -1667,6 +1681,8 @@ async def score_performance(
                                 f"Error updating selected recordings (non-fatal): {selected_recording_error}",
                                 exc_info=True,
                             )
+                        finally:
+                            mark_persistence("selected_recordings_ms")
 
                         # Save student progress (only for students)
                         if user_role == UserRole.STUDENT and user_id:
@@ -1712,6 +1728,10 @@ async def score_performance(
                                 logger.info(f"✓ Saved student progress to student_progress table for {user_id} (Qari: {qari_id})")
                             except Exception as progress_error:
                                 logger.error(f"Error saving student progress (non-fatal): {progress_error}", exc_info=True)
+                            finally:
+                                mark_persistence("student_progress_ms")
+                        else:
+                            mark_persistence("student_progress_ms")
 
                         # Add session ID to response for tracking
                         response_data["session_id"] = str(user_session.id)
@@ -1723,6 +1743,13 @@ async def score_performance(
                         db.refresh(user_session)
                         response_data["data_schema_version"] = user_session.data_schema_version
                         response_data["integrity_status"] = user_session.integrity_status
+                        mark_persistence("response_metadata_ms")
+                        logger.info(
+                            "PERSISTENCE_TIMING job_id=%s session_id=%s stages=%s",
+                            scoring_job_id,
+                            user_session.id,
+                            persistence_timing,
+                        )
                         logger.info(f"✓ Successfully saved all data: session={user_session.id}, analysis_result={analysis_result.id}")
                     except Exception as save_error:
                         # Log the error with full details
@@ -1734,6 +1761,12 @@ async def score_performance(
                         # Don't fail the request, but log the error clearly
                         response_data["save_error"] = f"Database save failed: {str(save_error)}"
                         response_data["save_warning"] = "Analysis completed but could not be saved to database. Check server logs."
+                        if "persistence_timing" in locals():
+                            logger.info(
+                                "PERSISTENCE_TIMING job_id=%s outcome=failed stages=%s",
+                                scoring_job_id,
+                                persistence_timing,
+                            )
 
             except Exception as db_error:
                 # Log database error but don't fail the request
