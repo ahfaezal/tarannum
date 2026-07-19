@@ -23,13 +23,19 @@ import tempfile
 import os
 import time
 from typing import Tuple, List, Dict, Union
-from collections import Counter
+from collections import Counter, OrderedDict
 
 # Suppress librosa warnings about audioread fallback (it still works)
 warnings.filterwarnings("ignore", category=UserWarning, module="librosa")
 warnings.filterwarnings("ignore", category=FutureWarning, module="librosa")
 
 logger = logging.getLogger(__name__)
+
+# Per-worker cache for immutable Qari reference analysis. Celery worker
+# processes are long-lived, while the same reference is assessed repeatedly
+# by many students. Keep the cache deliberately small to bound memory usage.
+_REFERENCE_ANALYSIS_CACHE = OrderedDict()
+_REFERENCE_ANALYSIS_CACHE_LIMIT = 4
 
 # Vosk model configuration
 VOSK_MODEL_PATH = os.getenv(
@@ -2344,6 +2350,37 @@ def extract_features(audio: np.ndarray, sr: int) -> Dict[str, np.ndarray]:
     
     return features
 
+
+def get_cached_reference_analysis(
+    reference_path: str,
+    audio: np.ndarray,
+    sr: int,
+) -> Tuple[List[Dict], Dict[str, np.ndarray], bool]:
+    """Return deterministic pitch/features for an immutable Qari reference."""
+    path = Path(reference_path)
+    stat = path.stat()
+    cache_key = (
+        str(path.resolve()),
+        int(stat.st_size),
+        int(stat.st_mtime_ns),
+        int(sr),
+        int(len(audio)),
+    )
+    cached = _REFERENCE_ANALYSIS_CACHE.get(cache_key)
+    if cached is not None:
+        _REFERENCE_ANALYSIS_CACHE.move_to_end(cache_key)
+        logger.info("Reference analysis cache hit: %s", path.name)
+        return cached[0], cached[1], True
+
+    pitch = extract_pitch(audio, sr)
+    features = extract_features(audio, sr)
+    _REFERENCE_ANALYSIS_CACHE[cache_key] = (pitch, features)
+    _REFERENCE_ANALYSIS_CACHE.move_to_end(cache_key)
+    while len(_REFERENCE_ANALYSIS_CACHE) > _REFERENCE_ANALYSIS_CACHE_LIMIT:
+        _REFERENCE_ANALYSIS_CACHE.popitem(last=False)
+    logger.info("Reference analysis cached: %s", path.name)
+    return pitch, features, False
+
 def normalize_features(features: np.ndarray) -> np.ndarray:
     """
     Normalize feature matrix to zero mean and unit variance.
@@ -3996,11 +4033,18 @@ def calculate_similarity_score(reference_path: str, user_path: str, return_segme
 
         # Extract pitch data if requested (or if segment scores need pitch blend)
         pitch_data = {}
+        cached_ref_features = None
         if return_pitch or return_segments:
             try:
                 logger.info("Extracting pitch data...")
-                # Extract pitch from processed audio
-                ref_pitch = extract_pitch(ref_audio_processed, ref_sr)
+                # Reuse immutable Qari reference analysis inside this worker.
+                ref_pitch, cached_ref_features, reference_cache_hit = (
+                    get_cached_reference_analysis(
+                        reference_path,
+                        ref_audio_processed,
+                        ref_sr,
+                    )
+                )
                 logger.info(f"Reference pitch extracted: {len(ref_pitch)} points")
 
                 user_pitch = extract_pitch(user_audio_processed, user_sr)
@@ -4102,7 +4146,11 @@ def calculate_similarity_score(reference_path: str, user_path: str, return_segme
 
         # Extract multiple features
         logger.info("Extracting audio features...")
-        ref_features = extract_features(ref_audio_processed, ref_sr)
+        ref_features = (
+            cached_ref_features
+            if cached_ref_features is not None
+            else extract_features(ref_audio_processed, ref_sr)
+        )
         user_features = extract_features(user_audio_processed, user_sr)
         mark_timing("feature_extraction_ms")
         
