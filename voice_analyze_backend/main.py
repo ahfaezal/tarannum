@@ -1048,7 +1048,6 @@ async def score_performance(
                 try:
                     from cloud_storage import cloud_storage
                     from pathlib import Path as PathLib
-                    import time
                     # Download from S3 to temp file with unique identifier to avoid conflicts
                     file_ext = PathLib(ref_record.filename).suffix if ref_record.filename else '.mp3'
                     # Add timestamp to make filename unique and avoid Windows file locking issues
