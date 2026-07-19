@@ -971,13 +971,13 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
                 />
                 {isClassroomLayout && isPracticeContext && (
                   <div
-                    className={`mt-1 flex w-full max-w-6xl flex-shrink-0 items-center justify-center gap-2 self-center rounded-lg border ${currentTheme.border} ${currentTheme.controlsBg} px-3 py-1.5 text-xs ${currentTheme.text}`}
+                    className={`mt-1 flex w-full max-w-6xl flex-shrink-0 items-center justify-center gap-3 self-center rounded-lg border ${currentTheme.border} ${currentTheme.controlsBg} px-3 py-2 text-sm ${currentTheme.text}`}
                     aria-label='Ayah selector placeholder'
                   >
                     <span className={`font-semibold ${currentTheme.textMuted}`}>
                       Ayah
                     </span>
-                    <div className='flex items-center gap-1'>
+                    <div className='flex items-center gap-1.5'>
                       {Array.from({ length: 8 }).map((_, index) => {
                         const ayah = ayatTiming[index];
                         const isActive = index === activeAyahIndex;
@@ -991,7 +991,7 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
                                 onSeekToTime(ayah.start);
                               }
                             }}
-                            className={`flex h-7 w-7 items-center justify-center rounded border text-xs font-semibold transition-colors ${
+                            className={`flex h-10 w-10 touch-manipulation items-center justify-center rounded-lg border text-sm font-bold transition-colors active:scale-95 ${
                               isActive && ayah
                                 ? "border-emerald-400/70 bg-emerald-500/25 text-emerald-100 opacity-100"
                                 : ayah
@@ -1025,9 +1025,10 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
 
       {!isFocusedMobileLandscape && (
         <div
-          className={`w-full ${currentTheme.controlsBg} border-t ${currentTheme.border} px-2 sm:px-4 ${isClassroomLayout ? "py-1" : compactControls ? "py-1.5" : "py-3"} backdrop-blur-sm flex-shrink-0 z-10`}
+          className={`w-full ${currentTheme.controlsBg} border-t ${currentTheme.border} px-3 sm:px-5 ${isRecordingContext ? "pt-4" : isClassroomLayout ? "py-2.5" : compactControls ? "py-1.5" : "py-3"} backdrop-blur-sm flex-shrink-0 z-10`}
+          style={isRecordingContext ? { paddingBottom: "max(1rem, env(safe-area-inset-bottom))" } : undefined}
         >
-        <div className={`flex items-center ${isFocusedMobileExperience ? "justify-center gap-3 min-h-[54px] flex-nowrap overflow-x-auto pb-0" : `justify-start sm:justify-center ${isClassroomLayout ? "gap-1.5 min-h-[38px]" : "gap-2 sm:gap-3 min-h-[44px]"} flex-wrap overflow-x-visible sm:overflow-visible ${compactControls ? "pb-0" : "pb-1"}`}`}>
+        <div className={`flex items-center ${isRecordingContext ? "min-h-[64px] justify-center gap-4 flex-nowrap overflow-x-visible" : isFocusedMobileExperience ? "justify-center gap-3 min-h-[54px] flex-nowrap overflow-x-auto pb-0" : `justify-start sm:justify-center ${isClassroomLayout ? "gap-2.5 min-h-[52px]" : "gap-2 sm:gap-3 min-h-[44px]"} flex-wrap overflow-x-visible sm:overflow-visible ${compactControls ? "pb-0" : "pb-1"}`}`}>
           {/* Practice Controls Group */}
           <div className='flex items-center gap-2'>
             {/* Practice Mode Toggle */}
@@ -1036,7 +1037,7 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
               onPracticeStop && (
               <button
                 onClick={handlePracticeToggle}
-                className={`${isHomePracticeMobile ? "h-11 px-3.5 text-sm" : isClassroomLayout ? "px-2.5 py-1" : "px-3 py-1.5"} rounded-lg flex items-center gap-1.5 text-xs font-medium transition-all ${
+                className={`${isHomePracticeMobile ? "h-11 px-3.5 text-sm" : isClassroomLayout ? "min-h-[48px] px-5 text-sm" : "px-3 py-1.5 text-xs"} touch-manipulation rounded-xl flex items-center gap-2 font-bold transition-all active:scale-[0.98] ${
                   isPracticeMode
                     ? "bg-red-600 hover:bg-red-700 text-white"
                     : "bg-emerald-600 hover:bg-emerald-700 text-white"
@@ -1050,12 +1051,12 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
               >
                 {isPracticeMode ? (
                   <>
-                    <MicOff size={14} />
+                    <MicOff size={isClassroomLayout ? 18 : 14} />
                     Stop Practice
                   </>
                 ) : (
                   <>
-                    <Mic size={14} />
+                    <Mic size={isClassroomLayout ? 18 : 14} />
                     Start Practice
                   </>
                 )}
@@ -1120,22 +1121,22 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
             <div className='flex items-center gap-2'>
               <button
                 onClick={handleRecordingToggle}
-                className={`${isMobileRecording ? "h-11 px-3.5 text-sm" : "px-3 py-1.5"} rounded-lg flex items-center gap-1.5 text-xs font-medium transition-all ${
+                className={`min-h-[56px] min-w-[190px] px-7 rounded-xl flex items-center justify-center gap-2.5 text-base font-bold transition-all touch-manipulation ${
                   isRecordingSession
                     ? "bg-red-600 hover:bg-red-700 text-white"
                     : "bg-purple-600 hover:bg-purple-700 text-white"
-                } shadow-md hover:shadow-lg`}
+                } shadow-lg hover:shadow-xl focus:outline-none focus:ring-4 focus:ring-purple-300/50 active:scale-[0.98]`}
                 title={isRecordingSession ? "Stop Recording" : "Start Recording"}
                 aria-label={isRecordingSession ? "Stop recording" : "Start recording"}
               >
                 {isRecordingSession ? (
                   <>
-                    <Square size={14} />
+                    <Square size={20} />
                     Stop Recording
                   </>
                 ) : (
                   <>
-                    <Mic size={14} />
+                    <Mic size={20} />
                     Start Recording
                   </>
                 )}
@@ -1204,15 +1205,15 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
           {/* Reference Audio Playback Controls - Always Available */}
           {isPracticeContext && referencePitch.length > 0 && (
             <div className='flex items-center gap-2'>
-              <div className={`${isHomePracticeMobile ? "hidden" : "flex"} items-center gap-1 px-2 py-1 rounded bg-blue-600/20 border border-blue-500/30`}>
-                <span className='text-xs text-blue-300 font-medium'>
+              <div className={`${isHomePracticeMobile ? "hidden" : "flex"} min-h-[44px] items-center gap-1 rounded-lg border border-blue-500/30 bg-blue-600/20 px-3 py-2`}>
+                <span className='text-sm text-blue-200 font-semibold'>
                   Reference
                 </span>
               </div>
               {/* Play/Pause Button */}
               <button
                 onClick={isPlaying ? onPause : onPlay}
-                className={`${isHomePracticeMobile ? "h-12 w-12 min-h-[48px] min-w-[48px]" : isClassroomLayout ? "h-9 w-9" : "w-10 h-10"} flex items-center justify-center rounded-full bg-blue-600 hover:bg-blue-700 text-white transition-colors shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-1`}
+                className={`${isHomePracticeMobile || isClassroomLayout ? "h-12 w-12 min-h-[48px] min-w-[48px]" : "w-10 h-10"} touch-manipulation flex items-center justify-center rounded-full bg-blue-600 hover:bg-blue-700 text-white transition-all shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-1 active:scale-95`}
                 title={
                   isPlaying
                     ? "Pause Reference (Space)"
@@ -1234,21 +1235,21 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
               {/* Stop Button */}
               {!isHomePracticeMobile && <button
                 onClick={handleStopWithCountdownCancel}
-                className={`${isClassroomLayout ? "h-8 w-8" : "w-9 h-9"} flex items-center justify-center rounded-full bg-slate-600 hover:bg-slate-700 text-white transition-colors shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-slate-400`}
+                className={`${isClassroomLayout ? "h-11 w-11 min-h-[44px] min-w-[44px]" : "w-9 h-9"} touch-manipulation flex items-center justify-center rounded-full bg-slate-600 hover:bg-slate-700 text-white transition-all shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-slate-400 active:scale-95`}
                 title='Stop Reference (S)'
                 aria-label='Stop reference playback'
               >
-                <Square size={14} />
+                <Square size={isClassroomLayout ? 17 : 14} />
               </button>}
 
               {/* Restart Button */}
               {!isHomePracticeMobile && <button
                 onClick={onRestart}
-                className={`${isClassroomLayout ? "h-8 w-8" : "w-9 h-9"} flex items-center justify-center rounded-full bg-slate-600 hover:bg-slate-700 text-white transition-colors shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-slate-400`}
+                className={`${isClassroomLayout ? "h-11 w-11 min-h-[44px] min-w-[44px]" : "w-9 h-9"} touch-manipulation flex items-center justify-center rounded-full bg-slate-600 hover:bg-slate-700 text-white transition-all shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-slate-400 active:scale-95`}
                 title='Restart Reference (R)'
                 aria-label='Restart reference from beginning'
               >
-                <RefreshCw size={14} />
+                <RefreshCw size={isClassroomLayout ? 17 : 14} />
               </button>}
 
               {onRepeatAyahToggle && (
@@ -1256,7 +1257,7 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
                   type='button'
                   onClick={onRepeatAyahToggle}
                   disabled={!canRepeatAyah}
-                  className={`${isHomePracticeMobile ? "h-12 w-12 justify-center rounded-full p-0" : isClassroomLayout ? "h-8 px-2" : "h-9 px-3"} flex items-center gap-1 border text-xs font-semibold transition-colors shadow-md focus:outline-none focus:ring-2 focus:ring-emerald-400 ${
+                  className={`${isHomePracticeMobile ? "h-12 w-12 justify-center rounded-full p-0" : isClassroomLayout ? "h-11 min-w-[44px] justify-center rounded-lg px-3" : "h-9 px-3"} touch-manipulation flex items-center gap-1 border text-xs font-semibold transition-all shadow-md focus:outline-none focus:ring-2 focus:ring-emerald-400 active:scale-95 ${
                     isRepeatAyahEnabled && canRepeatAyah
                       ? "border-emerald-400/70 bg-emerald-500/25 text-emerald-100"
                       : canRepeatAyah
@@ -1279,7 +1280,7 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
                   }
                   aria-pressed={isRepeatAyahEnabled && canRepeatAyah}
                 >
-                  <Repeat2 size={14} />
+                  <Repeat2 size={isClassroomLayout ? 17 : 14} />
                   {!isClassroomLayout && !isHomePracticeMobile && <span>Repeat</span>}
                 </button>
               )}
@@ -1287,7 +1288,7 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
           )}
 
           {isClassroomLayout && isPracticeContext && (
-            <div className='flex items-center gap-1 rounded-lg border border-slate-600/40 bg-slate-700/30 px-1.5 py-1'>
+            <div className='flex min-h-[48px] items-center gap-1 rounded-xl border border-slate-600/40 bg-slate-700/30 px-1.5 py-1'>
               {[
                 { label: "Slow", value: 0.75 },
                 { label: "1.0x", value: 1.0 },
@@ -1301,7 +1302,7 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
                     type='button'
                     disabled={!onPlaybackSpeedChange}
                     onClick={() => onPlaybackSpeedChange?.(speedOption.value)}
-                    className={`rounded px-2 py-1 text-xs font-medium transition-colors ${
+                    className={`min-h-[40px] touch-manipulation rounded-lg px-3 py-2 text-sm font-semibold transition-all active:scale-95 ${
                       isActiveSpeed
                         ? "bg-blue-600 text-white shadow-sm"
                         : "bg-slate-700/60 text-slate-300 hover:bg-slate-600/70"
@@ -1318,12 +1319,12 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
           )}
 
           {/* Exit / Cancel Button */}
-          <div className={isFocusedMobileExperience ? "ml-0 pl-0" : `${isClassroomLayout ? "ml-1 pl-2" : "ml-2 sm:ml-4 pl-2 sm:pl-4"} border-l border-slate-600/50`}>
+          <div className={isRecordingContext ? "ml-0 pl-0" : isFocusedMobileExperience ? "ml-0 pl-0" : `${isClassroomLayout ? "ml-1 pl-2" : "ml-2 sm:ml-4 pl-2 sm:pl-4"} border-l border-slate-600/50`}>
             {isRecordingContext ? (
               <button
                 type='button'
                 onClick={handleRecordingCancel}
-                className={`${isMobileRecording ? "h-11 px-4" : isClassroomLayout ? "h-9 px-3" : "h-10 px-4"} flex items-center justify-center rounded-lg bg-red-600 hover:bg-red-700 text-sm font-semibold text-white transition-colors shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-red-400`}
+                className="min-h-[56px] min-w-[112px] touch-manipulation rounded-xl border border-red-400/40 bg-red-600 px-6 text-base font-bold text-white shadow-lg transition-all hover:bg-red-700 hover:shadow-xl focus:outline-none focus:ring-4 focus:ring-red-300/50 active:scale-[0.98]"
                 title='Cancel recording'
                 aria-label='Cancel recording fullscreen'
               >
@@ -1332,7 +1333,7 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
             ) : (
               <button
                 onClick={handleCloseWithCountdownCancel}
-                className={`${isHomePracticeMobile ? "h-12 w-12 min-h-[48px] min-w-[48px]" : isClassroomLayout ? "h-10 w-10 min-h-[40px] min-w-[40px]" : "w-11 h-11 min-h-[44px] min-w-[44px]"} flex items-center justify-center rounded-full bg-red-600 hover:bg-red-700 text-white transition-colors shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-red-400`}
+                className={`${isHomePracticeMobile || isClassroomLayout ? "h-12 w-12 min-h-[48px] min-w-[48px]" : "w-11 h-11 min-h-[44px] min-w-[44px]"} touch-manipulation flex items-center justify-center rounded-full bg-red-600 hover:bg-red-700 text-white transition-all shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-red-400 active:scale-95`}
                 title='Exit Full-Screen (ESC)'
                 aria-label='Exit full-screen mode'
               >
