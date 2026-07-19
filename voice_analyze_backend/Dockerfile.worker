@@ -27,4 +27,4 @@ RUN test -f /app/task_queue.py \
     && test -f /app/cloud_storage.py \
     && test -f /app/main.py
 
-CMD ["celery", "-A", "task_queue.celery_app", "worker", "--loglevel=INFO", "--pool=threads", "--concurrency=1", "--prefetch-multiplier=1"]
+CMD ["celery", "-A", "task_queue.celery_app", "worker", "--loglevel=INFO", "--pool=threads", "--concurrency=2", "--prefetch-multiplier=1"]
