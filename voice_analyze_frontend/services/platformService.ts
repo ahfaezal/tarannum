@@ -21,6 +21,27 @@ export interface QariContent {
   duration?: number;
   upload_date?: string;
   text_segments?: Array<{ text: string; start: number; end: number }>;
+  visibility_status?: "draft" | "students_only" | "public_demo" | "inactive";
+  public_demo_approved?: boolean;
+}
+
+export interface TrainingChallenge {
+  id: string;
+  title: string;
+  reference_id: string;
+  reference_title?: string | null;
+  start_at: string;
+  end_at: string;
+  status: "scheduled" | "active" | "ended" | "cancelled";
+  participant_count?: number;
+}
+
+export interface TrainingChallengeLeaderboardEntry {
+  rank: number;
+  student_id: string;
+  student_name: string;
+  score: number;
+  achieved_at: string;
 }
 
 export interface StudentInfo {
@@ -143,6 +164,7 @@ export const addQariContent = async (content: {
   surah_name?: string;
   ayah_number?: number;
   maqam?: string;
+  visibility_status?: QariContent["visibility_status"];
 }): Promise<{ success: boolean; content_id: string }> => {
   const response = await fetch(`${API_URL}/api/platform/qari/content`, {
     method: "POST",
@@ -221,6 +243,7 @@ export const updateQariContent = async (
     surah_name?: string;
     ayah_number?: number;
     maqam?: string;
+    visibility_status?: QariContent["visibility_status"];
   }
 ): Promise<{ success: boolean; content_id: string }> => {
   const response = await fetch(`${API_URL}/api/platform/qari/content/${contentId}`, {
@@ -251,6 +274,8 @@ export const updateAdminQariContent = async (
     surah_name?: string;
     ayah_number?: number;
     maqam?: string;
+    visibility_status?: QariContent["visibility_status"];
+    public_demo_approved?: boolean;
   }
 ): Promise<{ success: boolean; content_id: string }> => {
   const response = await fetch(`${API_URL}/api/platform/admin/qari/${qariId}/content/${contentId}`, {
@@ -635,6 +660,8 @@ export const getQariCommissionStats = async (): Promise<{
   active_students: number;
   referral_code: string;
   commission_rate: number;
+  royalty_earned: number;
+  royalty_currency: string;
   referral_breakdown: Array<{ code: string; count: number }>;
 }> => {
   const response = await fetch(`${API_URL}/api/platform/qari/commission-stats`, {
@@ -1128,5 +1155,72 @@ export const rebuildQariStudentSelectedRecordings = async (
     throw new Error(error.detail || "Failed to rebuild selected recordings");
   }
 
+  return response.json();
+};
+
+export const createTrainingChallenge = async (payload: {
+  title: string;
+  reference_id: string;
+  student_ids: string[];
+  start_at: string;
+  end_at: string;
+}): Promise<{ success: boolean; challenge: TrainingChallenge }> => {
+  const response = await fetch(`${API_URL}/api/platform/qari/training-challenges`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...getAuthHeader() },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: response.statusText }));
+    throw new Error(error.detail || "Failed to create training challenge");
+  }
+  return response.json();
+};
+
+export const getQariTrainingChallenges = async (): Promise<{
+  challenges: TrainingChallenge[];
+  count: number;
+}> => {
+  const response = await fetch(`${API_URL}/api/platform/qari/training-challenges`, {
+    headers: getAuthHeader(),
+  });
+  if (!response.ok) throw new Error("Failed to load training challenges");
+  return response.json();
+};
+
+export const updateTrainingChallengeStatus = async (
+  challengeId: string,
+  status: "scheduled" | "active" | "ended" | "cancelled",
+): Promise<{ success: boolean; challenge: TrainingChallenge }> => {
+  const response = await fetch(`${API_URL}/api/platform/qari/training-challenges/${challengeId}/status`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...getAuthHeader() },
+    body: JSON.stringify({ status }),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: response.statusText }));
+    throw new Error(error.detail || "Failed to update training challenge");
+  }
+  return response.json();
+};
+
+export const getTrainingChallengeLeaderboard = async (
+  challengeId: string,
+): Promise<{ challenge: TrainingChallenge; leaderboard: TrainingChallengeLeaderboardEntry[] }> => {
+  const response = await fetch(`${API_URL}/api/platform/qari/training-challenges/${challengeId}/leaderboard`, {
+    headers: getAuthHeader(),
+  });
+  if (!response.ok) throw new Error("Failed to load challenge leaderboard");
+  return response.json();
+};
+
+export const getStudentTrainingChallenges = async (): Promise<{
+  challenges: TrainingChallenge[];
+  count: number;
+}> => {
+  const response = await fetch(`${API_URL}/api/platform/student/training-challenges`, {
+    headers: getAuthHeader(),
+  });
+  if (!response.ok) throw new Error("Failed to load training challenges");
   return response.json();
 };

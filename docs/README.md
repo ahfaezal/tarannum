@@ -34,6 +34,8 @@ If the architecture changes, update the relevant document and record the decisio
 8. [Decision Log](decisions/Decision_Log.md)
 9. [20 iPad Production Test](20-ipad-production-test.md)
 10. [System Modernization Audit — 2026-07-19](system-modernization-audit-2026-07-19.md)
+11. [Qari Dashboard Performance Audit — 2026-07-19](qari-dashboard-performance-audit-2026-07-19.md)
+12. [Qari Dashboard Product Specification](product/Qari_Dashboard_Product_Specification_v1.md)
 
 ## Documentation Structure
 
@@ -44,6 +46,7 @@ If the architecture changes, update the relevant document and record the decisio
 - `decisions/` records approved architecture decisions.
 - `20-ipad-production-test.md` records the production load-test procedure, validated baseline and readiness criteria for classroom deployment.
 - `system-modernization-audit-2026-07-19.md` records the approved Admin, password recovery, dashboard-performance and Recording/Scoring modernization scope.
+- `qari-dashboard-performance-audit-2026-07-19.md` records the detailed Qari Dashboard request, query, payload and progressive-loading findings.
 
 ## Maintenance
 

@@ -3,7 +3,7 @@
  */
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { getQariStudents, getQariContent, getQariCommissionStats, getQariReferralInfo, getStudentDetails, getQariStudentActivitySummary, getQariStudentSelectedRecordings, playSessionRecordingAudio, ManagedRecordingAudio, rebuildQariStudentSelectedRecordings, StudentDetails, QariStudentActivitySummary, SelectedRecordingsResponse, deleteQariContent } from "../services/platformService";
+import { getQariStudents, getQariContent, getQariCommissionStats, getQariReferralInfo, getStudentDetails, getQariStudentActivitySummary, getQariStudentSelectedRecordings, playSessionRecordingAudio, ManagedRecordingAudio, rebuildQariStudentSelectedRecordings, StudentDetails, QariStudentActivitySummary, SelectedRecordingsResponse, deleteQariContent, updateQariContent } from "../services/platformService";
 import { StudentInfo, QariContent } from "../services/platformService";
 import {
   Activity,
@@ -42,11 +42,12 @@ const QariDashboard: React.FC = () => {
     active_students: number;
     referral_code: string;
     commission_rate: number;
+    royalty_earned: number;
+    royalty_currency: string;
     referral_breakdown: Array<{ code: string; count: number }>;
   } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
   const [referralInfo, setReferralInfo] = useState<{ referralCode: string; qariName: string } | null>(null);
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
@@ -62,6 +63,7 @@ const QariDashboard: React.FC = () => {
   const [showAllContent, setShowAllContent] = useState(false);
   const [showAllRecordings, setShowAllRecordings] = useState(false);
   const [showAllProgress, setShowAllProgress] = useState(false);
+  const [updatingContentId, setUpdatingContentId] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ isOpen: boolean; contentId: string; filename: string }>({
     isOpen: false,
     contentId: '',
@@ -96,19 +98,30 @@ const QariDashboard: React.FC = () => {
     }
   };
 
-  const copyReferralCode = () => {
-    if (commissionStats?.referral_code) {
-      navigator.clipboard.writeText(commissionStats.referral_code);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
-  };
-
   const referralCode = referralInfo?.referralCode || commissionStats?.referral_code || "";
   const referralLink = referralCode ? `${window.location.origin}/register?ref=${encodeURIComponent(referralCode)}` : "";
   const qrImageUrl = referralLink
     ? `https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=12&data=${encodeURIComponent(referralLink)}`
     : "";
+
+  const changeContentVisibility = async (
+    item: QariContent,
+    visibility_status: NonNullable<QariContent["visibility_status"]>,
+  ) => {
+    try {
+      setUpdatingContentId(item.id);
+      await updateQariContent(item.id, { visibility_status });
+      setContent((current) => current.map((entry) => (
+        entry.id === item.id
+          ? { ...entry, visibility_status, public_demo_approved: visibility_status === "public_demo" ? false : entry.public_demo_approved }
+          : entry
+      )));
+    } catch (err: any) {
+      setError(err.message || "Failed to update content visibility");
+    } finally {
+      setUpdatingContentId(null);
+    }
+  };
 
   const copyReferralLink = () => {
     if (referralLink) {
@@ -504,9 +517,9 @@ const QariDashboard: React.FC = () => {
             <div className="bg-white rounded-xl shadow-md border border-slate-200 p-6 hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-slate-600 mb-1">Commission Rate</p>
+                  <p className="text-sm font-medium text-slate-600 mb-1">Royalty Earned</p>
                   <p className="text-3xl font-bold text-amber-600">
-                    {commissionStats.commission_rate}%
+                    {commissionStats.royalty_currency || "USD"} {Number(commissionStats.royalty_earned || 0).toFixed(2)}
                   </p>
                 </div>
                 <div className="w-12 h-12 bg-amber-100 rounded-xl flex items-center justify-center">
@@ -540,57 +553,6 @@ const QariDashboard: React.FC = () => {
             </div>
           </div>
         </div>
-
-        {/* Referral Code Section */}
-        {commissionStats && commissionStats.referral_code && (
-          <div className="bg-gradient-to-r from-emerald-50 via-green-50 to-emerald-50 rounded-xl shadow-md border border-emerald-200 p-6 mb-8">
-            <h2 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
-              <DollarSign className="w-5 h-5 text-emerald-600" />
-              Your Referral Code
-            </h2>
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mb-4">
-              <div className="flex-1 bg-white rounded-lg px-4 py-3 border-2 border-emerald-200 shadow-sm">
-                <code className="text-xl md:text-2xl font-mono font-bold text-slate-800">
-                  {commissionStats.referral_code}
-                </code>
-              </div>
-              <button
-                onClick={copyReferralCode}
-                className="px-4 py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2 font-medium"
-              >
-                {copied ? (
-                  <>
-                    <Check className="w-5 h-5" />
-                    Copied!
-                  </>
-                ) : (
-                  <>
-                    <Copy className="w-5 h-5" />
-                    Copy
-                  </>
-                )}
-              </button>
-            </div>
-            <p className="text-sm text-slate-600 mb-4">
-              Share this code with students to track referrals. You'll earn {commissionStats.commission_rate}% commission on their subscriptions.
-            </p>
-            {commissionStats.referral_breakdown.length > 0 && (
-              <div className="mt-4 pt-4 border-t border-emerald-200">
-                <p className="text-sm font-medium text-slate-700 mb-3">Referral Breakdown:</p>
-                <div className="flex flex-wrap gap-2">
-                  {commissionStats.referral_breakdown.map((item, idx) => (
-                    <span
-                      key={idx}
-                      className="px-3 py-1.5 bg-white rounded-full text-sm text-slate-700 border border-slate-200 shadow-sm font-medium"
-                    >
-                      {item.code}: {item.count} student{item.count > 1 ? "s" : ""}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
 
         {/* Student Registration QR Section */}
         {referralCode && referralLink && (
@@ -1045,6 +1007,30 @@ const QariDashboard: React.FC = () => {
                     {item.maqam}
                   </span>
                 )}
+                <div className="mt-3">
+                  <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">
+                    Visibility
+                  </label>
+                  <select
+                    value={item.visibility_status || "students_only"}
+                    disabled={updatingContentId === item.id}
+                    onChange={(event) => changeContentVisibility(
+                      item,
+                      event.target.value as NonNullable<QariContent["visibility_status"]>,
+                    )}
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 disabled:opacity-60"
+                  >
+                    <option value="draft">Draft</option>
+                    <option value="students_only">Listed for Students</option>
+                    <option value="public_demo">Public Demo — Approval Required</option>
+                    <option value="inactive">Inactive</option>
+                  </select>
+                  {item.visibility_status === "public_demo" && (
+                    <p className={`mt-1 text-xs font-medium ${item.public_demo_approved ? "text-emerald-700" : "text-amber-700"}`}>
+                      {item.public_demo_approved ? "Approved for public demo" : "Pending Admin approval"}
+                    </p>
+                  )}
+                </div>
                 <div className="flex items-center justify-between mt-2">
                   <p className="text-xs text-gray-500">
                     {formatDuration(item.reference_duration || item.duration)}

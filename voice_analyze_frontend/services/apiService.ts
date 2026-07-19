@@ -99,6 +99,7 @@ export const analyzeRecitation = async (
     recordingMode?: 'R1' | 'R2' | 'R3';
     scoringVersion?: 'V2.3';
     recordingAttempt?: number;
+    challengeId?: string;
     onProgress?: (stage: 'preparing' | 'processing' | 'finalizing') => void;
     onQueueUpdate?: (progress: ScoringJobProgress) => void;
   }
@@ -148,6 +149,7 @@ export const analyzeRecitation = async (
     if (metadata?.recordingMode) formData.append("recording_mode", metadata.recordingMode);
     formData.append("scoring_version", metadata?.scoringVersion || "V2.3");
     formData.append("recording_attempt", String(metadata?.recordingAttempt || 1));
+    if (metadata?.challengeId) formData.append("challenge_id", metadata.challengeId);
 
     // Use environment variable or default to production backend URL
     // Vite requires VITE_ prefix, but also support REACT_APP_ for compatibility

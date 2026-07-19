@@ -39,7 +39,11 @@ from scoring_engine import (
 
 from reference_library import reference_library
 from db_reference_library import db_reference_library
-from database import init_db, check_db_connection, get_db, User, UserRole, UserSession, AnalysisResult, ScoringJob
+from database import (
+    init_db, check_db_connection, get_db, User, UserRole, UserSession,
+    AnalysisResult, ScoringJob, TrainingChallenge,
+    TrainingChallengeParticipant,
+)
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
 from db_session_service import db_session_service
@@ -673,6 +677,7 @@ async def create_scoring_job(
     recording_mode: str = Form(...),
     scoring_version: str = Form("V2.3"),
     recording_attempt: int = Form(1),
+    challenge_id: Optional[str] = Form(None),
     current_user: User = Depends(require_registered_user),
     db: Session = Depends(get_db),
 ):
@@ -694,6 +699,27 @@ async def create_scoring_job(
     except ValueError:
         raise HTTPException(status_code=400, detail="client_session_id must be a valid UUID")
 
+    challenge_uuid = None
+    if challenge_id:
+        try:
+            challenge_uuid = uuid.UUID(challenge_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="challenge_id must be a valid UUID")
+        now = datetime.utcnow()
+        challenge = db.query(TrainingChallenge).filter(
+            TrainingChallenge.id == challenge_uuid,
+            TrainingChallenge.reference_id == reference_id,
+            TrainingChallenge.status != "cancelled",
+            TrainingChallenge.start_at <= now,
+            TrainingChallenge.end_at >= now,
+        ).first()
+        participant = db.query(TrainingChallengeParticipant).filter(
+            TrainingChallengeParticipant.challenge_id == challenge_uuid,
+            TrainingChallengeParticipant.student_id == current_user.id,
+        ).first()
+        if not challenge or not participant:
+            raise HTTPException(status_code=403, detail="This recording is not eligible for the selected challenge")
+
     completed_modes = get_completed_recording_modes(
         db, str(current_user.id), client_session_id, reference_id,
     )
@@ -708,6 +734,7 @@ async def create_scoring_job(
         ScoringJob.client_session_id == client_session_id,
         ScoringJob.recording_mode == normalized_mode,
         ScoringJob.recording_attempt == recording_attempt,
+        ScoringJob.challenge_id == challenge_uuid,
         ScoringJob.status.in_(["queued", "processing", "completed"]),
     ).order_by(ScoringJob.queued_at.desc()).first()
     if existing:
@@ -726,6 +753,7 @@ async def create_scoring_job(
         recording_mode=normalized_mode,
         scoring_version="V2.3",
         recording_attempt=recording_attempt,
+        challenge_id=challenge_uuid,
         status="queued",
         stage="uploading",
         original_filename=user_audio.filename or "recitation.wav",
@@ -899,6 +927,7 @@ async def score_performance(
     recording_mode: Optional[str] = Form(None),
     scoring_version: str = Form("V2.3"),
     recording_attempt: int = Form(1),
+    challenge_id: Optional[str] = Form(None),
     current_user: Optional[User] = Depends(get_current_user_optional),
     db: Session = Depends(get_db),
 ):
@@ -1647,6 +1676,7 @@ async def score_performance(
                             recording_mode=normalized_recording_mode,
                             scoring_version=normalized_scoring_version,
                             recording_attempt=recording_attempt,
+                            challenge_id=challenge_id,
                             db=db
                         )
                         mark_persistence("session_and_audio_s3_ms")

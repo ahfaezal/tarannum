@@ -2,7 +2,7 @@
 Database connection and session management for PostgreSQL.
 """
 import os
-from sqlalchemy import create_engine, Column, String, Integer, Float, Boolean, DateTime, Text, JSON, ForeignKey, text
+from sqlalchemy import create_engine, Column, String, Integer, Float, Boolean, DateTime, Text, JSON, ForeignKey, UniqueConstraint, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship, Session
 from sqlalchemy.dialects.postgresql import UUID
@@ -121,6 +121,10 @@ class QariContent(Base):
     ayah_number = Column(Integer, nullable=True)
     maqam = Column(String, nullable=True)
     is_active = Column(Boolean, default=True)
+    visibility_status = Column(String, nullable=False, default="students_only", index=True)
+    public_demo_approved = Column(Boolean, nullable=False, default=False)
+    public_demo_approved_at = Column(DateTime, nullable=True)
+    public_demo_approved_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     
     # Relationships
@@ -284,6 +288,7 @@ class UserSession(Base):
     data_schema_version = Column(String, nullable=True, index=True)
     integrity_status = Column(String, nullable=True, index=True)
     integrity_error = Column(Text, nullable=True)
+    challenge_id = Column(UUID(as_uuid=True), ForeignKey("training_challenges.id", ondelete="SET NULL"), nullable=True, index=True)
     
     # Certification-grade fields (Milestone 4)
     is_assessment = Column(Boolean, default=False)  # Marks certification sessions
@@ -335,6 +340,7 @@ class ScoringJob(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     reference_id = Column(String, ForeignKey("references.id", ondelete="SET NULL"), nullable=True, index=True)
+    challenge_id = Column(UUID(as_uuid=True), ForeignKey("training_challenges.id", ondelete="SET NULL"), nullable=True, index=True)
     client_session_id = Column(String, nullable=False, index=True)
     recording_mode = Column(String, nullable=False, index=True)
     scoring_version = Column(String, nullable=False, default="V2.3")
@@ -354,6 +360,39 @@ class ScoringJob(Base):
 
     user = relationship("User", foreign_keys=[user_id])
     reference = relationship("Reference", foreign_keys=[reference_id])
+
+
+class TrainingChallenge(Base):
+    """A time-bounded Qari practice challenge using one reference."""
+    __tablename__ = "training_challenges"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    qari_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    reference_id = Column(String, ForeignKey("references.id", ondelete="RESTRICT"), nullable=False, index=True)
+    title = Column(String, nullable=False)
+    start_at = Column(DateTime, nullable=False, index=True)
+    end_at = Column(DateTime, nullable=False, index=True)
+    status = Column(String, nullable=False, default="scheduled", index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    qari = relationship("User", foreign_keys=[qari_id])
+    reference = relationship("Reference", foreign_keys=[reference_id])
+    participants = relationship("TrainingChallengeParticipant", back_populates="challenge", cascade="all, delete-orphan")
+
+
+class TrainingChallengeParticipant(Base):
+    """A student selected by a Qari for a Training Challenge."""
+    __tablename__ = "training_challenge_participants"
+    __table_args__ = (UniqueConstraint("challenge_id", "student_id", name="uq_training_challenge_student"),)
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    challenge_id = Column(UUID(as_uuid=True), ForeignKey("training_challenges.id", ondelete="CASCADE"), nullable=False, index=True)
+    student_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    added_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    challenge = relationship("TrainingChallenge", back_populates="participants")
+    student = relationship("User", foreign_keys=[student_id])
 
 
 class StudentSelectedRecording(Base):
@@ -452,6 +491,7 @@ def init_db():
         ensure_user_profile_columns()
         ensure_student_activity_events_table()
         ensure_user_session_metadata_columns()
+        ensure_qari_dashboard_columns()
         logger.info("Database tables created successfully")
     except Exception as e:
         logger.error(f"Error creating database tables: {e}", exc_info=True)
@@ -504,6 +544,33 @@ def ensure_email_otp_columns():
                 WHERE email_verified IS TRUE
             """))
             conn.execute(text("ALTER TABLE users ALTER COLUMN email_verified SET DEFAULT FALSE"))
+
+
+def ensure_qari_dashboard_columns():
+    """Add Qari content visibility and Training Challenge links safely."""
+    qari_content_columns = {
+        "visibility_status": "VARCHAR DEFAULT 'students_only' NOT NULL",
+        "public_demo_approved": "BOOLEAN DEFAULT FALSE NOT NULL",
+        "public_demo_approved_at": "TIMESTAMP",
+        "public_demo_approved_by": "UUID",
+    }
+    user_session_columns = {"challenge_id": "UUID"}
+    scoring_job_columns = {"challenge_id": "UUID"}
+
+    with engine.begin() as conn:
+        for column_name, column_def in qari_content_columns.items():
+            if not _column_exists(conn, "qari_content", column_name):
+                conn.execute(text(f"ALTER TABLE qari_content ADD COLUMN {column_name} {column_def}"))
+        for column_name, column_def in user_session_columns.items():
+            if not _column_exists(conn, "user_sessions", column_name):
+                conn.execute(text(f"ALTER TABLE user_sessions ADD COLUMN {column_name} {column_def}"))
+        for column_name, column_def in scoring_job_columns.items():
+            if not _column_exists(conn, "scoring_jobs", column_name):
+                conn.execute(text(f"ALTER TABLE scoring_jobs ADD COLUMN {column_name} {column_def}"))
+
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_qari_content_visibility_status ON qari_content (visibility_status)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_user_sessions_challenge_id ON user_sessions (challenge_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_scoring_jobs_challenge_id ON scoring_jobs (challenge_id)"))
 
 
 def ensure_user_profile_columns():

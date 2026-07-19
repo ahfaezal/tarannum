@@ -141,3 +141,35 @@ Status: Approved.
 Date: 2026-07-19
 
 Audio uploaded under the S3 `scoring-jobs/` staging prefix is temporary processing data. The scoring worker deletes each staging object after the job reaches a terminal state. The S3 lifecycle rule remains a fallback for abandoned objects, and the worker IAM policy is restricted to the required staging-object operations. Permanent participant audio and score artifacts are not governed by this staging cleanup decision.
+
+## Decision 014
+
+Title: Qari compensation is presented as Royalty Earned.
+
+Status: Approved.
+
+Date: 2026-07-19
+
+The Qari-facing product uses `Royalty Earned` for confirmed compensation arising from Qari voice and content contribution. Existing internal commission field names may remain temporarily for compatibility but must not define the user-facing terminology.
+
+## Decision 015
+
+Title: Qari content uses four visibility states.
+
+Status: Approved.
+
+Date: 2026-07-19
+
+Qari content uses `draft`, `students_only`, `public_demo` and `inactive`. Public Demo publication requires Admin approval. Student reference selection exposes only content authorized for that student so the assigned Qari can control learning focus.
+
+## Decision 016
+
+Title: Training Challenge uses unlimited attempts within a fixed period.
+
+Status: Approved.
+
+Date: 2026-07-19
+
+A Training Challenge uses one reference, selected students and a defined start/end period. Participants may submit unlimited attempts during the active period. The highest completed Experimental Score V2.3 is retained. Equal highest scores are ordered by the earliest time that score was achieved.
+
+The Qari live leaderboard displays only the Top 3 names and scores. It is motivational and experimental, not an official tajwid result or certification ranking.

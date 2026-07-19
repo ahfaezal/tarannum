@@ -8,7 +8,11 @@ from pydantic import BaseModel
 from datetime import datetime
 from typing import Optional, List
 from uuid import UUID
-from database import User, UserRole, get_db
+from database import (
+    AnalysisResult, QariContent, Reference, StudentQariRelationship,
+    TrainingChallenge, TrainingChallengeParticipant, User, UserRole,
+    UserSession, get_db,
+)
 from auth import (
     get_current_user, get_current_admin_user, get_current_qari_user,
     get_current_student_user, require_registered_user, get_current_user_optional
@@ -18,6 +22,7 @@ from progress_service import progress_service
 from db_reference_library import db_reference_library
 from db_session_service import db_session_service
 from selected_recording_service import selected_recording_service
+from subscription_service import subscription_service
 import logging
 
 logger = logging.getLogger(__name__)
@@ -67,6 +72,7 @@ class QariContentRequest(BaseModel):
     surah_name: Optional[str] = None
     ayah_number: Optional[int] = None
     maqam: Optional[str] = None
+    visibility_status: str = "students_only"
 
 
 class UpdateQariContentRequest(BaseModel):
@@ -74,6 +80,16 @@ class UpdateQariContentRequest(BaseModel):
     surah_name: Optional[str] = None
     ayah_number: Optional[int] = None
     maqam: Optional[str] = None
+    visibility_status: Optional[str] = None
+    public_demo_approved: Optional[bool] = None
+
+
+QARI_CONTENT_VISIBILITY = {"draft", "students_only", "public_demo", "inactive"}
+
+
+def _validate_content_visibility(value: Optional[str]):
+    if value is not None and value not in QARI_CONTENT_VISIBILITY:
+        raise HTTPException(status_code=400, detail="Invalid content visibility status")
 
 
 class StudentActivityEventRequest(BaseModel):
@@ -86,6 +102,42 @@ class StudentActivityEventRequest(BaseModel):
     occurred_at: Optional[datetime] = None
 
 
+class TrainingChallengeCreateRequest(BaseModel):
+    title: str
+    reference_id: str
+    student_ids: List[str]
+    start_at: datetime
+    end_at: datetime
+
+
+class TrainingChallengeStatusRequest(BaseModel):
+    status: str
+
+
+def _challenge_status(challenge: TrainingChallenge, now: Optional[datetime] = None) -> str:
+    current = now or datetime.utcnow()
+    if challenge.status == "cancelled":
+        return "cancelled"
+    if current < challenge.start_at:
+        return "scheduled"
+    if current > challenge.end_at:
+        return "completed"
+    return "active"
+
+
+def _challenge_payload(challenge: TrainingChallenge, participant_count: int = 0) -> dict:
+    return {
+        "id": str(challenge.id),
+        "title": challenge.title,
+        "reference_id": challenge.reference_id,
+        "start_at": challenge.start_at.isoformat(),
+        "end_at": challenge.end_at.isoformat(),
+        "status": _challenge_status(challenge),
+        "participant_count": participant_count,
+        "created_at": challenge.created_at.isoformat() if challenge.created_at else None,
+    }
+
+
 # Qari Endpoints
 @router.post("/qari/content")
 async def add_qari_content(
@@ -95,6 +147,7 @@ async def add_qari_content(
 ):
     """Add content to Qari's library."""
     try:
+        _validate_content_visibility(content.visibility_status)
         qari_content = qari_service.add_content_to_qari(
             qari_id=str(current_user.id),
             reference_id=content.reference_id,
@@ -102,6 +155,7 @@ async def add_qari_content(
             surah_name=content.surah_name,
             ayah_number=content.ayah_number,
             maqam=content.maqam,
+            visibility_status=content.visibility_status,
             db=db
         )
         return {"success": True, "content_id": str(qari_content.id)}
@@ -174,6 +228,7 @@ async def update_admin_qari_content(
 ):
     """Admin: update selected Qari content metadata."""
     try:
+        _validate_content_visibility(content.visibility_status)
         qari = _get_admin_managed_qari(qari_id, db)
         qari_content = qari_service.update_qari_content(
             content_id=content_id,
@@ -182,6 +237,9 @@ async def update_admin_qari_content(
             surah_name=content.surah_name,
             ayah_number=content.ayah_number,
             maqam=content.maqam,
+            visibility_status=content.visibility_status,
+            public_demo_approved=content.public_demo_approved,
+            public_demo_approved_by=current_user.id,
             db=db
         )
         return {"success": True, "content_id": str(qari_content.id)}
@@ -228,6 +286,9 @@ async def update_qari_content(
 ):
     """Update Qari content metadata (surah/ayah settings)."""
     try:
+        _validate_content_visibility(content.visibility_status)
+        if content.public_demo_approved is not None:
+            raise HTTPException(status_code=403, detail="Only Admin may approve Public Demo content")
         qari_content = qari_service.update_qari_content(
             content_id=content_id,
             qari_id=str(current_user.id),
@@ -235,6 +296,7 @@ async def update_qari_content(
             surah_name=content.surah_name,
             ayah_number=content.ayah_number,
             maqam=content.maqam,
+            visibility_status=content.visibility_status,
             db=db
         )
         return {"success": True, "content_id": str(qari_content.id)}
@@ -264,6 +326,180 @@ async def delete_qari_content(
     except Exception as e:
         logger.error(f"Error deleting Qari content: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/qari/training-challenges")
+def create_training_challenge(
+    payload: TrainingChallengeCreateRequest,
+    current_user: User = Depends(get_current_qari_user),
+    db: Session = Depends(get_db),
+):
+    """Create a time-bounded Training Challenge for selected assigned students."""
+    title = " ".join(payload.title.strip().split())
+    if not title:
+        raise HTTPException(status_code=400, detail="Challenge title is required")
+    if payload.end_at <= payload.start_at:
+        raise HTTPException(status_code=400, detail="Challenge end time must be after its start time")
+    if not payload.student_ids:
+        raise HTTPException(status_code=400, detail="Select at least one student")
+
+    reference = db.query(Reference).filter(
+        Reference.id == payload.reference_id,
+        Reference.owner_id == current_user.id,
+    ).first()
+    if not reference:
+        raise HTTPException(status_code=404, detail="Reference not found in your Content Library")
+
+    unique_student_ids = []
+    try:
+        unique_student_ids = list(dict.fromkeys(UUID(student_id) for student_id in payload.student_ids))
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail="One or more student identifiers are invalid")
+
+    assigned_ids = {
+        row[0] for row in db.query(StudentQariRelationship.student_id).filter(
+            StudentQariRelationship.qari_id == current_user.id,
+            StudentQariRelationship.student_id.in_(unique_student_ids),
+            StudentQariRelationship.is_active == True,
+        ).all()
+    }
+    if len(assigned_ids) != len(unique_student_ids):
+        raise HTTPException(status_code=403, detail="Every participant must be an active student assigned to this Qari")
+
+    challenge = TrainingChallenge(
+        qari_id=current_user.id,
+        reference_id=payload.reference_id,
+        title=title,
+        start_at=payload.start_at,
+        end_at=payload.end_at,
+        status="scheduled",
+    )
+    db.add(challenge)
+    db.flush()
+    db.add_all([
+        TrainingChallengeParticipant(challenge_id=challenge.id, student_id=student_id)
+        for student_id in unique_student_ids
+    ])
+    db.commit()
+    db.refresh(challenge)
+    return _challenge_payload(challenge, len(unique_student_ids))
+
+
+@router.get("/qari/training-challenges")
+def list_qari_training_challenges(
+    current_user: User = Depends(get_current_qari_user),
+    db: Session = Depends(get_db),
+):
+    rows = db.query(
+        TrainingChallenge,
+        func.count(TrainingChallengeParticipant.id).label("participant_count"),
+    ).outerjoin(
+        TrainingChallengeParticipant,
+        TrainingChallengeParticipant.challenge_id == TrainingChallenge.id,
+    ).filter(
+        TrainingChallenge.qari_id == current_user.id,
+    ).group_by(TrainingChallenge.id).order_by(TrainingChallenge.created_at.desc()).all()
+    return {"challenges": [_challenge_payload(item, count) for item, count in rows]}
+
+
+@router.put("/qari/training-challenges/{challenge_id}/status")
+def update_training_challenge_status(
+    challenge_id: UUID,
+    payload: TrainingChallengeStatusRequest,
+    current_user: User = Depends(get_current_qari_user),
+    db: Session = Depends(get_db),
+):
+    if payload.status not in {"scheduled", "cancelled"}:
+        raise HTTPException(status_code=400, detail="Status must be scheduled or cancelled")
+    challenge = db.query(TrainingChallenge).filter(
+        TrainingChallenge.id == challenge_id,
+        TrainingChallenge.qari_id == current_user.id,
+    ).first()
+    if not challenge:
+        raise HTTPException(status_code=404, detail="Training Challenge not found")
+    challenge.status = payload.status
+    db.commit()
+    db.refresh(challenge)
+    count = db.query(func.count(TrainingChallengeParticipant.id)).filter(
+        TrainingChallengeParticipant.challenge_id == challenge.id
+    ).scalar() or 0
+    return _challenge_payload(challenge, count)
+
+
+@router.get("/qari/training-challenges/{challenge_id}/leaderboard")
+def get_training_challenge_leaderboard(
+    challenge_id: UUID,
+    current_user: User = Depends(get_current_qari_user),
+    db: Session = Depends(get_db),
+):
+    """Return only the Top 3 highest completed scores for the Qari display."""
+    challenge = db.query(TrainingChallenge).filter(
+        TrainingChallenge.id == challenge_id,
+        TrainingChallenge.qari_id == current_user.id,
+    ).first()
+    if not challenge:
+        raise HTTPException(status_code=404, detail="Training Challenge not found")
+
+    rows = db.query(
+        UserSession.user_id,
+        User.full_name,
+        AnalysisResult.score,
+        AnalysisResult.created_at,
+    ).join(
+        AnalysisResult, AnalysisResult.user_session_id == UserSession.id,
+    ).join(
+        User, User.id == UserSession.user_id,
+    ).join(
+        TrainingChallengeParticipant,
+        and_(
+            TrainingChallengeParticipant.challenge_id == challenge.id,
+            TrainingChallengeParticipant.student_id == UserSession.user_id,
+        ),
+    ).filter(
+        UserSession.challenge_id == challenge.id,
+        UserSession.reference_id == challenge.reference_id,
+        AnalysisResult.created_at >= challenge.start_at,
+        AnalysisResult.created_at <= challenge.end_at,
+    ).all()
+
+    best_by_student = {}
+    for student_id, full_name, score, achieved_at in rows:
+        current = best_by_student.get(student_id)
+        candidate = {
+            "student_id": str(student_id),
+            "student_name": full_name or "Student",
+            "score": round(float(score), 2),
+            "achieved_at": achieved_at.isoformat() if achieved_at else None,
+        }
+        if current is None or candidate["score"] > current["score"] or (
+            candidate["score"] == current["score"]
+            and (candidate["achieved_at"] or "") < (current["achieved_at"] or "")
+        ):
+            best_by_student[student_id] = candidate
+
+    leaders = sorted(
+        best_by_student.values(),
+        key=lambda item: (-item["score"], item["achieved_at"] or ""),
+    )[:3]
+    return {
+        "challenge": _challenge_payload(challenge, len(best_by_student)),
+        "leaders": [{**leader, "rank": index + 1} for index, leader in enumerate(leaders)],
+    }
+
+
+@router.get("/student/training-challenges")
+def list_student_training_challenges(
+    current_user: User = Depends(get_current_student_user),
+    db: Session = Depends(get_db),
+):
+    rows = db.query(TrainingChallenge).join(
+        TrainingChallengeParticipant,
+        TrainingChallengeParticipant.challenge_id == TrainingChallenge.id,
+    ).filter(
+        TrainingChallengeParticipant.student_id == current_user.id,
+        TrainingChallenge.status != "cancelled",
+    ).order_by(TrainingChallenge.start_at.desc()).all()
+    return {"challenges": [_challenge_payload(item) for item in rows]}
 
 
 @router.get("/qari/students")
@@ -745,6 +981,14 @@ def get_available_content(
             qari = qari_service.get_student_qari(str(current_user.id), db=db)
             if qari:
                 content = qari_service.get_qari_content(qari["qari_id"], db=db)
+                content = [
+                    item for item in content
+                    if item.get("visibility_status") == "students_only"
+                    or (
+                        item.get("visibility_status") == "public_demo"
+                        and item.get("public_demo_approved") is True
+                    )
+                ]
                 return {"content": content, "qari": qari["qari_name"]}
             else:
                 return {"content": [], "message": "No Qari assigned. Please select a Qari."}
@@ -822,11 +1066,17 @@ async def get_qari_commission_stats(
                 StudentQariRelationship.is_active == True
             )
         ).group_by(StudentQariRelationship.referral_code).all()
+
+        royalty = subscription_service.calculate_monthly_commission(
+            str(current_user.id), datetime.utcnow().month, datetime.utcnow().year, db=db
+        )
         
         return {
             "active_students": active_students,
             "referral_code": current_user.referral_code,
             "commission_rate": current_user.commission_rate or 0.0,
+            "royalty_earned": royalty.get("total_commission", 0.0),
+            "royalty_currency": royalty.get("currency", "USD"),
             "referral_breakdown": [
                 {"code": code or "direct", "count": count}
                 for code, count in referral_stats

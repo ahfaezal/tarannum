@@ -234,6 +234,7 @@ if CELERY_AVAILABLE and celery_app:
                         recording_mode=job.recording_mode,
                         scoring_version=job.scoring_version,
                         recording_attempt=job.recording_attempt,
+                        challenge_id=str(job.challenge_id) if job.challenge_id else None,
                         current_user=user,
                         db=db,
                     ))

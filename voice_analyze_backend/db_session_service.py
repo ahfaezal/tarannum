@@ -43,6 +43,7 @@ class DBSessionService:
         recording_mode: Optional[str] = None,
         scoring_version: Optional[str] = None,
         recording_attempt: Optional[int] = None,
+        challenge_id: Optional[str] = None,
         db: Optional[Session] = None
     ) -> UserSession:
         """
@@ -84,6 +85,13 @@ class DBSessionService:
                     qari_uuid = uuid.UUID(qari_id) if isinstance(qari_id, str) else qari_id
                 except ValueError:
                     logger.warning(f"Invalid qari_id format: {qari_id}, storing session without qari")
+
+            challenge_uuid = None
+            if challenge_id:
+                try:
+                    challenge_uuid = uuid.UUID(challenge_id) if isinstance(challenge_id, str) else challenge_id
+                except ValueError:
+                    logger.warning(f"Invalid challenge_id format: {challenge_id}, storing session without challenge")
             
             # Create user session first to get session_id
             user_session = UserSession(
@@ -94,6 +102,7 @@ class DBSessionService:
                 recording_mode=recording_mode,
                 scoring_version=scoring_version,
                 recording_attempt=recording_attempt,
+                challenge_id=challenge_uuid,
                 audio_checksum=_sha256_file(user_audio_path),
                 data_schema_version=DATA_SCHEMA_VERSION,
                 integrity_status="pending_audio_upload",

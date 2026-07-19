@@ -26,6 +26,7 @@ class QariService:
         surah_name: Optional[str] = None,
         ayah_number: Optional[int] = None,
         maqam: Optional[str] = None,
+        visibility_status: str = "students_only",
         db: Optional[Session] = None
     ) -> QariContent:
         """Add a reference audio to Qari's content library."""
@@ -49,6 +50,12 @@ class QariService:
                     existing.ayah_number = ayah_number
                 if maqam is not None:
                     existing.maqam = maqam
+                existing.visibility_status = visibility_status
+                existing.is_active = visibility_status != "inactive"
+                if visibility_status != "public_demo":
+                    existing.public_demo_approved = False
+                    existing.public_demo_approved_at = None
+                    existing.public_demo_approved_by = None
                 db_session.commit()
                 db_session.refresh(existing)
                 logger.info(f"Reactivated content for Qari {qari_id}: {reference_id}")
@@ -62,7 +69,9 @@ class QariService:
                 surah_name=surah_name,
                 ayah_number=ayah_number,
                 maqam=maqam,
-                is_active=True
+                is_active=visibility_status != "inactive",
+                visibility_status=visibility_status,
+                public_demo_approved=False,
             )
             
             db_session.add(qari_content)
@@ -88,6 +97,9 @@ class QariService:
         surah_name: Optional[str] = None,
         ayah_number: Optional[int] = None,
         maqam: Optional[str] = None,
+        visibility_status: Optional[str] = None,
+        public_demo_approved: Optional[bool] = None,
+        public_demo_approved_by=None,
         db: Optional[Session] = None
     ) -> QariContent:
         """Update Qari content metadata (surah/ayah settings)."""
@@ -143,6 +155,22 @@ class QariService:
                 qari_content.ayah_number = ayah_number
             if maqam is not None:
                 qari_content.maqam = maqam
+            if visibility_status is not None:
+                qari_content.visibility_status = visibility_status
+                qari_content.is_active = visibility_status != "inactive"
+                if visibility_status != "public_demo":
+                    qari_content.public_demo_approved = False
+                    qari_content.public_demo_approved_at = None
+                    qari_content.public_demo_approved_by = None
+            if public_demo_approved is not None:
+                if qari_content.visibility_status != "public_demo" and public_demo_approved:
+                    raise ValueError("Only Public Demo content can be approved")
+                qari_content.public_demo_approved = public_demo_approved
+                qari_content.public_demo_approved_at = datetime.utcnow() if public_demo_approved else None
+                qari_content.public_demo_approved_by = public_demo_approved_by if public_demo_approved else None
+                reference = db_session.query(Reference).filter(Reference.id == qari_content.reference_id).first()
+                if reference:
+                    reference.is_public = bool(public_demo_approved)
             
             db_session.commit()
             db_session.refresh(qari_content)
@@ -250,7 +278,9 @@ class QariService:
                     "is_preset": ref.is_preset,
                     "upload_date": ref.upload_date.isoformat() if ref.upload_date else None,
                     "created_at": ref.upload_date.isoformat() if ref.upload_date else None,  # Use upload_date for created_at too
-                    "text_segments": text_segments
+                    "text_segments": text_segments,
+                    "visibility_status": qari_content.visibility_status if qari_content else "students_only",
+                    "public_demo_approved": bool(qari_content.public_demo_approved) if qari_content else False,
                 })
             
             # Log the result for debugging
