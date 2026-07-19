@@ -46,7 +46,12 @@ class SelectedRecordingService:
         analysis_uuid = uuid.UUID(str(analysis_result_id))
 
         session = db.query(UserSession).filter(UserSession.id == session_uuid).first()
-        analysis = db.query(AnalysisResult).filter(AnalysisResult.id == analysis_uuid).first()
+        # Only the identity/score are required here. Loading the full
+        # AnalysisResult also deserializes the large pitch/segment JSON payload.
+        analysis = db.query(
+            AnalysisResult.id.label("analysis_id"),
+            AnalysisResult.score.label("score"),
+        ).filter(AnalysisResult.id == analysis_uuid).first()
 
         if not session or not analysis:
             logger.warning("Selected recordings skipped: session or analysis not found")
@@ -62,7 +67,14 @@ class SelectedRecordingService:
             return []
 
         rows = (
-            db.query(AnalysisResult, UserSession)
+            db.query(
+                AnalysisResult.id.label("analysis_id"),
+                AnalysisResult.score.label("score"),
+                UserSession.id.label("session_id"),
+                UserSession.created_at.label("session_created_at"),
+                UserSession.cloud_storage_path.label("cloud_storage_path"),
+                UserSession.file_path.label("file_path"),
+            )
             .join(UserSession, AnalysisResult.user_session_id == UserSession.id)
             .filter(
                 UserSession.user_id == session.user_id,
@@ -75,38 +87,43 @@ class SelectedRecordingService:
         if not rows:
             return []
 
-        candidates = sorted(rows, key=lambda item: (float(item[0].score), item[1].created_at or datetime.min))
+        candidates = sorted(
+            rows,
+            key=lambda item: (float(item.score), item.session_created_at or datetime.min),
+        )
         selected = {
             "lowest": candidates[0],
             "highest": candidates[-1],
         }
 
-        scores = [float(item[0].score) for item in candidates]
+        scores = [float(item.score) for item in candidates]
         middle = len(scores) // 2
         median_score = scores[middle] if len(scores) % 2 else (scores[middle - 1] + scores[middle]) / 2.0
         selected["median"] = min(
             candidates,
             key=lambda item: (
-                abs(float(item[0].score) - median_score),
-                item[1].created_at or datetime.min,
+                abs(float(item.score) - median_score),
+                item.session_created_at or datetime.min,
             ),
         )
 
         updated: List[StudentSelectedRecording] = []
-        for slot_type, (slot_analysis, slot_session) in selected.items():
+        for slot_type, selected_row in selected.items():
             record = self._upsert_slot(
                 db=db,
                 student_id=session.user_id,
                 reference_id=session.reference_id,
                 slot_type=slot_type,
-                session=slot_session,
-                analysis=slot_analysis,
+                session_id=selected_row.session_id,
+                analysis_id=selected_row.analysis_id,
+                score=selected_row.score,
+                cloud_storage_path=(
+                    selected_row.cloud_storage_path or selected_row.file_path
+                ),
             )
             updated.append(record)
 
         db.commit()
-        for record in updated:
-            db.refresh(record)
         logger.info(
             "Updated selected recording slots for student=%s reference=%s count=%d",
             session.user_id,
@@ -122,8 +139,10 @@ class SelectedRecordingService:
         student_id: Any,
         reference_id: str,
         slot_type: str,
-        session: UserSession,
-        analysis: AnalysisResult,
+        session_id: Any,
+        analysis_id: Any,
+        score: float,
+        cloud_storage_path: Optional[str],
     ) -> StudentSelectedRecording:
         record = (
             db.query(StudentSelectedRecording)
@@ -142,10 +161,10 @@ class SelectedRecordingService:
             )
             db.add(record)
 
-        record.session_id = session.id
-        record.analysis_result_id = analysis.id
-        record.score = float(analysis.score)
-        record.cloud_storage_path = session.cloud_storage_path or session.file_path
+        record.session_id = session_id
+        record.analysis_result_id = analysis_id
+        record.score = float(score)
+        record.cloud_storage_path = cloud_storage_path
         record.updated_at = datetime.utcnow()
         return record
 

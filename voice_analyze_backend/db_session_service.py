@@ -304,8 +304,17 @@ class DBSessionService:
                             
                             # Save to temp file
                             import tempfile
-                            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as tmp_file:
-                                json.dump(scoring_data, tmp_file, indent=2)
+                            with tempfile.NamedTemporaryFile(
+                                mode='w', suffix='.json', delete=False, encoding='utf-8'
+                            ) as tmp_file:
+                                # Preserve every field while avoiding whitespace
+                                # inflation in the large pitch-data payload.
+                                json.dump(
+                                    scoring_data,
+                                    tmp_file,
+                                    ensure_ascii=False,
+                                    separators=(',', ':'),
+                                )
                                 tmp_path = Path(tmp_file.name)
                             
                             try:
