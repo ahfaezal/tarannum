@@ -196,6 +196,42 @@ export const resendOtp = async (email: string): Promise<MessageResponse> => {
   return response.json();
 };
 
+export const requestPasswordReset = async (email: string): Promise<MessageResponse> => {
+  const response = await fetch(`${API_URL}/api/auth/forgot-password`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email }),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: response.statusText }));
+    throw new Error(error.detail || "Unable to request a password reset");
+  }
+  return response.json();
+};
+
+export const resetPassword = async (
+  email: string,
+  otpCode: string,
+  newPassword: string,
+  confirmPassword: string,
+): Promise<MessageResponse> => {
+  const response = await fetch(`${API_URL}/api/auth/reset-password`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      email,
+      otp_code: otpCode,
+      new_password: newPassword,
+      confirm_password: confirmPassword,
+    }),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: response.statusText }));
+    throw new Error(error.detail || "Unable to reset password");
+  }
+  return response.json();
+};
+
 /**
  * Validate a public Qari referral code
  */

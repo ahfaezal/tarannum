@@ -15,6 +15,7 @@ const ContactPage = lazy(() => import("./views/public/ContactPage"));
 const Login = lazy(() => import("./components/Login"));
 const Register = lazy(() => import("./components/Register"));
 const VerifyEmail = lazy(() => import("./components/VerifyEmail"));
+const ForgotPassword = lazy(() => import("./components/ForgotPassword"));
 const TrainingPage = lazy(() => import("./views/training/TrainingPage"));
 const RecordingPage = lazy(() => import("./views/recording/RecordingPage"));
 const StudentProgress = lazy(() => import("./views/StudentProgress"));
@@ -24,6 +25,7 @@ const QariDashboard = lazy(() => import("./views/QariDashboard"));
 const QariContentEditor = lazy(() => import("./components/QariContentEditor"));
 const AdminQariContentManager = lazy(() => import("./views/AdminQariContentManager"));
 const AdminMode = lazy(() => import("./views/AdminMode"));
+const AdminDashboard = lazy(() => import("./views/AdminDashboard"));
 
 const PageLoader = () => (
   <div className="flex min-h-[40vh] items-center justify-center" role="status">
@@ -64,6 +66,7 @@ const App: React.FC = () => {
           <Route path="/login" element={isAuthenticated ? <Navigate to="/training" replace /> : <Login onSwitchToRegister={() => navigate("/register")} onSuccess={() => navigate(new URLSearchParams(location.search).get("next") || "/training")} />} />
           <Route path="/register" element={isAuthenticated ? <Navigate to="/training" replace /> : <Register onSwitchToLogin={() => navigate("/login")} onSuccess={(email) => navigate(`/verify-email?email=${encodeURIComponent(email || "")}`)} />} />
           <Route path="/verify-email" element={isAuthenticated ? <Navigate to="/training" replace /> : <VerifyEmail />} />
+          <Route path="/forgot-password" element={isAuthenticated ? <Navigate to="/training" replace /> : <ForgotPassword />} />
         </Route>
 
         <Route element={<ProtectedRoute />}>
@@ -81,6 +84,7 @@ const App: React.FC = () => {
               <Route path="/qari/content/edit/:contentId" element={<QariContentEditor />} />
             </Route>
             <Route element={<ProtectedRoute roles={["admin"]} />}>
+              <Route path="/admin" element={<AdminDashboard />} />
               <Route path="/admin/qari/:qariId/content" element={<AdminQariContentManager />} />
               <Route path="/admin/qari/:qariId/content/edit/:contentId" element={<QariContentEditor />} />
               <Route path="/admin/presets" element={<AdminMode view="presets" />} />

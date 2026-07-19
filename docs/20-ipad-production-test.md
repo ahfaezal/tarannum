@@ -1,5 +1,30 @@
 # Tarannum.ai — 20 iPad Production Test
 
+Version: 1.1  
+Date: 2026-07-17  
+Last Updated: 2026-07-19  
+Status: 10-device production baseline passed; 20-device validation deferred until test accounts are prepared.
+
+## Validated production baseline
+
+The production recording-to-scoring workflow has been validated successfully with 10 iPads submitting concurrently.
+
+- Result: 10/10 scoring jobs completed successfully.
+- Worker configuration: `1 replica × concurrency 2`.
+- Scoring architecture: asynchronous job queue.
+- Score model: Experimental Score V2.3, frozen for pilot validation.
+- Per-job processing time: 24.0–29.3 seconds.
+- Mean processing time: 25.3 seconds.
+- Median processing time: 24.5 seconds.
+- Completion spread for all 10 jobs: approximately 110 seconds.
+- Retries: 0.
+- Worker failures and `AccessDenied`: 0.
+- S3 staging cleanup: 10/10 temporary `scoring-jobs/` objects deleted successfully.
+
+This is a major production milestone because the complete path—recording, upload, queueing, scoring, result persistence and S3 staging cleanup—worked under concurrent real-device load.
+
+The 20-iPad test remains required for final classroom-capacity validation. It is intentionally deferred while sufficient participant accounts are prepared. No worker-concurrency or V2.3 formula change should be made before that test unless a production defect requires it.
+
 ## Objective
 
 Validate that 20 participants sharing one public Wi-Fi IP can access Tarannum.ai, register, train, record, submit and receive a score without HTTP 429, server errors or indefinite loading.

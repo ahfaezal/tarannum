@@ -81,6 +81,12 @@ class User(Base):
     otp_attempt_count = Column(Integer, default=0, nullable=False)
     otp_last_sent_at = Column(DateTime, nullable=True)
     otp_resend_count = Column(Integer, default=0, nullable=False)
+    password_reset_otp_hash = Column(String, nullable=True)
+    password_reset_expires_at = Column(DateTime, nullable=True)
+    password_reset_consumed_at = Column(DateTime, nullable=True)
+    password_reset_attempt_count = Column(Integer, default=0, nullable=False)
+    password_reset_last_sent_at = Column(DateTime, nullable=True)
+    password_reset_resend_count = Column(Integer, default=0, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     last_login = Column(DateTime, nullable=True)
     
@@ -475,6 +481,12 @@ def ensure_email_otp_columns():
         "otp_last_sent_at": "TIMESTAMP",
         "otp_resend_count": "INTEGER DEFAULT 0 NOT NULL",
         "pending_referral_code": "VARCHAR",
+        "password_reset_otp_hash": "VARCHAR",
+        "password_reset_expires_at": "TIMESTAMP",
+        "password_reset_consumed_at": "TIMESTAMP",
+        "password_reset_attempt_count": "INTEGER DEFAULT 0 NOT NULL",
+        "password_reset_last_sent_at": "TIMESTAMP",
+        "password_reset_resend_count": "INTEGER DEFAULT 0 NOT NULL",
     }
 
     with engine.begin() as conn:

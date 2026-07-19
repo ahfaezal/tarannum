@@ -2,7 +2,7 @@
 
 Version: 1.0  
 Date: 2026-06-26  
-Last Updated: 2026-07-02
+Last Updated: 2026-07-19
 
 ## Purpose
 
@@ -119,3 +119,25 @@ Status: Approved.
 Date: 2026-07-02
 
 Assessment Score is used for Recording Mode, not Practice Mode. The scoring model should reward visible improvement in pitch contour and ayah-segment timing while still protecting against silent, weak, or wrong recordings. The July 2026 adjustment reduces over-reliance on MFCC and other device-sensitive audio features, increases the effect of pitch contour and segment consistency, and updates frontend score labels to avoid implying a full tajwid or Quran correctness judgment. Detailed original and updated scoring specifications are defined in `docs/architecture/Assessment_Score_Specification_v1.md`.
+
+## Decision 012
+
+Title: Production scoring uses an asynchronous queue with controlled worker concurrency.
+
+Status: Approved.
+
+Date: 2026-07-19
+
+Production scoring runs asynchronously so recording submissions remain responsive while CPU-intensive analysis is processed separately. The validated pilot baseline is one scoring-worker replica with concurrency two. A 10-iPad concurrent production test completed 10/10 jobs without retries or worker failures, with per-job processing times between 24.0 and 29.3 seconds.
+
+This configuration remains frozen until the planned 20-iPad validation or until evidence from production identifies a defect. Increasing CPU, replica count or worker concurrency must be supported by a controlled load test and must not weaken job integrity, observability or S3 cleanup.
+
+## Decision 013
+
+Title: Temporary scoring uploads are deleted after terminal processing.
+
+Status: Approved.
+
+Date: 2026-07-19
+
+Audio uploaded under the S3 `scoring-jobs/` staging prefix is temporary processing data. The scoring worker deletes each staging object after the job reaches a terminal state. The S3 lifecycle rule remains a fallback for abandoned objects, and the worker IAM policy is restricted to the required staging-object operations. Permanent participant audio and score artifacts are not governed by this staging cleanup decision.

@@ -6,6 +6,7 @@ import { useDispatch, useSelector } from "react-redux";
 import { loginUser } from "../store/slices/authSlice";
 import { RootState } from "../store";
 import { LogIn, Mail, Lock, AlertCircle, CheckCircle } from "lucide-react";
+import { Link } from "react-router-dom";
 
 interface LoginProps {
   onSwitchToRegister: () => void;
@@ -102,6 +103,12 @@ const Login: React.FC<LoginProps> = ({ onSwitchToRegister, onSuccess, onClose })
                 placeholder="••••••••"
               />
             </div>
+          </div>
+
+          <div className="text-right">
+            <Link to="/forgot-password" className="text-sm font-medium text-green-700 hover:text-green-800">
+              Forgot password?
+            </Link>
           </div>
 
           <button

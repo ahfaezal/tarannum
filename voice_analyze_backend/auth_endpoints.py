@@ -64,6 +64,17 @@ class ResendOtpRequest(BaseModel):
     email: EmailStr
 
 
+class PasswordResetRequest(BaseModel):
+    email: EmailStr
+
+
+class PasswordResetConfirmRequest(BaseModel):
+    email: EmailStr
+    otp_code: str
+    new_password: str
+    confirm_password: str
+
+
 class Token(BaseModel):
     access_token: str
     token_type: str
@@ -306,6 +317,27 @@ def _hash_otp(email: str, otp_code: str) -> str:
     return hmac.new(SECRET_KEY.encode("utf-8"), message, hashlib.sha256).hexdigest()
 
 
+def _hash_password_reset_otp(email: str, otp_code: str) -> str:
+    """Hash a recovery OTP in a separate security namespace."""
+    message = f"password-reset:{_normalize_email(email)}:{otp_code}".encode("utf-8")
+    return hmac.new(SECRET_KEY.encode("utf-8"), message, hashlib.sha256).hexdigest()
+
+
+def _validate_new_password(password: str):
+    if len(password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters long")
+    if len(password) > 72:
+        raise HTTPException(status_code=400, detail="Password must be 72 characters or less")
+    if not any(c.isupper() for c in password):
+        raise HTTPException(status_code=400, detail="Password must contain at least one uppercase letter")
+    if not any(c.islower() for c in password):
+        raise HTTPException(status_code=400, detail="Password must contain at least one lowercase letter")
+    if not any(c.isdigit() for c in password):
+        raise HTTPException(status_code=400, detail="Password must contain at least one number")
+    if not any(c in "!@#$%^&*()_+-=[]{}|;:,.<>?" for c in password):
+        raise HTTPException(status_code=400, detail="Password must contain at least one special character")
+
+
 def _safe_resend_error_body(raw_body: str, otp_code: str) -> str:
     """Return a sanitized Resend error body safe for logs."""
     sanitized = raw_body.replace(otp_code, "[OTP_REDACTED]")
@@ -352,7 +384,7 @@ def log_email_config_startup():
     )
 
 
-def _send_verification_email(email: str, otp_code: str):
+def _send_verification_email(email: str, otp_code: str, purpose: str = "verification"):
     """Send OTP email through Resend."""
     api_key = os.getenv("RESEND_API_KEY")
     config = _email_config()
@@ -363,9 +395,11 @@ def _send_verification_email(email: str, otp_code: str):
         raise RuntimeError("Email service is not configured.")
 
     escaped_otp = html.escape(otp_code)
+    is_password_reset = purpose == "password_reset"
+    action_label = "password reset" if is_password_reset else "email verification"
     html_body = (
         "<p>Assalamualaikum,</p>"
-        "<p>Your Tarannum AI verification code is:</p>"
+        f"<p>Your Tarannum AI {action_label} code is:</p>"
         f"<p style=\"font-size:24px;font-weight:700;letter-spacing:4px;\">{escaped_otp}</p>"
         "<p>This code will expire in 10 minutes.</p>"
         "<p>If you did not request this, please ignore this email.</p>"
@@ -375,7 +409,7 @@ def _send_verification_email(email: str, otp_code: str):
     payload = {
         "from": email_from,
         "to": [email],
-        "subject": "Tarannum AI Email Verification Code",
+        "subject": "Tarannum AI Password Reset Code" if is_password_reset else "Tarannum AI Email Verification Code",
         "html": html_body,
     }
     if email_reply_to:
@@ -424,11 +458,11 @@ def _send_verification_email(email: str, otp_code: str):
         raise RuntimeError("Failed to send verification email.") from e
 
 
-def _send_verification_email_background(email: str, otp_code: str):
+def _send_verification_email_background(email: str, otp_code: str, purpose: str = "verification"):
     """Send OTP after responding to registration, with bounded retries."""
     for attempt in range(1, 4):
         try:
-            _send_verification_email(email, otp_code)
+            _send_verification_email(email, otp_code, purpose)
             return
         except RuntimeError as exc:
             logger.warning("OTP email attempt %s failed for %s: %s", attempt, email, exc)
@@ -472,6 +506,15 @@ def _set_new_otp(user: User, otp_code: str, now: datetime, resend_count: int = 0
     user.otp_attempt_count = 0
     user.otp_last_sent_at = now
     user.otp_resend_count = resend_count
+
+
+def _set_password_reset_otp(user: User, otp_code: str, now: datetime, resend_count: int = 0):
+    user.password_reset_otp_hash = _hash_password_reset_otp(user.email, otp_code)
+    user.password_reset_expires_at = now + timedelta(minutes=OTP_EXPIRY_MINUTES)
+    user.password_reset_consumed_at = None
+    user.password_reset_attempt_count = 0
+    user.password_reset_last_sent_at = now
+    user.password_reset_resend_count = resend_count
 
 
 @router.post("/register", response_model=UserResponse)
@@ -773,6 +816,88 @@ def resend_otp(payload: ResendOtpRequest, db: Session = Depends(get_db)):
 
     db.commit()
     return {"message": "OTP has been sent to your email."}
+
+
+@router.post("/forgot-password", response_model=MessageResponse)
+def request_password_reset(
+    payload: PasswordResetRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    """Create a password-recovery challenge without revealing account existence."""
+    public_message = "If the email is registered, a password reset code has been sent."
+    normalized_email = _normalize_email(payload.email)
+    user = get_user_by_email(db, normalized_email)
+
+    if not user or not user.is_active or not user.email_verified:
+        return {"message": public_message}
+
+    now = datetime.utcnow()
+    if user.password_reset_last_sent_at:
+        cooldown_until = user.password_reset_last_sent_at + timedelta(seconds=OTP_RESEND_COOLDOWN_SECONDS)
+        if cooldown_until > now:
+            return {"message": public_message}
+
+    challenge_still_valid = bool(
+        user.password_reset_expires_at and user.password_reset_expires_at > now
+    )
+    current_resend_count = user.password_reset_resend_count or 0
+    if challenge_still_valid and current_resend_count >= OTP_MAX_RESENDS:
+        return {"message": public_message}
+
+    otp_code = _generate_otp()
+    next_resend_count = current_resend_count + 1 if challenge_still_valid else 0
+    _set_password_reset_otp(user, otp_code, now, resend_count=next_resend_count)
+    db.commit()
+    background_tasks.add_task(
+        _send_verification_email_background,
+        normalized_email,
+        otp_code,
+        "password_reset",
+    )
+    logger.info("Password reset challenge requested for %s", normalized_email)
+    return {"message": public_message}
+
+
+@router.post("/reset-password", response_model=MessageResponse)
+def reset_password(payload: PasswordResetConfirmRequest, db: Session = Depends(get_db)):
+    """Consume a valid recovery OTP and set a new password."""
+    normalized_email = _normalize_email(payload.email)
+    otp_code = payload.otp_code.strip()
+    if not otp_code.isdigit() or len(otp_code) != 6:
+        raise HTTPException(status_code=400, detail="Invalid or expired reset code.")
+    if payload.new_password != payload.confirm_password:
+        raise HTTPException(status_code=400, detail="Passwords do not match.")
+    _validate_new_password(payload.new_password)
+
+    user = get_user_by_email(db, normalized_email)
+    now = datetime.utcnow()
+    invalid_challenge = (
+        not user
+        or not user.is_active
+        or not user.password_reset_otp_hash
+        or not user.password_reset_expires_at
+        or user.password_reset_consumed_at is not None
+        or user.password_reset_expires_at < now
+    )
+    if invalid_challenge:
+        raise HTTPException(status_code=400, detail="Invalid or expired reset code.")
+
+    if (user.password_reset_attempt_count or 0) >= OTP_MAX_ATTEMPTS:
+        raise HTTPException(status_code=429, detail="Too many invalid attempts. Request a new reset code.")
+
+    expected_hash = _hash_password_reset_otp(normalized_email, otp_code)
+    if not hmac.compare_digest(user.password_reset_otp_hash, expected_hash):
+        user.password_reset_attempt_count = (user.password_reset_attempt_count or 0) + 1
+        db.commit()
+        raise HTTPException(status_code=400, detail="Invalid or expired reset code.")
+
+    user.hashed_password = get_password_hash(payload.new_password)
+    user.password_reset_consumed_at = now
+    user.password_reset_attempt_count = 0
+    db.commit()
+    logger.info("Password reset completed for %s", normalized_email)
+    return {"message": "Password reset successfully. You may now sign in."}
 
 
 @router.get("/me", response_model=UserResponse)

@@ -2,7 +2,7 @@
 
 Version: 1.0  
 Date: 2026-06-26  
-Last Updated: 2026-07-02
+Last Updated: 2026-07-19
 
 ## Purpose
 
@@ -32,6 +32,8 @@ If the architecture changes, update the relevant document and record the decisio
 6. [Experience Modes Specification](product/Experience_Modes_Specification_v1.md)
 7. [Subscription and Royalty Model](product/Subscription_Royalty_Model_v1.md)
 8. [Decision Log](decisions/Decision_Log.md)
+9. [20 iPad Production Test](20-ipad-production-test.md)
+10. [System Modernization Audit — 2026-07-19](system-modernization-audit-2026-07-19.md)
 
 ## Documentation Structure
 
@@ -40,6 +42,8 @@ If the architecture changes, update the relevant document and record the decisio
 - `product/` defines product experience modes, subscription policy, qari royalty, and business rules.
 - `standards/` defines shared language and development principles.
 - `decisions/` records approved architecture decisions.
+- `20-ipad-production-test.md` records the production load-test procedure, validated baseline and readiness criteria for classroom deployment.
+- `system-modernization-audit-2026-07-19.md` records the approved Admin, password recovery, dashboard-performance and Recording/Scoring modernization scope.
 
 ## Maintenance
 
