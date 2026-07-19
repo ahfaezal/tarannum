@@ -1,6 +1,6 @@
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { CheckCircle2, Headphones, Maximize2, Mic2, RotateCcw, Send, ShieldCheck } from "lucide-react";
+import { ArrowRight, CheckCircle2, Headphones, Maximize2, Mic2, RotateCcw, Send, ShieldCheck } from "lucide-react";
 import { getAvailableContent } from "../../services/platformService";
 import { analyzeRecitation, AssessmentRecordingSummary, extractReferencePitch, getRecordingSessionStatus, getScoringCapacity, restoreCompletedRecordingResult, ScoringCapacity, ScoringJobProgress } from "../../services/apiService";
 import { PitchPoint } from "../../services/pitchExtractor";
@@ -359,13 +359,36 @@ const RecordingPage: React.FC = () => {
     reset();
   };
 
+  const journeyStage = result ? 3 : blob || isRecording || showRecordingCountdown ? 2 : 1;
+  const journeySteps = [
+    { number: 1, label: "Set up", detail: "Choose a reference and session" },
+    { number: 2, label: "Record", detail: "Follow the Qari graph silently" },
+    { number: 3, label: "Result", detail: "Review your assessment" },
+  ];
+
   return <section className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
-    <p className="font-semibold text-emerald-700">RECORDING & ASSESSMENT</p>
-    <h1 className="mt-3 text-3xl font-bold">Record only when you are fully prepared.</h1>
-    <p className="mt-3 text-slate-600">The graph follows your live voice while the Qari audio remains muted. Results are labelled Experimental Score V2.3.</p>
+    <p className="font-semibold tracking-wide text-emerald-700">RECORDING & ASSESSMENT</p>
+    <h1 className="mt-3 text-3xl font-bold text-slate-950">Record when you are ready to assess your progress.</h1>
+    <p className="mt-3 max-w-3xl text-slate-600">Follow the Qari pitch graph as a silent visual guide. Your recording is assessed using Experimental Score V2.3.</p>
+
+    <ol className="mt-7 grid overflow-hidden rounded-2xl border border-slate-200 bg-white sm:grid-cols-3" aria-label="Assessment progress">
+      {journeySteps.map((step) => {
+        const complete = journeyStage > step.number;
+        const active = journeyStage === step.number;
+        return <li key={step.number} className={`flex items-center gap-3 border-b border-slate-200 px-4 py-4 last:border-b-0 sm:border-b-0 sm:border-r sm:last:border-r-0 ${active ? "bg-emerald-50" : ""}`} aria-current={active ? "step" : undefined}>
+          <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold ${complete ? "bg-emerald-600 text-white" : active ? "border-2 border-emerald-600 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
+            {complete ? <CheckCircle2 size={19}/> : step.number}
+          </span>
+          <span><span className="block font-semibold text-slate-900">{step.label}</span><span className="block text-xs text-slate-500">{step.detail}</span></span>
+        </li>;
+      })}
+    </ol>
 
     <div className="mt-8 rounded-2xl border bg-white p-6">
-      <h2 className="text-xl font-bold">1. Recording Setup</h2>
+      <div className="flex items-center justify-between gap-4">
+        <div><p className="text-xs font-bold uppercase tracking-wider text-emerald-700">Step 1</p><h2 className="mt-1 text-xl font-bold">Recording Setup</h2></div>
+        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">{mode === "R1" ? "Baseline" : "Progress"}</span>
+      </div>
       <div className="mt-5 grid gap-4 md:grid-cols-2">
         <label className="text-sm font-semibold">Reference Audio
           <select disabled={loading || isRecording} value={referenceId} onChange={(event) => {
@@ -407,19 +430,19 @@ const RecordingPage: React.FC = () => {
           </p>
         </fieldset>
       </div>
-      <div className="mt-5 grid gap-3 text-sm text-slate-600 sm:grid-cols-3">
-        <span className="flex items-center gap-2"><Headphones size={18}/> Headset connected</span>
-        <span className="flex items-center gap-2"><Mic2 size={18}/> Microphone enabled</span>
-        <span className="flex items-center gap-2"><ShieldCheck size={18}/> Quiet recording space</span>
+      <div className="mt-5 grid gap-3 rounded-xl bg-slate-50 p-4 text-sm text-slate-700 sm:grid-cols-3" aria-label="Recording preparation checklist">
+        <span className="flex items-center gap-2"><Headphones size={18} className="text-emerald-700"/> Use your headset</span>
+        <span className="flex items-center gap-2"><Mic2 size={18} className="text-emerald-700"/> Allow microphone access</span>
+        <span className="flex items-center gap-2"><ShieldCheck size={18} className="text-emerald-700"/> Choose a quiet space</span>
       </div>
-      <p className="mt-4 text-xs text-slate-400">Active training session · Technical ID stored automatically</p>
       {completedModes.has("R1") && <button type="button" onClick={startNewAssessment} disabled={isRecording || submitting} className="mt-4 inline-flex items-center gap-2 rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">
         <RotateCcw size={16}/> Start New Assessment
       </button>}
     </div>
 
     <div className="mt-6 rounded-2xl border bg-white p-6">
-      <h2 className="text-xl font-bold">2. Record Recitation — {mode === "R1" ? "Baseline" : "Progress"}</h2>
+      <p className="text-xs font-bold uppercase tracking-wider text-emerald-700">Step 2</p>
+      <h2 className="mt-1 text-xl font-bold">Record Recitation — {mode === "R1" ? "Baseline" : "Progress"}</h2>
       <p className="mt-2 text-sm text-slate-600">{modeDescription[mode]}</p>
       {error && <div className="mt-4 rounded-xl bg-red-50 p-4 text-sm text-red-800">{error}</div>}
       {!referenceId
@@ -495,7 +518,9 @@ const RecordingPage: React.FC = () => {
     </div>
 
     {blob && mode !== "R1" && <div className="mt-6 rounded-2xl border bg-white p-6">
-      <h2 className="text-xl font-bold">3. Review Recording</h2>
+      <p className="text-xs font-bold uppercase tracking-wider text-emerald-700">Step 3</p>
+      <h2 className="mt-1 text-xl font-bold">Review Recording</h2>
+      <p className="mt-2 text-sm text-slate-600">Listen once before submitting. Retake only when the recording has a clear technical problem.</p>
       <audio controls src={recordingUrl} className="mt-5 w-full"/>
       <div className="mt-5 flex flex-col gap-3 sm:flex-row">
         <button type="button" onClick={reset} className="inline-flex items-center justify-center gap-2 rounded-xl border px-5 py-3 font-semibold"><RotateCcw size={18}/> Retake</button>
@@ -548,7 +573,10 @@ const RecordingPage: React.FC = () => {
     </div>}
 
     {result && <div className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50 p-6">
-      <div className="flex items-center gap-3 text-emerald-800"><CheckCircle2/><h2 className="text-xl font-bold">Experimental Score V2.3</h2></div>
+      <div className="flex flex-wrap items-center justify-between gap-3 text-emerald-800">
+        <div className="flex items-center gap-3"><CheckCircle2/><div><p className="text-xs font-bold uppercase tracking-wider">Assessment complete</p><h2 className="text-xl font-bold">Experimental Score V2.3</h2></div></div>
+        <span className="rounded-full bg-white px-4 py-2 text-sm font-bold text-emerald-800 shadow-sm">{Math.round(result.normalizedScore ?? result.score)}% overall</span>
+      </div>
       <p className="mt-3 max-w-2xl text-slate-700">This score supports practice and is not an official result or participant ranking.</p>
       {result.scoreBreakdown && <div className="mt-6 space-y-6">
         <Suspense fallback={<p className="text-sm text-slate-500">Preparing assessment profile…</p>}>
@@ -573,10 +601,13 @@ const RecordingPage: React.FC = () => {
           <strong>How the final score is formed:</strong> V2.3 applies weighted graph metrics, assessment-validity checks and any applicable score cap. Component scores are diagnostic indicators and are not averaged equally.
         </div>
       </div>}
-      <dl className="mt-5 grid gap-2 text-sm text-slate-600 sm:grid-cols-2">
-        <div><dt className="font-semibold">Recording ID</dt><dd className="break-all">{result.sessionId || "—"}</dd></div>
-        <div><dt className="font-semibold">Metadata</dt><dd>{(result.recordingMode || mode) === "R1" ? "Baseline" : "Progress"} · {result.scoringVersion || "V2.3"} · Attempt {result.recordingAttempt || recordingAttempt}</dd></div>
-      </dl>
+      <details className="mt-5 rounded-xl border border-emerald-200 bg-white px-4 py-3 text-sm text-slate-600">
+        <summary className="cursor-pointer font-semibold text-slate-800">Technical details</summary>
+        <dl className="mt-3 grid gap-3 sm:grid-cols-2">
+          <div><dt className="font-semibold">Recording ID</dt><dd className="break-all">{result.sessionId || "—"}</dd></div>
+          <div><dt className="font-semibold">Assessment metadata</dt><dd>{(result.recordingMode || mode) === "R1" ? "Baseline" : "Progress"} · {result.scoringVersion || "V2.3"} · Attempt {result.recordingAttempt || recordingAttempt}</dd></div>
+        </dl>
+      </details>
       {result.integrityStatus === "complete"
         ? <p className="mt-4 text-sm font-medium text-emerald-800">Data integrity verified: database, audio and score data are complete.</p>
         : result.integrityStatus
@@ -591,9 +622,14 @@ const RecordingPage: React.FC = () => {
         </div>
         <p className="mt-2 text-xs text-slate-500">All {assessmentJourney.progressCount} progress attempts remain securely stored. Median and best are selected from actual recordings.</p>
       </div>}
+      <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+        {mode === "R1" && <button type="button" onClick={() => { setMode("R2"); recordingAttemptRef.current = assessmentJourney.progressCount; setRecordingAttempt(recordingAttemptRef.current); reset(); }} className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-700 px-5 py-3 font-semibold text-white hover:bg-emerald-800">Continue to Progress Recording <ArrowRight size={18}/></button>}
+        {mode === "R2" && <button type="button" onClick={reset} className="inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-700 bg-white px-5 py-3 font-semibold text-emerald-800 hover:bg-emerald-50"><RotateCcw size={18}/> Record Another Progress Attempt</button>}
+        <Link to={`/training${referenceId ? `?reference=${encodeURIComponent(referenceId)}` : ""}`} className="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-5 py-3 font-semibold text-slate-700 hover:bg-slate-50">Back to Training</Link>
+      </div>
     </div>}
 
-    <Link to={`/training${referenceId ? `?reference=${encodeURIComponent(referenceId)}` : ""}`} className="mt-8 inline-block font-semibold text-emerald-700">← Back to Training</Link>
+    {!result && <Link to={`/training${referenceId ? `?reference=${encodeURIComponent(referenceId)}` : ""}`} className="mt-8 inline-block font-semibold text-emerald-700">← Back to Training</Link>}
     <Suspense fallback={null}>
       <Countdown
         isActive={showRecordingCountdown}
