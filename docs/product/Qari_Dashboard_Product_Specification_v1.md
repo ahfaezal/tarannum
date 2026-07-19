@@ -1,9 +1,9 @@
 # Qari Dashboard Product Specification
 
-Version: 1.0  
+Version: 1.1
 Date: 2026-07-19  
 Last Updated: 2026-07-19  
-Status: Approved for implementation.
+Status: Implemented; Live Training Leaderboard production QA passed.
 
 ## Purpose
 
@@ -103,6 +103,8 @@ The fullscreen Qari display shows only:
 It does not display `Your Position` or `Next Target`. It displays a LIVE indicator, session time remaining, last refresh time and subtle gold, silver and bronze styling. Results refresh every 20 seconds through a compact endpoint and never run scoring again.
 
 The score remains labelled experimental and must not be represented as a tajwid certification or official ranking outside the practice challenge.
+
+The initial production acceptance test passed on 2026-07-19. Its validated behaviour and regression rules are recorded in `docs/qa/Live_Training_Leaderboard_Production_QA_2026-07-19.md`.
 
 ## Royalty Earned
 

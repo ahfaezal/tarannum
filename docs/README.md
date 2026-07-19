@@ -36,6 +36,7 @@ If the architecture changes, update the relevant document and record the decisio
 10. [System Modernization Audit — 2026-07-19](system-modernization-audit-2026-07-19.md)
 11. [Qari Dashboard Performance Audit — 2026-07-19](qari-dashboard-performance-audit-2026-07-19.md)
 12. [Qari Dashboard Product Specification](product/Qari_Dashboard_Product_Specification_v1.md)
+13. [Live Training Leaderboard Production QA — 2026-07-19](qa/Live_Training_Leaderboard_Production_QA_2026-07-19.md)
 
 ## Documentation Structure
 
@@ -44,9 +45,11 @@ If the architecture changes, update the relevant document and record the decisio
 - `product/` defines product experience modes, subscription policy, qari royalty, and business rules.
 - `standards/` defines shared language and development principles.
 - `decisions/` records approved architecture decisions.
+- `qa/` records production acceptance results and protected regression baselines.
 - `20-ipad-production-test.md` records the production load-test procedure, validated baseline and readiness criteria for classroom deployment.
 - `system-modernization-audit-2026-07-19.md` records the approved Admin, password recovery, dashboard-performance and Recording/Scoring modernization scope.
 - `qari-dashboard-performance-audit-2026-07-19.md` records the detailed Qari Dashboard request, query, payload and progressive-loading findings.
+- `qa/Live_Training_Leaderboard_Production_QA_2026-07-19.md` records the first successful production validation of the Qari fullscreen Top 3 board.
 
 ## Maintenance
 
