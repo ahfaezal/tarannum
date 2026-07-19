@@ -100,6 +100,7 @@ export const analyzeRecitation = async (
     scoringVersion?: 'V2.3';
     recordingAttempt?: number;
     challengeId?: string;
+    demoMode?: boolean;
     onProgress?: (stage: 'preparing' | 'processing' | 'finalizing') => void;
     onQueueUpdate?: (progress: ScoringJobProgress) => void;
   }
@@ -169,7 +170,7 @@ export const analyzeRecitation = async (
     // upload and server analysis are represented as one honest processing stage.
     metadata?.onProgress?.('processing');
     const uploadStartedAt = performance.now();
-    const response = await fetch(`${API_URL}/api/scoring/jobs`, {
+    const response = await fetch(`${API_URL}${metadata?.demoMode ? "/score" : "/api/scoring/jobs"}`, {
       method: "POST",
       headers: headers,
       body: formData,
@@ -193,51 +194,54 @@ export const analyzeRecitation = async (
       throw new Error(`Server error ${response.status}: ${errorText}`);
     }
 
-    const submittedJob = await response.json();
     const jobAcknowledgedAt = performance.now();
-    const jobId = submittedJob.job_id as string | undefined;
-    if (!jobId) throw new Error("The scoring server did not return a Job ID.");
-
-    const pollingStartedAt = Date.now();
-    const maximumPollingTime = 15 * 60 * 1000;
-    let transientStatusFailures = 0;
-    let data: any = null;
+    let data: any = metadata?.demoMode ? await response.json() : null;
     let finalJobStatus: any = null;
-    while (Date.now() - pollingStartedAt < maximumPollingTime) {
-      try {
-        const statusResponse = await fetch(`${API_URL}/api/scoring/jobs/${encodeURIComponent(jobId)}`, {
-          headers: headers,
-        });
-        if (!statusResponse.ok) {
-          throw new Error(`Unable to read scoring job status (${statusResponse.status})`);
+    let jobId: string | undefined;
+    if (!metadata?.demoMode) {
+      const submittedJob = await response.json();
+      jobId = submittedJob.job_id as string | undefined;
+      if (!jobId) throw new Error("The scoring server did not return a Job ID.");
+
+      const pollingStartedAt = Date.now();
+      const maximumPollingTime = 15 * 60 * 1000;
+      let transientStatusFailures = 0;
+      while (Date.now() - pollingStartedAt < maximumPollingTime) {
+        try {
+          const statusResponse = await fetch(`${API_URL}/api/scoring/jobs/${encodeURIComponent(jobId)}`, {
+            headers: headers,
+          });
+          if (!statusResponse.ok) {
+            throw new Error(`Unable to read scoring job status (${statusResponse.status})`);
+          }
+          transientStatusFailures = 0;
+          const jobStatus = await statusResponse.json();
+          finalJobStatus = jobStatus;
+          if (jobStatus.status === 'completed' && jobStatus.result) {
+            data = jobStatus.result;
+            break;
+          }
+          if (jobStatus.status === 'failed') {
+            const terminalError = new Error(jobStatus.error || "The scoring worker could not complete this recording.");
+            (terminalError as Error & { terminal?: boolean }).terminal = true;
+            throw terminalError;
+          }
+          metadata?.onProgress?.('processing');
+          metadata?.onQueueUpdate?.({
+            jobId,
+            status: jobStatus.status === 'processing' ? 'processing' : 'queued',
+            stage: jobStatus.stage,
+            queuePosition: jobStatus.queue_position,
+          });
+        } catch (statusError) {
+          if ((statusError as Error & { terminal?: boolean }).terminal) throw statusError;
+          transientStatusFailures += 1;
+          if (transientStatusFailures >= 5) throw statusError;
         }
-        transientStatusFailures = 0;
-        const jobStatus = await statusResponse.json();
-        finalJobStatus = jobStatus;
-        if (jobStatus.status === 'completed' && jobStatus.result) {
-          data = jobStatus.result;
-          break;
-        }
-        if (jobStatus.status === 'failed') {
-          const terminalError = new Error(jobStatus.error || "The scoring worker could not complete this recording.");
-          (terminalError as Error & { terminal?: boolean }).terminal = true;
-          throw terminalError;
-        }
-        metadata?.onProgress?.('processing');
-        metadata?.onQueueUpdate?.({
-          jobId,
-          status: jobStatus.status === 'processing' ? 'processing' : 'queued',
-          stage: jobStatus.stage,
-          queuePosition: jobStatus.queue_position,
-        });
-      } catch (statusError) {
-        if ((statusError as Error & { terminal?: boolean }).terminal) throw statusError;
-        transientStatusFailures += 1;
-        if (transientStatusFailures >= 5) throw statusError;
+        await new Promise((resolve) => window.setTimeout(resolve, 4000));
       }
-      await new Promise((resolve) => window.setTimeout(resolve, 4000));
     }
-    if (!data) throw new Error("Scoring is taking longer than expected. The Job ID remains safe; please retry status recovery.");
+    if (!data) throw new Error(metadata?.demoMode ? "Demo scoring could not be completed." : "Scoring is taking longer than expected. The Job ID remains safe; please retry status recovery.");
     const resultReceivedAt = performance.now();
     const parseServerTime = (value?: string | null) => value ? Date.parse(value) : NaN;
     const queuedAt = parseServerTime(finalJobStatus?.queued_at);

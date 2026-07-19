@@ -11,6 +11,7 @@ const HomePage = lazy(() => import("./views/public/HomePage"));
 const AboutPage = lazy(() => import("./views/public/AboutPage"));
 const HowToUsePage = lazy(() => import("./views/public/HowToUsePage"));
 const DemoPage = lazy(() => import("./views/public/DemoPage"));
+const DemoInteractivePage = lazy(() => import("./views/public/DemoInteractivePage"));
 const ContactPage = lazy(() => import("./views/public/ContactPage"));
 const Login = lazy(() => import("./components/Login"));
 const Register = lazy(() => import("./components/Register"));
@@ -46,7 +47,7 @@ const App: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { isAuthenticated } = useSelector((state: RootState) => state.auth);
-  const isLightweightPublicPage = ["/", "/about", "/how-to-use", "/demo", "/contact"].includes(location.pathname);
+  const isLightweightPublicPage = ["/", "/about", "/how-to-use", "/demo", "/demo/interactive", "/contact"].includes(location.pathname);
 
   useEffect(() => {
     if (!isLightweightPublicPage && !isAuthenticated && localStorage.getItem("tarannum_auth_token")) {
@@ -62,6 +63,7 @@ const App: React.FC = () => {
           <Route path="/about" element={<AboutPage />} />
           <Route path="/how-to-use" element={<HowToUsePage />} />
           <Route path="/demo" element={<DemoPage />} />
+          <Route path="/demo/interactive" element={<DemoInteractivePage />} />
           <Route path="/contact" element={<ContactPage />} />
           <Route path="/login" element={isAuthenticated ? <Navigate to="/training" replace /> : <Login onSwitchToRegister={() => navigate("/register")} onSuccess={() => navigate(new URLSearchParams(location.search).get("next") || "/training")} />} />
           <Route path="/register" element={isAuthenticated ? <Navigate to="/training" replace /> : <Register onSwitchToLogin={() => navigate("/login")} onSuccess={(email) => navigate(`/verify-email?email=${encodeURIComponent(email || "")}`)} />} />

@@ -1821,7 +1821,8 @@ const TrainingStudio: React.FC = () => {
         studentBlob,
         refBlob,
         selectedRef?.title || "Reference",
-        referenceId
+        referenceId,
+        { demoMode: userRole === 'public' }
       );
     } catch (error: any) {
       // Special handling if backend says the selected reference no longer exists.
@@ -3522,11 +3523,15 @@ const TrainingStudio: React.FC = () => {
           <div className='rounded-2xl border border-emerald-200 bg-emerald-50 p-5 sm:p-6'>
             <h2 className='text-lg font-bold text-slate-900'>Sudah bersedia untuk merakam?</h2>
             <p className='mt-2 text-sm text-slate-600'>Teruskan ke halaman Rakaman & Penilaian. Graph latihan tidak akan dimuatkan semula di sana.</p>
-            <Link to={`/recording${selectedRef?.id ? `?reference=${encodeURIComponent(selectedRef.id)}&mode=R2` : ""}`} className='mt-4 inline-flex rounded-xl bg-emerald-600 px-5 py-3 text-sm font-semibold text-white'>Sedia untuk Merakam</Link>
+            {userRole === 'public' ? (
+              <button type='button' onClick={() => setIsRecordingFullScreenOpen(true)} className='mt-4 inline-flex rounded-xl bg-emerald-600 px-5 py-3 text-sm font-semibold text-white'>Start Demo Recording</button>
+            ) : (
+              <Link to={`/recording${selectedRef?.id ? `?reference=${encodeURIComponent(selectedRef.id)}&mode=R2` : ""}`} className='mt-4 inline-flex rounded-xl bg-emerald-600 px-5 py-3 text-sm font-semibold text-white'>Sedia untuk Merakam</Link>
+            )}
           </div>
 
           {/* Legacy recording UI retained temporarily for extraction, but no longer rendered here. */}
-          {false && (
+          {userRole === 'public' && (
             <div className='bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-slate-100'>
             <div className='flex items-center justify-between mb-4'>
               <h2 className='text-lg font-semibold text-blue-700 flex items-center gap-2'>
@@ -4384,7 +4389,7 @@ const TrainingStudio: React.FC = () => {
                     <span className='text-xs text-slate-400 uppercase tracking-wide font-semibold'>
                       Similarity Score
                     </span>
-                    <div className='group relative'>
+                    {userRole !== 'public' && <div className='group relative'>
                       <Info
                         size={14}
                         className='text-slate-400 hover:text-slate-600 cursor-help transition-colors'
@@ -4410,8 +4415,8 @@ const TrainingStudio: React.FC = () => {
                           <div className='w-2 h-2 bg-slate-800 rotate-45'></div>
                         </div>
                       </div>
-                    </div>
-                    <ScoreExplanation
+                    </div>}
+                    {userRole !== 'public' && <ScoreExplanation
                       score={analysisResult.score}
                       breakdown={
                         analysisResult.scoreBreakdown
@@ -4452,14 +4457,29 @@ const TrainingStudio: React.FC = () => {
                             }
                           : undefined
                       }
-                    />
+                    />}
                   </div>
-                  <div className='text-[10px] text-slate-500 text-center max-w-[220px] leading-tight'>
-                    Measures pitch, ayah timing, and audio similarity
+                  <div className='text-[10px] text-slate-500 text-center max-w-[240px] leading-tight'>
+                    {userRole === 'public'
+                      ? 'Demo displays the overall score only'
+                      : 'Measures pitch, ayah timing, and audio similarity'}
                   </div>
                 </div>
               </div>
 
+              {userRole === 'public' ? (
+                <div className='rounded-2xl border border-emerald-200 bg-emerald-50 p-5 text-center'>
+                  <p className='text-sm leading-6 text-emerald-950'>
+                    Create an account to unlock the full score breakdown, coaching guidance and progress history.
+                  </p>
+                  <Link
+                    to='/register'
+                    className='mt-4 inline-flex min-h-11 items-center justify-center rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700'
+                  >
+                    Create Account to View Full Analysis
+                  </Link>
+                </div>
+              ) : <>
               <div className='space-y-6 flex-grow'>
                 <div className='bg-cyan-50 p-4 sm:p-5 rounded-xl border border-cyan-200'>
                   <div className='flex items-center gap-2 mb-4'>
@@ -4931,6 +4951,7 @@ const TrainingStudio: React.FC = () => {
                   />
                 </div>
               )}
+              </>}
 
               <button
                 onClick={() => {
