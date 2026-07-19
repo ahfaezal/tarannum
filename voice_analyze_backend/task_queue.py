@@ -3,6 +3,7 @@ Task queue for asynchronous audio processing (Milestone 4).
 Uses Celery for background job processing.
 """
 import os
+import time
 from typing import Optional, Dict, Any
 import logging
 
@@ -89,6 +90,15 @@ if CELERY_AVAILABLE and celery_app:
         staged_path = None
         cloud_storage = None
         terminal = False
+        job_timing_started = time.perf_counter()
+        job_timing_checkpoint = job_timing_started
+        job_timing = {}
+
+        def mark_job_timing(stage: str) -> None:
+            nonlocal job_timing_checkpoint
+            now = time.perf_counter()
+            job_timing[stage] = round((now - job_timing_checkpoint) * 1000.0, 1)
+            job_timing_checkpoint = now
 
         try:
             # Keep optional/runtime imports inside the guarded section. If a
@@ -129,6 +139,7 @@ if CELERY_AVAILABLE and celery_app:
                     self.request.id,
                 )
                 return {"status": current_status, "job_id": job_id, "duplicate": True}
+            mark_job_timing("claim_ms")
 
             db.expire_all()
             job = db.query(ScoringJob).filter(ScoringJob.id == parsed_job_id).first()
@@ -136,6 +147,7 @@ if CELERY_AVAILABLE and celery_app:
 
             if not staged_path or not cloud_storage.download_file(staged_path, local_path):
                 raise RuntimeError("The staged recording could not be downloaded")
+            mark_job_timing("staged_download_ms")
 
             user = db.query(User).filter(User.id == job.user_id).first()
             if not user:
@@ -193,7 +205,10 @@ if CELERY_AVAILABLE and celery_app:
                     upload = UploadFile(
                         file=audio_stream,
                         filename=job.original_filename or "recitation.wav",
-                        headers=Headers({"content-type": job.content_type or "audio/wav"}),
+                        headers=Headers({
+                            "content-type": job.content_type or "audio/wav",
+                            "x-scoring-job-id": job_id,
+                        }),
                     )
                     result = asyncio.run(score_performance(
                         user_audio=upload,
@@ -215,6 +230,7 @@ if CELERY_AVAILABLE and celery_app:
                     encoded_result = json.loads(result.body.decode("utf-8"))
                 else:
                     encoded_result = jsonable_encoder(result)
+                mark_job_timing("score_pipeline_ms")
             if not encoded_result.get("session_id") or not encoded_result.get("analysis_result_id"):
                 raise RuntimeError(encoded_result.get("save_error") or "Scoring completed without a durable database result")
 
@@ -224,6 +240,7 @@ if CELERY_AVAILABLE and celery_app:
             job.completed_at = datetime.utcnow()
             job.error_message = None
             db.commit()
+            mark_job_timing("job_finalize_ms")
             terminal = True
             logger.info("Async scoring job completed job_id=%s session_id=%s", job_id, encoded_result.get("session_id"))
             return {"status": "completed", "job_id": job_id, "session_id": encoded_result.get("session_id")}
@@ -256,6 +273,14 @@ if CELERY_AVAILABLE and celery_app:
             if terminal and staged_path and cloud_storage is not None:
                 cloud_storage.delete_file(staged_path)
             db.close()
+            logger.info(
+                "SCORING_JOB_TIMING job_id=%s total_ms=%.1f stages=%s terminal=%s retries=%s",
+                job_id,
+                (time.perf_counter() - job_timing_started) * 1000.0,
+                job_timing,
+                terminal,
+                self.request.retries,
+            )
     
     @celery_app.task(name="cleanup_old_files")
     def cleanup_old_files_task():

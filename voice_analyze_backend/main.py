@@ -904,6 +904,27 @@ async def score_performance(
 ):
     ref_path = None
     user_path = None
+    scoring_job_id = user_audio.headers.get("x-scoring-job-id", "direct")
+    request_timing_started = time.perf_counter()
+    request_timing_checkpoint = request_timing_started
+    request_timing = {}
+
+    def mark_request_timing(stage: str) -> None:
+        nonlocal request_timing_checkpoint
+        now = time.perf_counter()
+        request_timing[stage] = round((now - request_timing_checkpoint) * 1000.0, 1)
+        request_timing_checkpoint = now
+
+    def log_request_timing(outcome: str) -> None:
+        logger.info(
+            "SCORE_REQUEST_TIMING job_id=%s outcome=%s total_ms=%.1f stages=%s reference_id=%s mode=%s",
+            scoring_job_id,
+            outcome,
+            (time.perf_counter() - request_timing_started) * 1000.0,
+            request_timing,
+            reference_id,
+            recording_mode,
+        )
 
     try:
         normalized_recording_mode = (recording_mode or "LEGACY").strip().upper()
@@ -1131,6 +1152,7 @@ async def score_performance(
                 raise HTTPException(status_code=400, detail=f"Failed to save reference audio: {str(e)}")
         else:
             raise HTTPException(status_code=400, detail="Either reference_audio or reference_id must be provided")
+        mark_request_timing("validation_and_reference_ms")
 
         # Generate unique filename for user audio if not already set
         if user_path is None:
@@ -1171,6 +1193,7 @@ async def score_performance(
         except Exception as e:
             logger.error(f"Error saving user audio: {e}", exc_info=True)
             raise HTTPException(status_code=400, detail=f"Failed to save user audio: {str(e)}")
+        mark_request_timing("user_audio_prepare_ms")
 
         # Verify files exist and have content
         if not ref_path.exists() or ref_path.stat().st_size == 0:
@@ -1204,6 +1227,7 @@ async def score_performance(
                 return_ayah_timing=False,  # Disabled - admin manually enters text in preset editor
                 text_segments=text_segments_for_scoring if text_segments_for_scoring else None,
             )
+            mark_request_timing("scoring_engine_ms")
 
             # Handle different return types
             # Since we're requesting segments, pitch, and ayah_timing, result should be a tuple
@@ -1718,6 +1742,7 @@ async def score_performance(
                 import traceback
                 logger.error(f"  Full traceback: {traceback.format_exc()}")
                 # Continue with response even if database save fails
+            mark_request_timing("response_and_persistence_ms")
 
         except Exception as e:
             logger.error(f"Error in scoring: {e}")
@@ -1749,11 +1774,14 @@ async def score_performance(
             logger.info("Temporary files cleaned up and memory freed")
         except Exception as e:
             logger.warning(f"Error cleaning up files: {e}")
+        mark_request_timing("cleanup_ms")
+        log_request_timing("completed")
 
         return JSONResponse(content=response_data)
 
     except HTTPException:
         # Re-raise HTTP exceptions
+        log_request_timing("http_error")
         raise
     except Exception as e:
         logger.error(f"Unexpected error: {e}", exc_info=True)
@@ -1773,6 +1801,7 @@ async def score_performance(
                 logger.info(f"Deleted temporary user file on error: {user_path}")
         except Exception as cleanup_error:
             logger.warning(f"Error during cleanup on exception: {cleanup_error}")
+        log_request_timing("error")
         return JSONResponse(
             status_code=500,
             content={"error": f"Internal server error: {str(e)}"}

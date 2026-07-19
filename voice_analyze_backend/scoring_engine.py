@@ -21,6 +21,7 @@ from pathlib import Path
 from pydub import AudioSegment
 import tempfile
 import os
+import time
 from typing import Tuple, List, Dict, Union
 from collections import Counter
 
@@ -3828,6 +3829,16 @@ def calculate_similarity_score(reference_path: str, user_path: str, return_segme
     """
     converted_ref = None
     converted_user = None
+    timing_started = time.perf_counter()
+    timing_checkpoint = timing_started
+    timing_stages = {}
+
+    def mark_timing(stage: str) -> None:
+        """Record pipeline timings without affecting assessment calculations."""
+        nonlocal timing_checkpoint
+        now = time.perf_counter()
+        timing_stages[stage] = round((now - timing_checkpoint) * 1000.0, 1)
+        timing_checkpoint = now
     
     try:
         # Verify files exist
@@ -3853,6 +3864,7 @@ def calculate_similarity_score(reference_path: str, user_path: str, return_segme
         # Convert to WAV if necessary
         converted_ref = convert_to_wav(reference_path)
         converted_user = convert_to_wav(user_path)
+        mark_timing("conversion_ms")
         
         # Load audio files with error handling - using reduced sample rate for memory efficiency
         PROCESSING_SAMPLE_RATE = 16000  # Reduced from 22050 to save memory (~27% reduction)
@@ -3883,6 +3895,7 @@ def calculate_similarity_score(reference_path: str, user_path: str, return_segme
                     logger.warning(f"Could not delete temp user file: {e}")
         except Exception as e:
             raise ValueError(f"Failed to load user audio: {str(e)}")
+        mark_timing("audio_load_ms")
         
         # Check if audio is too short (adjusted for 16000 Hz sample rate)
         if len(ref_audio) < 800:  # Less than ~0.05 seconds at 16000 Hz
@@ -3923,6 +3936,7 @@ def calculate_similarity_score(reference_path: str, user_path: str, return_segme
             user_audio_processed = user_audio_normalized
         
         logger.info(f"After normalization: ref={len(ref_audio_processed)} samples, user={len(user_audio_processed)} samples")
+        mark_timing("preprocess_ms")
         
         # Compute durations for downsampling / time grid alignment
         # Use processed audio duration (normalized, not trimmed - matches extract-pitch behavior)
@@ -4056,6 +4070,7 @@ def calculate_similarity_score(reference_path: str, user_path: str, return_segme
                     'student': [],
                     'errorPoints': []
                 }
+        mark_timing("pitch_pipeline_ms")
 
         # No-voice check using pitch: if user has very little voiced content vs reference, treat as silence (client: Recording 3 "No Voice (Mic Active)" was 21% - should be close to 0%)
         if isinstance(pitch_data, dict):
@@ -4089,12 +4104,14 @@ def calculate_similarity_score(reference_path: str, user_path: str, return_segme
         logger.info("Extracting audio features...")
         ref_features = extract_features(ref_audio_processed, ref_sr)
         user_features = extract_features(user_audio_processed, user_sr)
+        mark_timing("feature_extraction_ms")
         
         logger.info(f"Extracted features: {list(ref_features.keys())}")
         
         # Calculate similarity scores for each feature type using DTW
         logger.info("Calculating feature similarities using DTW...")
         feature_similarities = calculate_feature_similarity(ref_features, user_features)
+        mark_timing("feature_similarity_ms")
         
         logger.info(f"Feature similarities (0-1 scale): {feature_similarities}")
         
@@ -4668,6 +4685,7 @@ def calculate_similarity_score(reference_path: str, user_path: str, return_segme
             })
         except Exception as e:
             logger.warning(f"Assessment validity gate skipped: {e}", exc_info=True)
+        mark_timing("v23_policy_and_segments_ms")
 
         # Cleanup large variables to free memory before returning
         try:
@@ -4727,6 +4745,7 @@ def calculate_similarity_score(reference_path: str, user_path: str, return_segme
         except Exception as e:
             logger.warning(f"Error detecting pronunciation alerts: {e}", exc_info=True)
             pronunciation_alerts = []
+        mark_timing("feedback_and_alerts_ms")
 
         # Return based on what was requested
         # Build return tuple dynamically to handle all combinations
@@ -4789,6 +4808,14 @@ def calculate_similarity_score(reference_path: str, user_path: str, return_segme
         raise  # Re-raise to let the API handle it
     
     finally:
+        total_ms = round((time.perf_counter() - timing_started) * 1000.0, 1)
+        logger.info(
+            "SCORING_ENGINE_TIMING total_ms=%s stages=%s reference=%s user=%s",
+            total_ms,
+            json.dumps(timing_stages, sort_keys=True),
+            Path(reference_path).name,
+            Path(user_path).name,
+        )
         # Cleanup temporary WAV files
         try:
             if converted_ref and converted_ref != reference_path and os.path.exists(converted_ref):
