@@ -3,6 +3,7 @@ builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile.worker"
 
 [deploy]
+# Keep one replica with two scoring slots until the staged 20-iPad audit.
 startCommand = "celery -A task_queue.celery_app worker --loglevel=INFO --pool=threads --concurrency=2 --prefetch-multiplier=1"
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 10
