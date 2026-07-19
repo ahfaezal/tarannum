@@ -33,6 +33,7 @@ import {
   X,
 } from "lucide-react";
 import ConfirmModal from "../components/ConfirmModal";
+import TrainingChallengePanel from "../components/TrainingChallengePanel";
 
 const QariDashboard: React.FC = () => {
   const navigate = useNavigate();
@@ -698,28 +699,7 @@ const QariDashboard: React.FC = () => {
           </div>
         </div>
 
-        <div className="bg-emerald-50/80 rounded-xl shadow-sm border border-dashed border-emerald-300 p-6 mb-8">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-start gap-4">
-              <div className="w-12 h-12 bg-emerald-600 rounded-xl flex items-center justify-center text-white">
-                <Trophy className="w-6 h-6" />
-              </div>
-              <div>
-                <h2 className="text-xl font-semibold text-slate-800">Competition Groups</h2>
-                <p className="text-sm text-slate-600 mt-1">
-                  Create training groups and leaderboards for schools and events.
-                </p>
-              </div>
-            </div>
-            <button
-              type="button"
-              disabled
-              className="px-4 py-3 rounded-xl bg-slate-900/30 text-white text-sm font-bold cursor-not-allowed"
-            >
-              Coming Soon
-            </button>
-          </div>
-        </div>
+        <TrainingChallengePanel students={students} content={content} />
 
         {/* Students List */}
         <div className="bg-white rounded-xl shadow-md border border-slate-200 p-6 mb-8">

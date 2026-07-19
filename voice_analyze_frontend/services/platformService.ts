@@ -32,7 +32,7 @@ export interface TrainingChallenge {
   reference_title?: string | null;
   start_at: string;
   end_at: string;
-  status: "scheduled" | "active" | "ended" | "cancelled";
+  status: "scheduled" | "active" | "completed" | "cancelled";
   participant_count?: number;
 }
 
@@ -1164,7 +1164,7 @@ export const createTrainingChallenge = async (payload: {
   student_ids: string[];
   start_at: string;
   end_at: string;
-}): Promise<{ success: boolean; challenge: TrainingChallenge }> => {
+}): Promise<TrainingChallenge> => {
   const response = await fetch(`${API_URL}/api/platform/qari/training-challenges`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...getAuthHeader() },
@@ -1190,8 +1190,8 @@ export const getQariTrainingChallenges = async (): Promise<{
 
 export const updateTrainingChallengeStatus = async (
   challengeId: string,
-  status: "scheduled" | "active" | "ended" | "cancelled",
-): Promise<{ success: boolean; challenge: TrainingChallenge }> => {
+  status: "scheduled" | "cancelled",
+): Promise<TrainingChallenge> => {
   const response = await fetch(`${API_URL}/api/platform/qari/training-challenges/${challengeId}/status`, {
     method: "PUT",
     headers: { "Content-Type": "application/json", ...getAuthHeader() },
@@ -1206,7 +1206,7 @@ export const updateTrainingChallengeStatus = async (
 
 export const getTrainingChallengeLeaderboard = async (
   challengeId: string,
-): Promise<{ challenge: TrainingChallenge; leaderboard: TrainingChallengeLeaderboardEntry[] }> => {
+): Promise<{ challenge: TrainingChallenge; leaders: TrainingChallengeLeaderboardEntry[] }> => {
   const response = await fetch(`${API_URL}/api/platform/qari/training-challenges/${challengeId}/leaderboard`, {
     headers: getAuthHeader(),
   });

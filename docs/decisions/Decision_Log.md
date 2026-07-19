@@ -164,12 +164,14 @@ Qari content uses `draft`, `students_only`, `public_demo` and `inactive`. Public
 
 ## Decision 016
 
-Title: Training Challenge uses unlimited attempts within a fixed period.
+Title: Live Training Leaderboard ranks ordinary scoring results within a fixed classroom session.
 
 Status: Approved.
 
 Date: 2026-07-19
 
-A Training Challenge uses one reference, selected students and a defined start/end period. Participants may submit unlimited attempts during the active period. The highest completed Experimental Score V2.3 is retained. Equal highest scores are ordered by the earliest time that score was achieved.
+A Live Training Leaderboard uses one reference, Qari-selected students and a defined start/end period. It does not create a separate recording or scoring workflow. Participants continue using the normal Training and Recording & Assessment pages and may submit unlimited attempts during the active period.
 
-The Qari live leaderboard displays only the Top 3 names and scores. It is motivational and experimental, not an official tajwid result or certification ranking.
+The board reads existing completed scoring results that match the selected participants, reference and time window. Each student's highest completed Experimental Score V2.3 is retained. Equal highest scores are ordered by the earliest time that score was achieved.
+
+The Qari fullscreen display shows only the Top 3 names and scores, refreshes every 20 seconds, and includes a LIVE indicator, remaining session time and last-refresh time. It is motivational and experimental, not an official tajwid result or certification ranking.

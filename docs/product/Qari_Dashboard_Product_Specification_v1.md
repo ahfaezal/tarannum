@@ -18,7 +18,7 @@ The Qari workspace contains:
 3. Coaching Insights;
 4. Content Library;
 5. Invite Students;
-6. Training Challenge;
+6. Live Training Leaderboard;
 7. Royalty.
 
 ## Overview
@@ -75,11 +75,11 @@ A Qari may request `public_demo`, but Admin approval is required before public p
 
 Student content selection must return only references allowed for that student. This protects learning focus and prevents the complete library from appearing by default.
 
-## Training Challenge
+## Live Training Leaderboard
 
-Training Challenge is a motivational practice feature, not an official competition or certification result.
+Live Training Leaderboard is a motivational classroom display, not a separate assessment workflow, official competition or certification result.
 
-Each challenge defines:
+Each live board defines:
 
 - Qari owner;
 - title;
@@ -88,17 +88,19 @@ Each challenge defines:
 - start and end time;
 - active, scheduled, completed or cancelled status.
 
-Students may submit unlimited attempts while the challenge is active. The leaderboard retains the highest completed Experimental Score V2.3 achieved within the challenge window.
+The Qari selects participating students before opening the board. Students continue using the normal Training and Recording & Assessment pages; no special student link, challenge recording or additional scoring request is required.
+
+The leaderboard reads ordinary completed scoring results that match the selected students, reference and session window. Students may submit unlimited normal attempts while the board is active, and only each student's highest completed Experimental Score V2.3 is retained.
 
 Tie resolution is internal and deterministic: the earlier achievement of the same highest score ranks first.
 
-The Qari Dashboard live display shows only:
+The fullscreen Qari display shows only:
 
 - first place and score;
 - second place and score;
 - third place and score.
 
-It does not display `Your Position` or `Next Target`. The leaderboard reads completed scoring results and never runs scoring again. Refresh should use a lightweight cached endpoint or controlled polling interval.
+It does not display `Your Position` or `Next Target`. It displays a LIVE indicator, session time remaining, last refresh time and subtle gold, silver and bronze styling. Results refresh every 20 seconds through a compact endpoint and never run scoring again.
 
 The score remains labelled experimental and must not be represented as a tajwid certification or official ranking outside the practice challenge.
 
@@ -120,7 +122,7 @@ Existing internal database names may remain temporarily for compatibility, but A
 - Optional panels load independently.
 - Student and content lists use server-side pagination.
 - No initial response includes complete pitch arrays or all recording analysis data.
-- Training Challenge leaderboard reads a compact precomputed result view.
+- Live Training Leaderboard reads a compact result query and does not trigger scoring.
 - A failed optional panel does not blank the Qari workspace.
 
 ## Protected Behaviour
@@ -132,4 +134,3 @@ This product change does not modify:
 - worker concurrency;
 - R1/R2/R3 workflow;
 - S3 staging cleanup.
-

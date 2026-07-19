@@ -5,13 +5,13 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, R
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_, or_, case, desc
 from pydantic import BaseModel
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, List
 from uuid import UUID
 from database import (
     AnalysisResult, QariContent, Reference, StudentQariRelationship,
     TrainingChallenge, TrainingChallengeParticipant, User, UserRole,
-    UserSession, get_db,
+    UserSession, StudentProgress, get_db,
 )
 from auth import (
     get_current_user, get_current_admin_user, get_current_qari_user,
@@ -130,6 +130,7 @@ def _challenge_payload(challenge: TrainingChallenge, participant_count: int = 0)
         "id": str(challenge.id),
         "title": challenge.title,
         "reference_id": challenge.reference_id,
+        "reference_title": challenge.reference.title if challenge.reference else None,
         "start_at": challenge.start_at.isoformat(),
         "end_at": challenge.end_at.isoformat(),
         "status": _challenge_status(challenge),
@@ -338,16 +339,19 @@ def create_training_challenge(
     title = " ".join(payload.title.strip().split())
     if not title:
         raise HTTPException(status_code=400, detail="Challenge title is required")
-    if payload.end_at <= payload.start_at:
+    start_at = payload.start_at.astimezone(timezone.utc).replace(tzinfo=None) if payload.start_at.tzinfo else payload.start_at
+    end_at = payload.end_at.astimezone(timezone.utc).replace(tzinfo=None) if payload.end_at.tzinfo else payload.end_at
+    if end_at <= start_at:
         raise HTTPException(status_code=400, detail="Challenge end time must be after its start time")
     if not payload.student_ids:
         raise HTTPException(status_code=400, detail="Select at least one student")
 
-    reference = db.query(Reference).filter(
-        Reference.id == payload.reference_id,
-        Reference.owner_id == current_user.id,
+    qari_content = db.query(QariContent).filter(
+        QariContent.qari_id == current_user.id,
+        QariContent.reference_id == payload.reference_id,
+        QariContent.is_active == True,
     ).first()
-    if not reference:
+    if not qari_content:
         raise HTTPException(status_code=404, detail="Reference not found in your Content Library")
 
     unique_student_ids = []
@@ -370,8 +374,8 @@ def create_training_challenge(
         qari_id=current_user.id,
         reference_id=payload.reference_id,
         title=title,
-        start_at=payload.start_at,
-        end_at=payload.end_at,
+        start_at=start_at,
+        end_at=end_at,
         status="scheduled",
     )
     db.add(challenge)
@@ -399,7 +403,8 @@ def list_qari_training_challenges(
     ).filter(
         TrainingChallenge.qari_id == current_user.id,
     ).group_by(TrainingChallenge.id).order_by(TrainingChallenge.created_at.desc()).all()
-    return {"challenges": [_challenge_payload(item, count) for item, count in rows]}
+    challenges = [_challenge_payload(item, count) for item, count in rows]
+    return {"challenges": challenges, "count": len(challenges)}
 
 
 @router.put("/qari/training-challenges/{challenge_id}/status")
@@ -456,7 +461,6 @@ def get_training_challenge_leaderboard(
             TrainingChallengeParticipant.student_id == UserSession.user_id,
         ),
     ).filter(
-        UserSession.challenge_id == challenge.id,
         UserSession.reference_id == challenge.reference_id,
         AnalysisResult.created_at >= challenge.start_at,
         AnalysisResult.created_at <= challenge.end_at,
@@ -499,7 +503,8 @@ def list_student_training_challenges(
         TrainingChallengeParticipant.student_id == current_user.id,
         TrainingChallenge.status != "cancelled",
     ).order_by(TrainingChallenge.start_at.desc()).all()
-    return {"challenges": [_challenge_payload(item) for item in rows]}
+    challenges = [_challenge_payload(item) for item in rows]
+    return {"challenges": challenges, "count": len(challenges)}
 
 
 @router.get("/qari/students")
@@ -509,13 +514,54 @@ async def get_qari_students(
 ):
     """Get all students for a Qari (Qari Dashboard)."""
     try:
-        students = qari_service.get_qari_students(str(current_user.id), db=db)
-        
-        # Get detailed statistics for each student
-        for student in students:
-            stats = progress_service.get_student_statistics(student["student_id"], db=db)
-            student["statistics"] = stats
-        
+        relationship_rows = db.query(StudentQariRelationship, User).join(
+            User, User.id == StudentQariRelationship.student_id,
+        ).filter(
+            StudentQariRelationship.qari_id == current_user.id,
+            StudentQariRelationship.is_active == True,
+        ).all()
+        student_ids = [relationship.student_id for relationship, _ in relationship_rows]
+        progress_rows = []
+        if student_ids:
+            progress_rows = db.query(StudentProgress).filter(
+                StudentProgress.student_id.in_(student_ids),
+            ).order_by(StudentProgress.student_id, desc(StudentProgress.created_at)).all()
+
+        progress_by_student = {}
+        for progress in progress_rows:
+            progress_by_student.setdefault(progress.student_id, []).append(progress)
+
+        students = []
+        for relationship, student in relationship_rows:
+            records = progress_by_student.get(relationship.student_id, [])
+            scores = [record.overall_score for record in records]
+            improvements = [record.improvement for record in records if record.improvement is not None]
+            verse_counts = {}
+            for record in records:
+                for verse in record.weakest_verses or []:
+                    verse_text = verse.get("text", "")
+                    if verse_text:
+                        verse_counts[verse_text] = verse_counts.get(verse_text, 0) + 1
+            top_weakest = sorted(verse_counts.items(), key=lambda item: item[1], reverse=True)[:5]
+            statistics = {
+                "total_sessions": len(records),
+                "average_score": sum(scores) / len(scores) if scores else 0,
+                "best_score": max(scores) if scores else 0,
+                "latest_score": scores[0] if scores else 0,
+                "improvement_trend": improvements[-10:] if improvements else [],
+                "weakest_verses": [{"text": text, "frequency": count} for text, count in top_weakest],
+            }
+            students.append({
+                "student_id": str(relationship.student_id),
+                "student_email": student.email,
+                "student_name": student.full_name,
+                "joined_at": relationship.joined_at.isoformat() if relationship.joined_at else None,
+                "last_active": relationship.last_active.isoformat() if relationship.last_active else None,
+                "latest_score": statistics["latest_score"] if records else None,
+                "improvement": records[0].improvement if records else None,
+                "statistics": statistics,
+            })
+
         return {"students": students, "count": len(students)}
     except Exception as e:
         logger.error(f"Error getting Qari students: {e}", exc_info=True)
