@@ -4029,21 +4029,21 @@ def calculate_similarity_score(reference_path: str, user_path: str, return_segme
                                 step = max(1, len(all_times) // max_points)
                                 all_times = all_times[::step]
 
-                            for time in all_times:
+                            for time_point in all_times:
                                 try:
                                     # Find nearest times in each dict
-                                    ref_time = min(ref_dict.keys(), key=lambda t: abs(t - time)) if ref_dict else None
-                                    user_time = min(user_dict.keys(), key=lambda t: abs(t - time)) if user_dict else None
+                                    ref_time = min(ref_dict.keys(), key=lambda t: abs(t - time_point)) if ref_dict else None
+                                    user_time = min(user_dict.keys(), key=lambda t: abs(t - time_point)) if user_dict else None
 
-                                    if ref_time is not None and user_time is not None and abs(ref_time - time) < time_tolerance and abs(user_time - time) < time_tolerance:
+                                    if ref_time is not None and user_time is not None and abs(ref_time - time_point) < time_tolerance and abs(user_time - time_point) < time_tolerance:
                                         ref_p = ref_dict[ref_time].get('f_hz')
                                         user_p = user_dict[user_time].get('f_hz')
                                         if ref_p and user_p and ref_p > 0 and user_p > 0:
                                             deviation = abs(ref_p - user_p) / ref_p
                                             if deviation > 0.15:  # 15% deviation threshold
-                                                error_points.append(float(time))
+                                                error_points.append(float(time_point))
                                 except Exception as e:
-                                    logger.warning(f"Error comparing pitch at time {time}: {e}")
+                                    logger.warning(f"Error comparing pitch at time {time_point}: {e}")
                                     continue
                     except Exception as e:
                         logger.error(f"Error calculating error points: {e}", exc_info=True)
