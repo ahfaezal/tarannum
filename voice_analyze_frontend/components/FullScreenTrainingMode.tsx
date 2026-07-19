@@ -971,13 +971,13 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
                 />
                 {isClassroomLayout && isPracticeContext && (
                   <div
-                    className={`mt-1 flex w-full max-w-6xl flex-shrink-0 items-center justify-center gap-3 self-center rounded-lg border ${currentTheme.border} ${currentTheme.controlsBg} px-3 py-2 text-sm ${currentTheme.text}`}
+                    className={`mt-1 flex w-full max-w-6xl flex-shrink-0 items-center justify-center gap-2 self-center rounded-lg border ${currentTheme.border} ${currentTheme.controlsBg} px-3 py-1 text-xs ${currentTheme.text}`}
                     aria-label='Ayah selector placeholder'
                   >
                     <span className={`font-semibold ${currentTheme.textMuted}`}>
                       Ayah
                     </span>
-                    <div className='flex items-center gap-1.5'>
+                    <div className='flex items-center gap-1'>
                       {Array.from({ length: 8 }).map((_, index) => {
                         const ayah = ayatTiming[index];
                         const isActive = index === activeAyahIndex;
@@ -991,7 +991,7 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
                                 onSeekToTime(ayah.start);
                               }
                             }}
-                            className={`flex h-10 w-10 touch-manipulation items-center justify-center rounded-lg border text-sm font-bold transition-colors active:scale-95 ${
+                            className={`flex h-7 w-7 touch-manipulation items-center justify-center rounded border text-xs font-semibold transition-colors active:scale-95 ${
                               isActive && ayah
                                 ? "border-emerald-400/70 bg-emerald-500/25 text-emerald-100 opacity-100"
                                 : ayah
