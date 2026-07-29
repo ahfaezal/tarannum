@@ -204,7 +204,10 @@ export const analyzeRecitation = async (
       if (!jobId) throw new Error("The scoring server did not return a Job ID.");
 
       const pollingStartedAt = Date.now();
-      const maximumPollingTime = 15 * 60 * 1000;
+      // Classroom queues can be long when many students submit together. Keep
+      // polling for 45 minutes so a durable job can finish without the UI
+      // reporting a premature timeout.
+      const maximumPollingTime = 45 * 60 * 1000;
       let transientStatusFailures = 0;
       while (Date.now() - pollingStartedAt < maximumPollingTime) {
         try {
