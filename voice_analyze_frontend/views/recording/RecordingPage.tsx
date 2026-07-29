@@ -1,6 +1,6 @@
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { ArrowRight, CheckCircle2, Headphones, Maximize2, Mic2, RotateCcw, Send, ShieldCheck } from "lucide-react";
+import { CheckCircle2, Headphones, Maximize2, Mic2, RotateCcw, ShieldCheck } from "lucide-react";
 import { getAvailableContent } from "../../services/platformService";
 import { analyzeRecitation, AssessmentRecordingSummary, extractReferencePitch, getRecordingSessionStatus, getScoringCapacity, restoreCompletedRecordingResult, ScoringCapacity, ScoringJobProgress } from "../../services/apiService";
 import { PitchPoint } from "../../services/pitchExtractor";
@@ -219,7 +219,6 @@ const RecordingPage: React.FC = () => {
   }, [referenceId, references]);
 
   const selected = useMemo(() => references.find((reference) => reference.id === referenceId), [references, referenceId]);
-  const recordingUrl = useMemo(() => blob ? URL.createObjectURL(blob) : "", [blob]);
 
   const startRecordingAfterCountdown = useCallback(() => {
     recordingAttemptRef.current += 1;
@@ -238,10 +237,6 @@ const RecordingPage: React.FC = () => {
     window.setTimeout(() => setTriggerStop(false), 250);
   }, []);
 
-  useEffect(() => () => {
-    if (recordingUrl) URL.revokeObjectURL(recordingUrl);
-  }, [recordingUrl]);
-
   const reset = () => {
     setBlob(null);
     setRecordingPitch([]);
@@ -259,6 +254,7 @@ const RecordingPage: React.FC = () => {
 
   const submitAudio = async (audio: Blob | null) => {
     if (!audio || !selected) return;
+    const submittedMode = mode;
     try {
       setSubmitting(true);
       setScoringStage("preparing");
@@ -266,24 +262,35 @@ const RecordingPage: React.FC = () => {
       setError(null);
       const analysis = await analyzeRecitation(audio, null, selected.title, selected.id, {
         clientSessionId: participantSessionId.current,
-        recordingMode: mode,
+        recordingMode: submittedMode,
         scoringVersion: "V2.3",
         recordingAttempt: Math.max(1, recordingAttemptRef.current),
         onProgress: setScoringStage,
         onQueueUpdate: setScoringJobProgress,
       });
       setResult(analysis);
-      setCompletedModes((completed) => new Set(completed).add(mode));
+      setCompletedModes((completed) => new Set(completed).add(submittedMode));
       try {
         const status = await getRecordingSessionStatus(participantSessionId.current, selected.id);
+        const progressCount = status.assessment?.progress_count || 0;
         setAssessmentJourney({
           baseline: status.assessment?.baseline || null,
-          progressCount: status.assessment?.progress_count || 0,
+          progressCount,
           medianProgress: status.assessment?.median_progress || null,
           bestProgress: status.assessment?.best_progress || null,
         });
+        if (submittedMode === "R1") {
+          recordingAttemptRef.current = progressCount;
+          setRecordingAttempt(progressCount);
+          setMode("R2");
+        }
       } catch (statusError) {
         console.warn("Assessment journey could not be refreshed", statusError);
+        if (submittedMode === "R1") {
+          recordingAttemptRef.current = 0;
+          setRecordingAttempt(0);
+          setMode("R2");
+        }
       }
     } catch (submitError: any) {
       // A mobile connection can lose the HTTP response after the backend has
@@ -291,16 +298,22 @@ const RecordingPage: React.FC = () => {
       for (let recoveryAttempt = 0; recoveryAttempt < 5; recoveryAttempt += 1) {
         try {
           const status = await getRecordingSessionStatus(participantSessionId.current, selected.id);
-          const restored = restoreCompletedRecordingResult(status, mode);
+          const restored = restoreCompletedRecordingResult(status, submittedMode);
           if (restored) {
             setResult(restored);
-            setCompletedModes((completed) => new Set(completed).add(mode));
+            setCompletedModes((completed) => new Set(completed).add(submittedMode));
+            const progressCount = status.assessment?.progress_count || 0;
             setAssessmentJourney({
               baseline: status.assessment?.baseline || null,
-              progressCount: status.assessment?.progress_count || 0,
+              progressCount,
               medianProgress: status.assessment?.median_progress || null,
               bestProgress: status.assessment?.best_progress || null,
             });
+            if (submittedMode === "R1") {
+              recordingAttemptRef.current = progressCount;
+              setRecordingAttempt(progressCount);
+              setMode("R2");
+            }
             setError(null);
             return;
           }
@@ -332,11 +345,10 @@ const RecordingPage: React.FC = () => {
     setBlob(audio);
     setTriggerStart(false);
     setIsRecordingFullScreenOpen(false);
-    if (mode !== "R1") return;
     try {
       setError(null);
       setR1TechnicalError(null);
-      await validateR1Recording(audio);
+      if (mode === "R1") await validateR1Recording(audio);
       await submitAudio(audio);
     } catch (validationError: any) {
       const message = validationError.message || "The R1 recording did not pass technical validation.";
@@ -403,32 +415,18 @@ const RecordingPage: React.FC = () => {
             {references.map((reference) => <option key={reference.id} value={reference.id}>{reference.title}</option>)}
           </select>
         </label>
-        <fieldset>
-          <legend className="text-sm font-semibold">Recording Session</legend>
-          <div className="mt-2 grid grid-cols-2 gap-2">
-            {(["R1", "R2"] as RecordingMode[]).map((value) => {
-              const locked = value === "R2" && !completedModes.has("R1");
-              const done = completedModes.has(value);
-              return <button
-              key={value}
-              type="button"
-              disabled={isRecording || locked}
-              aria-pressed={mode === value}
-              onClick={() => {
-                setMode(value);
-                recordingAttemptRef.current = value === "R2" ? assessmentJourney.progressCount : 0;
-                setRecordingAttempt(recordingAttemptRef.current);
-                reset();
-              }}
-              className={`inline-flex items-center justify-center gap-2 rounded-xl border p-3 font-bold disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 ${mode === value ? "border-emerald-600 bg-emerald-50 text-emerald-700" : "border-slate-300"}`}
-            >{done && <CheckCircle2 size={17}/>} {value === "R1" ? "Baseline" : "Progress"}</button>})}
+        <div>
+          <p className="text-sm font-semibold">Recording Session</p>
+          <div className="mt-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+            <p className="font-bold text-emerald-800">{mode === "R1" ? "R1 · Baseline" : "R2 · Progress"}</p>
+            <p className="mt-1 text-xs text-emerald-700">Mode ditentukan secara automatik berdasarkan rekod assessment anda.</p>
           </div>
           <p className="mt-2 text-xs text-slate-500">
             {completedModes.has("R1")
               ? `${assessmentJourney.progressCount} progress recording${assessmentJourney.progressCount === 1 ? "" : "s"} completed`
               : "Complete the baseline once to unlock progress recordings"}
           </p>
-        </fieldset>
+        </div>
       </div>
       <div className="mt-5 grid gap-3 rounded-xl bg-slate-50 p-4 text-sm text-slate-700 sm:grid-cols-3" aria-label="Recording preparation checklist">
         <span className="flex items-center gap-2"><Headphones size={18} className="text-emerald-700"/> Use your headset</span>
@@ -517,15 +515,10 @@ const RecordingPage: React.FC = () => {
           </Suspense>}
     </div>
 
-    {blob && mode !== "R1" && <div className="mt-6 rounded-2xl border bg-white p-6">
-      <p className="text-xs font-bold uppercase tracking-wider text-emerald-700">Step 3</p>
-      <h2 className="mt-1 text-xl font-bold">Review Recording</h2>
-      <p className="mt-2 text-sm text-slate-600">Listen once before submitting. Retake only when the recording has a clear technical problem.</p>
-      <audio controls src={recordingUrl} className="mt-5 w-full"/>
-      <div className="mt-5 flex flex-col gap-3 sm:flex-row">
-        <button type="button" onClick={reset} className="inline-flex items-center justify-center gap-2 rounded-xl border px-5 py-3 font-semibold"><RotateCcw size={18}/> Retake</button>
-        <button type="button" onClick={() => submitAudio(blob)} disabled={submitting} className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-5 py-3 font-semibold text-white disabled:opacity-50"><Send size={18}/>{submitting ? "Processing…" : "Submit for Scoring"}</button>
-      </div>
+    {blob && mode === "R2" && !result && <div className="mt-6 rounded-2xl border border-blue-200 bg-blue-50 p-6">
+      <p className="text-xs font-bold uppercase tracking-wider text-blue-700">Step 3</p>
+      <h2 className="mt-1 text-xl font-bold text-blue-950">Progress · Automatic Scoring</h2>
+      <p className="mt-2 text-sm text-blue-900">Rakaman dihantar untuk scoring secara automatik. Anda tidak perlu menekan butang Score.</p>
       {submitting && scoringStage !== "idle" && <div className="mt-5 rounded-xl border border-blue-200 bg-blue-50 p-4" role="status" aria-live="polite">
         <div className="flex items-center justify-between gap-4 text-sm font-semibold text-blue-950">
           <span>{scoringJobProgress?.status === "queued"
@@ -623,8 +616,7 @@ const RecordingPage: React.FC = () => {
         <p className="mt-2 text-xs text-slate-500">All {assessmentJourney.progressCount} progress attempts remain securely stored. Median and best are selected from actual recordings.</p>
       </div>}
       <div className="mt-5 flex flex-col gap-3 sm:flex-row">
-        {mode === "R1" && <button type="button" onClick={() => { setMode("R2"); recordingAttemptRef.current = assessmentJourney.progressCount; setRecordingAttempt(recordingAttemptRef.current); reset(); }} className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-700 px-5 py-3 font-semibold text-white hover:bg-emerald-800">Continue to Progress Recording <ArrowRight size={18}/></button>}
-        {mode === "R2" && <button type="button" onClick={reset} className="inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-700 bg-white px-5 py-3 font-semibold text-emerald-800 hover:bg-emerald-50"><RotateCcw size={18}/> Record Another Progress Attempt</button>}
+        <button type="button" onClick={reset} className="inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-700 bg-white px-5 py-3 font-semibold text-emerald-800 hover:bg-emerald-50"><RotateCcw size={18}/> {result.recordingMode === "R1" ? "Continue to Progress Recording" : "Record Another Progress Attempt"}</button>
         <Link to={`/training${referenceId ? `?reference=${encodeURIComponent(referenceId)}` : ""}`} className="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-5 py-3 font-semibold text-slate-700 hover:bg-slate-50">Back to Training</Link>
       </div>
     </div>}
