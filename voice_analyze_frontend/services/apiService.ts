@@ -161,7 +161,7 @@ export const analyzeRecitation = async (
     // Include authentication header for authenticated users
     const headers: HeadersInit = {};
     const authHeader = getAuthHeader();
-    if ('Authorization' in authHeader && authHeader.Authorization) {
+    if (!metadata?.demoMode && 'Authorization' in authHeader && authHeader.Authorization) {
       headers['Authorization'] = authHeader.Authorization;
     }
 

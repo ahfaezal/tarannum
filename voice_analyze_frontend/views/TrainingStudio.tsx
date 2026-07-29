@@ -4331,7 +4331,24 @@ const TrainingStudio: React.FC = () => {
           )}
 
           {/* Analysis Result Card */}
-          {analysisResult ? (
+          {analysisResult && userRole === 'public' ? (
+            <div className='rounded-2xl border border-emerald-100 bg-white p-6 shadow-lg animate-fade-in'>
+              <p className='text-center text-sm font-semibold uppercase tracking-wider text-slate-500'>Demo Score</p>
+              <p className='mt-4 text-center text-7xl font-bold tabular-nums text-emerald-600'>
+                {Math.round(analysisResult.normalizedScore ?? analysisResult.score)}
+              </p>
+              <button
+                onClick={() => {
+                  setStudentBlob(null);
+                  setAnalysisResult(null);
+                  setIsRecording(false);
+                }}
+                className='mt-8 w-full rounded-xl bg-slate-900 py-3.5 font-medium text-white transition-all hover:bg-slate-800'
+              >
+                Cuba Lagi
+              </button>
+            </div>
+          ) : analysisResult ? (
             <div className='bg-white p-4 sm:p-6 rounded-2xl shadow-lg border border-emerald-100 h-full flex flex-col animate-fade-in relative overflow-hidden'>
               <div className='absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-emerald-400 to-blue-500'></div>
               <h3 className='text-xl font-bold text-slate-800 mb-6 flex items-center gap-2'>
