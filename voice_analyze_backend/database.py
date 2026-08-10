@@ -452,6 +452,8 @@ class ExpertEvaluationBatch(Base):
     target_count = Column(Integer, nullable=False, default=50)
     duplicate_count = Column(Integer, nullable=False, default=5)
     random_seed = Column(Integer, nullable=False)
+    minimum_evaluator_count = Column(Integer, nullable=False, default=2)
+    target_evaluator_count = Column(Integer, nullable=False, default=3)
     target_reference_id = Column(String, ForeignKey("references.id", ondelete="RESTRICT"), nullable=True, index=True)
     cohort_start = Column(DateTime, nullable=True)
     cohort_end = Column(DateTime, nullable=True)
@@ -650,8 +652,16 @@ def ensure_email_otp_columns():
 def ensure_expert_evaluation_columns():
     """Add the frozen target reference to deployments created before single-reference validation."""
     with engine.begin() as conn:
-        if not _column_exists(conn, "expert_evaluation_batches", "target_reference_id"):
-            conn.execute(text("ALTER TABLE expert_evaluation_batches ADD COLUMN target_reference_id VARCHAR"))
+        columns = {
+            "target_reference_id": "VARCHAR",
+            "minimum_evaluator_count": "INTEGER DEFAULT 2 NOT NULL",
+            "target_evaluator_count": "INTEGER DEFAULT 3 NOT NULL",
+        }
+        for column_name, column_def in columns.items():
+            if not _column_exists(conn, "expert_evaluation_batches", column_name):
+                conn.execute(text(
+                    f"ALTER TABLE expert_evaluation_batches ADD COLUMN {column_name} {column_def}"
+                ))
         conn.execute(text(
             "CREATE INDEX IF NOT EXISTS ix_expert_evaluation_batches_target_reference_id "
             "ON expert_evaluation_batches (target_reference_id)"

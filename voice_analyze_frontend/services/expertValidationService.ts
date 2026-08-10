@@ -23,6 +23,10 @@ export interface ExpertBatchSummary {
   recording_count: number;
   duplicate_count: number;
   evaluator_count: number;
+  completed_evaluator_count: number;
+  minimum_evaluator_count: number;
+  target_evaluator_count: number;
+  readiness: "insufficient" | "minimum_met" | "target_met";
   submitted_tasks: number;
   total_tasks: number;
   created_at: string;
@@ -120,6 +124,8 @@ export const createExpertBatch = async (payload: {
   target_count: number;
   duplicate_count: number;
   random_seed: number;
+  minimum_evaluator_count: number;
+  target_evaluator_count: number;
   consent_confirmed: boolean;
 }) => {
   const response = await fetch(`${API_URL}/api/expert-validation/admin/batches`, {

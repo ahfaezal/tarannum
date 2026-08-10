@@ -54,12 +54,14 @@ class CreateBatchPayload(BaseModel):
     target_count: int = Field(default=40, ge=10, le=200)
     duplicate_count: int = Field(default=5, ge=0, le=20)
     random_seed: int = Field(default=20260816, ge=1)
+    minimum_evaluator_count: int = Field(default=2, ge=2, le=3)
+    target_evaluator_count: int = Field(default=3, ge=2, le=3)
     consent_confirmed: bool
 
     @validator("evaluator_ids")
-    def exactly_two_unique_evaluators(cls, value):
-        if len(value) != 2 or len(set(value)) != 2:
-            raise ValueError("Exactly two different Qari evaluators are required")
+    def two_to_five_unique_evaluators(cls, value):
+        if not 2 <= len(value) <= 5 or len(set(value)) != len(value):
+            raise ValueError("Select between two and five different Qari evaluators")
         return value
 
     @validator("cohort_end")
@@ -344,11 +346,15 @@ def create_batch(
         raise HTTPException(status_code=409, detail="A validation batch with this name already exists")
 
     evaluators = db.query(User).filter(User.id.in_(payload.evaluator_ids)).all()
-    if len(evaluators) != 2 or any(
+    if len(evaluators) != len(payload.evaluator_ids) or any(
         evaluator.role != UserRole.QARI.value or not evaluator.is_active or not evaluator.is_approved
         for evaluator in evaluators
     ):
-        raise HTTPException(status_code=400, detail="Both evaluators must be active, approved Qari accounts")
+        raise HTTPException(status_code=400, detail="All evaluators must be active, approved Qari accounts")
+    if payload.minimum_evaluator_count > payload.target_evaluator_count:
+        raise HTTPException(status_code=400, detail="The minimum evaluator count cannot exceed the target")
+    if payload.target_evaluator_count > len(evaluators):
+        raise HTTPException(status_code=400, detail="The evaluator target cannot exceed the number invited")
 
     target_reference = db.query(Reference).filter(Reference.id == payload.target_reference_id).first()
     if not target_reference:
@@ -368,6 +374,8 @@ def create_batch(
         target_count=payload.target_count,
         duplicate_count=payload.duplicate_count,
         random_seed=payload.random_seed,
+        minimum_evaluator_count=payload.minimum_evaluator_count,
+        target_evaluator_count=payload.target_evaluator_count,
         target_reference_id=payload.target_reference_id,
         cohort_start=payload.cohort_start,
         cohort_end=payload.cohort_end,
@@ -422,6 +430,8 @@ def create_batch(
             "random_seed": payload.random_seed,
             "target_reference_id": payload.target_reference_id,
             "target_reference_title": target_reference.title,
+            "minimum_evaluator_count": payload.minimum_evaluator_count,
+            "target_evaluator_count": payload.target_evaluator_count,
             "consent_confirmed": True,
             "evaluator_ids": [str(value) for value in payload.evaluator_ids],
         },
@@ -439,6 +449,7 @@ def list_admin_batches(
     result = []
     for batch in batches:
         assignments = db.query(ExpertEvaluationAssignment).filter(ExpertEvaluationAssignment.batch_id == batch.id).all()
+        completed_evaluators = sum(1 for assignment in assignments if assignment.status == "completed")
         submitted = (
             db.query(ExpertRating)
             .join(ExpertEvaluationTask, ExpertEvaluationTask.id == ExpertRating.task_id)
@@ -456,6 +467,14 @@ def list_admin_batches(
             "id": str(batch.id), "name": batch.name, "status": batch.status,
             "rubric_version": batch.rubric_version, "recording_count": batch.target_count,
             "duplicate_count": batch.duplicate_count, "evaluator_count": len(assignments),
+            "completed_evaluator_count": completed_evaluators,
+            "minimum_evaluator_count": batch.minimum_evaluator_count,
+            "target_evaluator_count": batch.target_evaluator_count,
+            "readiness": (
+                "target_met" if completed_evaluators >= batch.target_evaluator_count
+                else "minimum_met" if completed_evaluators >= batch.minimum_evaluator_count
+                else "insufficient"
+            ),
             "target_reference_id": batch.target_reference_id,
             "target_reference_title": (
                 db.query(Reference.title).filter(Reference.id == batch.target_reference_id).scalar()
@@ -663,15 +682,21 @@ def save_qari_rating(
     if submitted_tasks == total_tasks:
         assignment.status = "completed"
         assignment.submitted_at = datetime.utcnow()
-        remaining_assignments = db.query(ExpertEvaluationAssignment).filter(
-            ExpertEvaluationAssignment.batch_id == assignment.batch_id,
-            ExpertEvaluationAssignment.id != assignment.id,
-            ExpertEvaluationAssignment.status != "completed",
-        ).count()
-        if remaining_assignments == 0:
-            batch = db.query(ExpertEvaluationBatch).filter(ExpertEvaluationBatch.id == assignment.batch_id).first()
-            if batch:
+        batch = db.query(ExpertEvaluationBatch).filter(ExpertEvaluationBatch.id == assignment.batch_id).first()
+        if batch:
+            completed_evaluators = db.query(ExpertEvaluationAssignment).filter(
+                ExpertEvaluationAssignment.batch_id == assignment.batch_id,
+                ExpertEvaluationAssignment.status == "completed",
+            ).count()
+            total_evaluators = db.query(ExpertEvaluationAssignment).filter(
+                ExpertEvaluationAssignment.batch_id == assignment.batch_id,
+            ).count()
+            if completed_evaluators >= total_evaluators:
                 batch.status = "completed"
                 batch.completed_at = datetime.utcnow()
+            elif completed_evaluators >= batch.target_evaluator_count:
+                batch.status = "target_met"
+            elif completed_evaluators >= batch.minimum_evaluator_count:
+                batch.status = "minimum_met"
     db.commit()
     return {"success": True, "status": rating.status, "submitted_tasks": submitted_tasks, "total_tasks": total_tasks}
