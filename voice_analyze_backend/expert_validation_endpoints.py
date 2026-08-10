@@ -59,9 +59,9 @@ class CreateBatchPayload(BaseModel):
     consent_confirmed: bool
 
     @validator("evaluator_ids")
-    def two_to_five_unique_evaluators(cls, value):
-        if not 2 <= len(value) <= 5 or len(set(value)) != len(value):
-            raise ValueError("Select between two and five different Qari evaluators")
+    def one_to_five_unique_evaluators(cls, value):
+        if not 1 <= len(value) <= 5 or len(set(value)) != len(value):
+            raise ValueError("Select between one and five different Qari evaluators")
         return value
 
     @validator("cohort_end")
@@ -102,6 +102,10 @@ class RatingPayload(BaseModel):
         if value not in {"low", "medium", "high"}:
             raise ValueError("confidence must be low, medium, or high")
         return value
+
+
+class AddEvaluatorPayload(BaseModel):
+    evaluator_id: uuid.UUID
 
 
 def _candidate_query(
@@ -217,6 +221,33 @@ def _weighted_total(payload: RatingPayload) -> Optional[float]:
         + payload.tarannum_suitability * 3,
         2,
     )
+
+
+def _create_evaluator_assignment(
+    db: Session,
+    batch: ExpertEvaluationBatch,
+    evaluator: User,
+    items: List[ExpertEvaluationItem],
+    evaluator_index: int,
+) -> ExpertEvaluationAssignment:
+    """Grant one Qari access and create a randomized presentation of the frozen items."""
+    assignment = ExpertEvaluationAssignment(batch_id=batch.id, evaluator_id=evaluator.id)
+    db.add(assignment)
+    db.flush()
+    task_specs = [(item, False) for item in items]
+    duplicate_rng = random.Random(batch.random_seed + evaluator_index * 1009)
+    duplicates = duplicate_rng.sample(items, min(batch.duplicate_count, len(items)))
+    task_specs.extend((item, True) for item in duplicates)
+    duplicate_rng.shuffle(task_specs)
+    for order, (item, is_duplicate) in enumerate(task_specs, start=1):
+        db.add(ExpertEvaluationTask(
+            assignment_id=assignment.id,
+            item_id=item.id,
+            presentation_code=f"KP-{uuid.uuid4().hex[:8].upper()}",
+            display_order=order,
+            is_hidden_duplicate=is_duplicate,
+        ))
+    return assignment
 
 
 def _rating_payload(rating: Optional[ExpertRating]):
@@ -353,8 +384,6 @@ def create_batch(
         raise HTTPException(status_code=400, detail="All evaluators must be active, approved Qari accounts")
     if payload.minimum_evaluator_count > payload.target_evaluator_count:
         raise HTTPException(status_code=400, detail="The minimum evaluator count cannot exceed the target")
-    if payload.target_evaluator_count > len(evaluators):
-        raise HTTPException(status_code=400, detail="The evaluator target cannot exceed the number invited")
 
     target_reference = db.query(Reference).filter(Reference.id == payload.target_reference_id).first()
     if not target_reference:
@@ -400,23 +429,7 @@ def create_batch(
     db.flush()
 
     for evaluator_index, evaluator in enumerate(sorted(evaluators, key=lambda q: str(q.id)), start=1):
-        assignment = ExpertEvaluationAssignment(batch_id=batch.id, evaluator_id=evaluator.id)
-        db.add(assignment)
-        db.flush()
-        task_specs = [(item, False) for item in items]
-        duplicate_rng = random.Random(payload.random_seed + evaluator_index * 1009)
-        duplicates = duplicate_rng.sample(items, min(payload.duplicate_count, len(items)))
-        task_specs.extend((item, True) for item in duplicates)
-        duplicate_rng.shuffle(task_specs)
-        for order, (item, is_duplicate) in enumerate(task_specs, start=1):
-            code = f"KP-{uuid.uuid4().hex[:8].upper()}"
-            db.add(ExpertEvaluationTask(
-                assignment_id=assignment.id,
-                item_id=item.id,
-                presentation_code=code,
-                display_order=order,
-                is_hidden_duplicate=is_duplicate,
-            ))
+        _create_evaluator_assignment(db, batch, evaluator, items, evaluator_index)
 
     db.add(AuditLog(
         action="create",
@@ -437,7 +450,68 @@ def create_batch(
         },
     ))
     db.commit()
-    return {"success": True, "batch_id": str(batch.id), "recordings": len(items), "tasks_per_evaluator": len(items) + len(duplicates)}
+    return {
+        "success": True,
+        "batch_id": str(batch.id),
+        "recordings": len(items),
+        "tasks_per_evaluator": len(items) + min(batch.duplicate_count, len(items)),
+    }
+
+
+@router.post("/admin/batches/{batch_id}/evaluators")
+def add_batch_evaluator(
+    batch_id: uuid.UUID,
+    payload: AddEvaluatorPayload,
+    current_user: User = Depends(get_current_admin_user),
+    db: Session = Depends(get_db),
+):
+    batch = db.query(ExpertEvaluationBatch).filter(ExpertEvaluationBatch.id == batch_id).first()
+    if not batch:
+        raise HTTPException(status_code=404, detail="Validation batch not found")
+    assignments = db.query(ExpertEvaluationAssignment).filter(
+        ExpertEvaluationAssignment.batch_id == batch.id,
+    ).all()
+    if len(assignments) >= 5:
+        raise HTTPException(status_code=409, detail="This batch already has the maximum of five evaluators")
+    if any(assignment.evaluator_id == payload.evaluator_id for assignment in assignments):
+        raise HTTPException(status_code=409, detail="This Qari is already assigned to the batch")
+
+    evaluator = db.query(User).filter(User.id == payload.evaluator_id).first()
+    if not evaluator or evaluator.role != UserRole.QARI.value or not evaluator.is_active or not evaluator.is_approved:
+        raise HTTPException(status_code=400, detail="The evaluator must be an active, approved Qari account")
+    items = db.query(ExpertEvaluationItem).filter(
+        ExpertEvaluationItem.batch_id == batch.id,
+    ).order_by(ExpertEvaluationItem.anonymous_code).all()
+    if not items:
+        raise HTTPException(status_code=409, detail="The batch has no frozen evaluation items")
+
+    assignment = _create_evaluator_assignment(db, batch, evaluator, items, len(assignments) + 1)
+    completed_evaluators = sum(1 for existing in assignments if existing.status == "completed")
+    batch.completed_at = None
+    batch.status = (
+        "target_met" if completed_evaluators >= batch.target_evaluator_count
+        else "minimum_met" if completed_evaluators >= batch.minimum_evaluator_count
+        else "active"
+    )
+    db.add(AuditLog(
+        action="add_evaluator",
+        entity_type="expert_evaluation_batch",
+        entity_id=str(batch.id),
+        user_id=current_user.id,
+        new_values={
+            "evaluator_id": str(evaluator.id),
+            "evaluator_name": evaluator.full_name or evaluator.email,
+            "assignment_id": str(assignment.id),
+            "evaluator_count": len(assignments) + 1,
+        },
+    ))
+    db.commit()
+    return {
+        "success": True,
+        "assignment_id": str(assignment.id),
+        "evaluator_count": len(assignments) + 1,
+        "tasks": len(items) + min(batch.duplicate_count, len(items)),
+    }
 
 
 @router.get("/admin/batches")
@@ -449,6 +523,11 @@ def list_admin_batches(
     result = []
     for batch in batches:
         assignments = db.query(ExpertEvaluationAssignment).filter(ExpertEvaluationAssignment.batch_id == batch.id).all()
+        evaluator_users = {
+            user.id: user for user in db.query(User).filter(
+                User.id.in_([assignment.evaluator_id for assignment in assignments])
+            ).all()
+        } if assignments else {}
         completed_evaluators = sum(1 for assignment in assignments if assignment.status == "completed")
         submitted = (
             db.query(ExpertRating)
@@ -468,6 +547,14 @@ def list_admin_batches(
             "rubric_version": batch.rubric_version, "recording_count": batch.target_count,
             "duplicate_count": batch.duplicate_count, "evaluator_count": len(assignments),
             "completed_evaluator_count": completed_evaluators,
+            "evaluators": [{
+                "id": str(assignment.evaluator_id),
+                "name": (
+                    evaluator_users[assignment.evaluator_id].full_name
+                    or evaluator_users[assignment.evaluator_id].email
+                ),
+                "status": assignment.status,
+            } for assignment in assignments if assignment.evaluator_id in evaluator_users],
             "minimum_evaluator_count": batch.minimum_evaluator_count,
             "target_evaluator_count": batch.target_evaluator_count,
             "readiness": (

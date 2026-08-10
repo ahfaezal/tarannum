@@ -23,6 +23,7 @@ export interface ExpertBatchSummary {
   recording_count: number;
   duplicate_count: number;
   evaluator_count: number;
+  evaluators: Array<{ id: string; name: string; status: string }>;
   completed_evaluator_count: number;
   minimum_evaluator_count: number;
   target_evaluator_count: number;
@@ -136,6 +137,15 @@ export const createExpertBatch = async (payload: {
       cohort_start: payload.cohort_start ? `${payload.cohort_start}T00:00:00` : null,
       cohort_end: payload.cohort_end ? `${payload.cohort_end}T00:00:00` : null,
     }),
+  });
+  return jsonOrError(response);
+};
+
+export const addExpertBatchEvaluator = async (batchId: string, evaluatorId: string) => {
+  const response = await fetch(`${API_URL}/api/expert-validation/admin/batches/${batchId}/evaluators`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...getAuthHeader() },
+    body: JSON.stringify({ evaluator_id: evaluatorId }),
   });
   return jsonOrError(response);
 };

@@ -4,6 +4,7 @@ import {
   CandidateSummary,
   ExpertBatchSummary,
   ExpertQariOption,
+  addExpertBatchEvaluator,
   createExpertBatch,
   getExpertBatches,
   getExpertCandidateSummary,
@@ -22,6 +23,8 @@ const AdminExpertValidation: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [consentConfirmed, setConsentConfirmed] = useState(false);
+  const [addEvaluatorSelection, setAddEvaluatorSelection] = useState<Record<string, string>>({});
+  const [addingEvaluatorBatchId, setAddingEvaluatorBatchId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -89,8 +92,8 @@ const AdminExpertValidation: React.FC = () => {
   };
 
   const createBatch = async () => {
-    if (selectedQaris.length < 2 || selectedQaris.length > 5) {
-      setError("Pilih antara dua hingga lima orang qari yang telah diluluskan.");
+    if (selectedQaris.length < 1 || selectedQaris.length > 5) {
+      setError("Pilih antara seorang hingga lima orang qari yang telah diluluskan.");
       return;
     }
     if (!selectedReferenceId) {
@@ -107,7 +110,7 @@ const AdminExpertValidation: React.FC = () => {
       setMessage(null);
       const result = await createExpertBatch({
         name: "Validasi Pakar KNovasi 2026",
-        description: "Pengesahan awal skor Tarannum.ai oleh dua orang qari pakar secara bebas dan anonim.",
+        description: "Pengesahan awal skor Tarannum.ai oleh panel qari pakar secara bebas dan anonim.",
         evaluator_ids: selectedQaris,
         cohort_start: startDate,
         cohort_end: endDate,
@@ -116,7 +119,7 @@ const AdminExpertValidation: React.FC = () => {
         duplicate_count: 5,
         random_seed: 20260816,
         minimum_evaluator_count: 2,
-        target_evaluator_count: Math.min(3, selectedQaris.length),
+        target_evaluator_count: 3,
         consent_confirmed: consentConfirmed,
       });
       setMessage(`Batch berjaya dibekukan: ${result.recordings} rakaman unik dan ${result.tasks_per_evaluator} tugasan bagi setiap qari.`);
@@ -125,6 +128,27 @@ const AdminExpertValidation: React.FC = () => {
       setError(err.message || "Batch validasi gagal dicipta");
     } finally {
       setCreating(false);
+    }
+  };
+
+  const addEvaluator = async (batchId: string) => {
+    const evaluatorId = addEvaluatorSelection[batchId];
+    if (!evaluatorId) {
+      setError("Pilih qari yang hendak ditambah.");
+      return;
+    }
+    try {
+      setAddingEvaluatorBatchId(batchId);
+      setError(null);
+      setMessage(null);
+      const result = await addExpertBatchEvaluator(batchId, evaluatorId);
+      setMessage(`Panel pakar berjaya ditambah. Qari ini menerima ${result.tasks} tugasan.`);
+      setAddEvaluatorSelection((current) => ({ ...current, [batchId]: "" }));
+      setBatches(await getExpertBatches());
+    } catch (err: any) {
+      setError(err.message || "Panel pakar gagal ditambah");
+    } finally {
+      setAddingEvaluatorBatchId(null);
     }
   };
 
@@ -147,18 +171,18 @@ const AdminExpertValidation: React.FC = () => {
         </section>
 
         <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-          <div className="flex items-center gap-3"><Users className="h-6 w-6 text-emerald-700" /><div><h2 className="font-bold text-slate-900">2. Pilih 2 hingga 5 qari</h2><p className="text-sm text-slate-500">{selectedQaris.length}/5 dipilih · minimum sah 2 · sasaran disyorkan 3</p></div></div>
+          <div className="flex items-center gap-3"><Users className="h-6 w-6 text-emerald-700" /><div><h2 className="font-bold text-slate-900">2. Pilih 1 hingga 5 qari</h2><p className="text-sm text-slate-500">{selectedQaris.length}/5 dipilih · qari lain boleh ditambah kemudian</p></div></div>
           <div className="mt-5 space-y-3">{qaris.map((qari) => { const selected = selectedQaris.includes(qari.id); return <button key={qari.id} onClick={() => toggleQari(qari.id)} className={`flex w-full items-center justify-between rounded-xl border p-4 text-left ${selected ? "border-emerald-500 bg-emerald-50" : "border-slate-200 hover:border-emerald-300"}`}><div><div className="font-semibold text-slate-900">{qari.name}</div><div className="text-xs text-slate-500">{qari.email}</div></div><div className={`flex h-6 w-6 items-center justify-center rounded-full border ${selected ? "border-emerald-600 bg-emerald-600 text-white" : "border-slate-300"}`}>{selected && <CheckCircle2 className="h-4 w-4" />}</div></button>; })}</div>
           {!qaris.length && !loading && <p className="mt-5 rounded-xl bg-amber-50 p-4 text-sm text-amber-800">Tiada akaun qari yang aktif dan diluluskan.</p>}
           <div className="mt-6 rounded-xl bg-slate-50 p-4 text-sm text-slate-700"><strong>Batch tetap:</strong> Setiap qari menerima 40 rakaman unik yang sama + 5 pendua tersembunyi. Dua panel lengkap memenuhi minimum; tiga panel memberikan pengesahan yang lebih kukuh.</div>
           <label className="mt-4 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><input type="checkbox" checked={consentConfirmed} onChange={(event) => setConsentConfirmed(event.target.checked)} className="mt-1 h-4 w-4 accent-emerald-600" /><span>Saya mengesahkan penggunaan rakaman peserta untuk penilaian pakar secara anonim telah mendapat kebenaran yang sewajarnya.</span></label>
-          <button disabled={creating || selectedQaris.length < 2 || selectedQaris.length > 5 || !selectedReferenceId || !summary || summary.eligible_recordings < 40 || !consentConfirmed} onClick={createBatch} className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-5 py-3 font-bold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40"><ClipboardCheck className="h-5 w-5" />{creating ? "Membina batch..." : `Cipta tugasan untuk ${selectedQaris.length} qari`}</button>
+          <button disabled={creating || selectedQaris.length < 1 || selectedQaris.length > 5 || !selectedReferenceId || !summary || summary.eligible_recordings < 40 || !consentConfirmed} onClick={createBatch} className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-5 py-3 font-bold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40"><ClipboardCheck className="h-5 w-5" />{creating ? "Membina batch..." : `Cipta tugasan untuk ${selectedQaris.length} qari`}</button>
         </section>
       </div>
 
       <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
         <h2 className="font-bold text-slate-900">Status batch</h2>
-        <div className="mt-4 space-y-3">{batches.map((batch) => <div key={batch.id} className="grid gap-3 rounded-xl border border-slate-200 p-4 sm:grid-cols-[1fr_auto] sm:items-center"><div><div className="font-semibold text-slate-900">{batch.name}</div><div className="mt-1 text-xs text-slate-500">{batch.recording_count} rakaman · {batch.evaluator_count} dijemput · {batch.completed_evaluator_count} lengkap · {batch.target_reference_title || "Rujukan belum direkodkan"}</div><div className="mt-2 text-xs font-semibold text-slate-600">{batch.readiness === "target_met" ? "Sasaran 3 panel telah dicapai" : batch.readiness === "minimum_met" ? "Minimum 2 panel telah dicapai" : `Menunggu minimum ${batch.minimum_evaluator_count} panel lengkap`}</div></div><div className="text-sm font-bold text-emerald-700">{batch.submitted_tasks}/{batch.total_tasks} penilaian</div></div>)}</div>
+        <div className="mt-4 space-y-3">{batches.map((batch) => { const availableQaris = qaris.filter((qari) => !batch.evaluators.some((evaluator) => evaluator.id === qari.id)); return <div key={batch.id} className="rounded-xl border border-slate-200 p-4"><div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-center"><div><div className="font-semibold text-slate-900">{batch.name}</div><div className="mt-1 text-xs text-slate-500">{batch.recording_count} rakaman · {batch.evaluator_count} dijemput · {batch.completed_evaluator_count} lengkap · {batch.target_reference_title || "Rujukan belum direkodkan"}</div><div className="mt-2 text-xs font-semibold text-slate-600">{batch.readiness === "target_met" ? "Sasaran 3 panel telah dicapai" : batch.readiness === "minimum_met" ? "Minimum 2 panel telah dicapai" : `Menunggu minimum ${batch.minimum_evaluator_count} panel lengkap`}</div></div><div className="text-sm font-bold text-emerald-700">{batch.submitted_tasks}/{batch.total_tasks} penilaian</div></div><div className="mt-3 flex flex-wrap gap-2">{batch.evaluators.map((evaluator) => <span key={evaluator.id} className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">{evaluator.name} · {evaluator.status}</span>)}</div>{batch.evaluator_count < 5 && <div className="mt-4 flex flex-col gap-2 border-t border-slate-100 pt-4 sm:flex-row"><select value={addEvaluatorSelection[batch.id] || ""} onChange={(event) => setAddEvaluatorSelection((current) => ({ ...current, [batch.id]: event.target.value }))} className="min-w-0 flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"><option value="">Pilih qari tambahan</option>{availableQaris.map((qari) => <option key={qari.id} value={qari.id}>{qari.name}</option>)}</select><button onClick={() => addEvaluator(batch.id)} disabled={!addEvaluatorSelection[batch.id] || addingEvaluatorBatchId === batch.id} className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-bold text-white disabled:opacity-40">{addingEvaluatorBatchId === batch.id ? "Menambah..." : "Tambah Panel Pakar"}</button></div>}</div>; })}</div>
         {!batches.length && !loading && <p className="mt-4 text-sm text-slate-500">Belum ada batch validasi.</p>}
       </section>
     </div>
