@@ -440,6 +440,105 @@ class AuditLog(Base):
     user = relationship("User", foreign_keys=[user_id])
 
 
+class ExpertEvaluationBatch(Base):
+    """Frozen expert-validation dataset and rubric configuration."""
+    __tablename__ = "expert_evaluation_batches"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name = Column(String, nullable=False, unique=True)
+    description = Column(Text, nullable=True)
+    status = Column(String, nullable=False, default="active", index=True)  # draft | active | completed
+    rubric_version = Column(String, nullable=False, default="KNOVASI-2026-v1")
+    target_count = Column(Integer, nullable=False, default=50)
+    duplicate_count = Column(Integer, nullable=False, default=5)
+    random_seed = Column(Integer, nullable=False)
+    cohort_start = Column(DateTime, nullable=True)
+    cohort_end = Column(DateTime, nullable=True)
+    consent_confirmed_at = Column(DateTime, nullable=False)
+    consent_confirmed_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    completed_at = Column(DateTime, nullable=True)
+
+
+class ExpertEvaluationItem(Base):
+    """A unique recording frozen into an expert-validation batch."""
+    __tablename__ = "expert_evaluation_items"
+    __table_args__ = (
+        UniqueConstraint("batch_id", "session_id", name="uq_expert_evaluation_batch_session"),
+        UniqueConstraint("batch_id", "anonymous_code", name="uq_expert_evaluation_batch_code"),
+    )
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    batch_id = Column(UUID(as_uuid=True), ForeignKey("expert_evaluation_batches.id", ondelete="CASCADE"), nullable=False, index=True)
+    session_id = Column(UUID(as_uuid=True), ForeignKey("user_sessions.id", ondelete="RESTRICT"), nullable=False, index=True)
+    anonymous_code = Column(String, nullable=False)
+    selection_stratum = Column(String, nullable=False)  # low | medium | high
+    ai_score_snapshot = Column(Float, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class ExpertEvaluationAssignment(Base):
+    """Explicit access grant for one approved Qari to one validation batch."""
+    __tablename__ = "expert_evaluation_assignments"
+    __table_args__ = (
+        UniqueConstraint("batch_id", "evaluator_id", name="uq_expert_evaluation_batch_evaluator"),
+    )
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    batch_id = Column(UUID(as_uuid=True), ForeignKey("expert_evaluation_batches.id", ondelete="CASCADE"), nullable=False, index=True)
+    evaluator_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True)
+    status = Column(String, nullable=False, default="assigned", index=True)  # assigned | in_progress | completed
+    assigned_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    started_at = Column(DateTime, nullable=True)
+    submitted_at = Column(DateTime, nullable=True)
+
+
+class ExpertEvaluationTask(Base):
+    """Randomized presentation of an item, including hidden repeat tasks."""
+    __tablename__ = "expert_evaluation_tasks"
+    __table_args__ = (
+        UniqueConstraint("assignment_id", "display_order", name="uq_expert_evaluation_assignment_order"),
+        UniqueConstraint("assignment_id", "presentation_code", name="uq_expert_evaluation_assignment_code"),
+    )
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    assignment_id = Column(UUID(as_uuid=True), ForeignKey("expert_evaluation_assignments.id", ondelete="CASCADE"), nullable=False, index=True)
+    item_id = Column(UUID(as_uuid=True), ForeignKey("expert_evaluation_items.id", ondelete="CASCADE"), nullable=False, index=True)
+    presentation_code = Column(String, nullable=False)
+    display_order = Column(Integer, nullable=False)
+    is_hidden_duplicate = Column(Boolean, nullable=False, default=False)
+    opened_at = Column(DateTime, nullable=True)
+    reference_played_at = Column(DateTime, nullable=True)
+    participant_played_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class ExpertRating(Base):
+    """Append-audited draft or submitted expert rating for one presented task."""
+    __tablename__ = "expert_ratings"
+    __table_args__ = (UniqueConstraint("task_id", name="uq_expert_rating_task"),)
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    task_id = Column(UUID(as_uuid=True), ForeignKey("expert_evaluation_tasks.id", ondelete="CASCADE"), nullable=False, index=True)
+    evaluator_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True)
+    melodic_contour = Column(Integer, nullable=True)
+    pitch_control = Column(Integer, nullable=True)
+    rhythm_continuity = Column(Integer, nullable=True)
+    voice_stability = Column(Integer, nullable=True)
+    tarannum_suitability = Column(Integer, nullable=True)
+    weighted_total = Column(Float, nullable=True)
+    audio_evaluable = Column(Boolean, nullable=False, default=True)
+    tarannum_identifiable = Column(String, nullable=False, default="unsure")  # yes | no | unsure
+    confidence = Column(String, nullable=False, default="medium")  # low | medium | high
+    primary_issue = Column(String, nullable=True)
+    comments = Column(Text, nullable=True)
+    status = Column(String, nullable=False, default="draft", index=True)  # draft | submitted
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    submitted_at = Column(DateTime, nullable=True)
+
+
 # Database dependency for FastAPI
 def get_db():
     """Dependency for getting database session."""

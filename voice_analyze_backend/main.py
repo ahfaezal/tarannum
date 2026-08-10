@@ -342,9 +342,11 @@ app = FastAPI(
 try:
     from auth_endpoints import router as auth_router, debug_router as auth_debug_router
     from platform_endpoints import router as platform_router
+    from expert_validation_endpoints import router as expert_validation_router
     app.include_router(auth_router)
     app.include_router(auth_debug_router)
     app.include_router(platform_router)
+    app.include_router(expert_validation_router)
 except ImportError as e:
     logger.warning(f"Could not import routers: {e}")
 

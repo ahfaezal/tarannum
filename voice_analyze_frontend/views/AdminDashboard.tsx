@@ -1,5 +1,5 @@
 import React from "react";
-import { Activity, BookOpenCheck, Settings2, ShieldCheck, Users } from "lucide-react";
+import { Activity, BookOpenCheck, ClipboardCheck, Settings2, ShieldCheck, Users } from "lucide-react";
 import { Link } from "react-router-dom";
 
 const adminSections = [
@@ -21,6 +21,12 @@ const adminSections = [
     description: "Review sessions, usage, processing and platform health.",
     icon: Activity,
   },
+  {
+    to: "/admin/expert-validation",
+    title: "Validasi Pakar KNovasi 2026",
+    description: "Select recordings, assign two Qaris and monitor blinded expert ratings.",
+    icon: ClipboardCheck,
+  },
 ];
 
 const AdminDashboard: React.FC = () => (
@@ -40,7 +46,7 @@ const AdminDashboard: React.FC = () => (
       </div>
     </div>
 
-    <section className="mt-6 grid gap-4 md:grid-cols-3" aria-label="Admin workspaces">
+    <section className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4" aria-label="Admin workspaces">
       {adminSections.map(({ to, title, description, icon: Icon }) => (
         <Link
           key={to}

@@ -27,6 +27,8 @@ const QariContentEditor = lazy(() => import("./components/QariContentEditor"));
 const AdminQariContentManager = lazy(() => import("./views/AdminQariContentManager"));
 const AdminMode = lazy(() => import("./views/AdminMode"));
 const AdminDashboard = lazy(() => import("./views/AdminDashboard"));
+const ExpertValidationPage = lazy(() => import("./views/ExpertValidationPage"));
+const AdminExpertValidation = lazy(() => import("./views/AdminExpertValidation"));
 
 const PageLoader = () => (
   <div className="flex min-h-[40vh] items-center justify-center" role="status">
@@ -83,6 +85,7 @@ const App: React.FC = () => {
             </Route>
             <Route element={<ProtectedRoute roles={["qari"]} />}>
               <Route path="/dashboard" element={<QariDashboard />} />
+              <Route path="/qari/expert-validation" element={<ExpertValidationPage />} />
               <Route path="/qari/content/edit/:contentId" element={<QariContentEditor />} />
             </Route>
             <Route element={<ProtectedRoute roles={["admin"]} />}>
@@ -92,6 +95,7 @@ const App: React.FC = () => {
               <Route path="/admin/presets" element={<AdminMode view="presets" />} />
               <Route path="/admin/users" element={<AdminMode view="users" />} />
               <Route path="/admin/monitoring" element={<AdminMode view="monitoring" />} />
+              <Route path="/admin/expert-validation" element={<AdminExpertValidation />} />
             </Route>
           </Route>
         </Route>
