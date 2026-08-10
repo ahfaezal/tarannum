@@ -3,6 +3,7 @@ from fastapi import FastAPI, UploadFile, File, HTTPException, Form, Depends, Req
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from starlette.concurrency import run_in_threadpool
+from starlette.middleware.gzip import GZipMiddleware
 import json
 import asyncio
 from contextlib import asynccontextmanager
@@ -372,6 +373,11 @@ app.add_middleware(
 )
 logger.info(f"CORS configured: origins={allow_origins_list}, credentials={allow_creds}")
 
+# Pitch contours are JSON-heavy and are requested by every classroom device.
+# Compress them at the API boundary so cached graph delivery does not consume
+# unnecessary bandwidth when a class opens the same reference simultaneously.
+app.add_middleware(GZipMiddleware, minimum_size=1000, compresslevel=6)
+
 # Add rate limiting middleware (Milestone 4)
 try:
     from rate_limiting import RateLimitMiddleware
@@ -525,6 +531,60 @@ TEMP_DIR = BASE_DIR / "temp_audio"
 TEMP_DIR.mkdir(exist_ok=True)
 REFERENCE_AUDIO_CACHE_DIR = TEMP_DIR / "reference_cache"
 REFERENCE_AUDIO_CACHE_DIR.mkdir(exist_ok=True)
+
+DISPLAY_PITCH_POINT_LIMIT = max(200, int(os.getenv("DISPLAY_PITCH_POINT_LIMIT", "900")))
+DISPLAY_PITCH_CACHE_TTL_SECONDS = max(
+    60, int(os.getenv("DISPLAY_PITCH_CACHE_TTL_SECONDS", "900"))
+)
+_display_pitch_cache = {}
+_display_pitch_cache_lock = threading.Lock()
+
+
+def compact_pitch_for_display(pitch_data, limit=DISPLAY_PITCH_POINT_LIMIT):
+    """Preserve contour extrema while bounding the browser graph payload."""
+    if not pitch_data or len(pitch_data) <= limit:
+        return pitch_data or []
+
+    # Two extrema per bucket retain short rises/drops better than a simple
+    # stride while keeping the response deterministic and inexpensive.
+    bucket_count = max(1, limit // 2)
+    bucket_size = len(pitch_data) / bucket_count
+    compacted = []
+
+    for bucket_index in range(bucket_count):
+        start = int(bucket_index * bucket_size)
+        end = min(len(pitch_data), max(start + 1, int((bucket_index + 1) * bucket_size)))
+        indexed_bucket = list(enumerate(pitch_data[start:end], start=start))
+        if not indexed_bucket:
+            continue
+
+        def pitch_value(item):
+            point = item[1]
+            value = point.get("midi")
+            if value is None:
+                value = point.get("f_hz", point.get("frequency"))
+            return float(value) if value is not None else float("inf")
+
+        valid = [item for item in indexed_bucket if pitch_value(item) != float("inf")]
+        if not valid:
+            selected = [indexed_bucket[0]]
+        else:
+            low = min(valid, key=pitch_value)
+            high = max(valid, key=pitch_value)
+            selected = sorted({low[0]: low, high[0]: high}.values(), key=lambda item: item[0])
+
+        compacted.extend(point for _, point in selected)
+
+    if compacted and compacted[-1] is not pitch_data[-1] and len(compacted) < limit:
+        compacted.append(pitch_data[-1])
+    return compacted[:limit]
+
+
+def invalidate_display_pitch_cache(reference_id):
+    if not reference_id:
+        return
+    with _display_pitch_cache_lock:
+        _display_pitch_cache.pop(reference_id, None)
 _reference_audio_cache_locks: dict[str, threading.Lock] = {}
 _reference_audio_cache_locks_guard = threading.Lock()
 
@@ -2066,6 +2126,7 @@ async def extract_pitch_endpoint(
         # Cache pitch data if it's a library reference
         if reference_id:
             db_reference_library.cache_pitch_data(reference_id, pitch_data)
+            invalidate_display_pitch_cache(reference_id)
             logger.info(f"Cached pitch data for reference_id: {reference_id}")
 
         # Cleanup temporary files and free memory
@@ -2437,39 +2498,82 @@ def get_cached_pitch_data(
     """
     try:
         from qari_service import qari_service
+        from database import Reference
 
         user_role = current_user.role if current_user else UserRole.PUBLIC
         user_id = str(current_user.id) if current_user else None
         student_qari_id = None
 
-        # Get student's Qari if they are a student
-        if user_role == UserRole.STUDENT and current_user:
-            try:
-                qari_info = qari_service.get_student_qari(str(current_user.id), db=db)
-                if qari_info:
-                    student_qari_id = qari_info.get("qari_id")
-            except Exception as e:
-                logger.warning(f"Could not get student's Qari: {e}")
+        # Public references need only one minimal, current visibility lookup.
+        # Private references retain the full owner/Qari authorization path.
+        public_reference = db.query(Reference.is_public).filter(
+            Reference.id == ref_id
+        ).scalar()
+        if public_reference is True:
+            ref_data = {"id": ref_id, "is_public": True}
+        else:
+            if user_role == UserRole.STUDENT and current_user:
+                try:
+                    qari_info = qari_service.get_student_qari(str(current_user.id), db=db)
+                    if qari_info:
+                        student_qari_id = qari_info.get("qari_id")
+                except Exception as e:
+                    logger.warning(f"Could not get student's Qari: {e}")
 
-        # Check access first
-        ref_data = db_reference_library.get_reference(
-            ref_id=ref_id,
-            user_role=user_role,
-            user_id=user_id,
-            student_qari_id=student_qari_id,
-            db=db
-        )
+            ref_data = db_reference_library.get_reference(
+                ref_id=ref_id,
+                user_role=user_role,
+                user_id=user_id,
+                student_qari_id=student_qari_id,
+                db=db
+            )
         if not ref_data:
             raise HTTPException(status_code=404, detail="Reference not found or access denied")
 
-        cached_pitch_data = db_reference_library.get_cached_pitch_data(ref_id, db=db)
+        now = time.monotonic()
+        with _display_pitch_cache_lock:
+            cached_entry = _display_pitch_cache.get(ref_id)
+            if cached_entry and now - cached_entry[0] <= DISPLAY_PITCH_CACHE_TTL_SECONDS:
+                cached_pitch_data = cached_entry[1]
+                original_point_count = cached_entry[2]
+            else:
+                cached_pitch_data = None
+                original_point_count = 0
+
+        if cached_pitch_data is None:
+            full_pitch_data = db_reference_library.get_cached_pitch_data(ref_id, db=db)
+            if not full_pitch_data:
+                raise HTTPException(status_code=404, detail="Cached pitch data not found")
+            original_point_count = len(full_pitch_data)
+            cached_pitch_data = compact_pitch_for_display(full_pitch_data)
+            with _display_pitch_cache_lock:
+                _display_pitch_cache[ref_id] = (
+                    now,
+                    cached_pitch_data,
+                    original_point_count,
+                )
+
         if not cached_pitch_data:
             raise HTTPException(status_code=404, detail="Cached pitch data not found")
-        return JSONResponse(content={
-            "reference": cached_pitch_data,
-            "student": [],
-            "ayah_timing": []
-        })
+        is_public_reference = bool(ref_data.get("is_public"))
+        cache_control = (
+            "public, max-age=86400, stale-while-revalidate=604800"
+            if is_public_reference
+            else "private, max-age=3600, stale-while-revalidate=86400"
+        )
+        return JSONResponse(
+            content={
+                "reference": cached_pitch_data,
+                "student": [],
+                "ayah_timing": [],
+            },
+            headers={
+                "Cache-Control": cache_control,
+                "Vary": "Authorization, Accept-Encoding",
+                "X-Pitch-Points-Original": str(original_point_count),
+                "X-Pitch-Points-Display": str(len(cached_pitch_data)),
+            },
+        )
     except HTTPException:
         raise
     except Exception as e:

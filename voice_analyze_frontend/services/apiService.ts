@@ -80,6 +80,36 @@ export type ScoringJobProgress = {
   queuePosition?: number | null;
 };
 
+// Reference contours are immutable until their source audio changes. Cache
+// them per authentication scope so Practice and Recording can share one graph
+// request without leaking private content across logout/account switching.
+const referencePitchMemoryCache = new Map<string, PitchDataResponse>();
+const referencePitchRequests = new Map<string, Promise<PitchDataResponse>>();
+
+const getPitchCacheKey = (referenceId: string, authorization = ""): string => {
+  let scopeHash = 2166136261;
+  const scope = authorization || "public";
+  for (let index = 0; index < scope.length; index += 1) {
+    scopeHash ^= scope.charCodeAt(index);
+    scopeHash = Math.imul(scopeHash, 16777619);
+  }
+  return `${referenceId}:${(scopeHash >>> 0).toString(16)}`;
+};
+
+const normalizePitchResponse = (data: any): PitchDataResponse => ({
+  reference: (data.reference || []).map(
+    (point: any) =>
+      ({
+        time: point.time,
+        f_hz: point.f_hz,
+        midi: point.midi,
+        confidence: point.confidence || 0.9,
+      } as PitchData)
+  ),
+  student: data.student || [],
+  ayah_timing: data.ayah_timing || [],
+});
+
 export const getScoringCapacity = async (): Promise<ScoringCapacity> => {
   const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
   const response = await fetch(`${API_URL}/api/scoring/capacity`, {
@@ -563,70 +593,80 @@ export const extractReferencePitch = async (
   filename: string = "reference.mp3",
   referenceId?: string
 ): Promise<PitchDataResponse> => {
-  // Use environment variable or default to production backend URL
   const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
-  console.log(API_URL);
-  
-  const formData = new FormData();
-  
-  // Prefer reference_id (uses backend-stored file)
+
+  // Library references use the lightweight cache endpoint. POST extraction is
+  // retained only as a one-time fallback when a reference has no pitch cache.
   if (referenceId) {
-    formData.append("reference_id", referenceId);
-    console.log(`Extracting pitch using reference_id: ${referenceId}`);
-  } else if (audioBlob) {
-    // Fallback: upload blob
-    formData.append("audio", audioBlob, filename);
-    console.log(`Extracting pitch from uploaded blob: ${filename}`);
-  } else {
+    const authHeader = getAuthHeader();
+    const authorization =
+      "Authorization" in authHeader ? authHeader.Authorization || "" : "";
+    const cacheKey = getPitchCacheKey(referenceId, authorization);
+    const memoryCached = referencePitchMemoryCache.get(cacheKey);
+    if (memoryCached) return memoryCached;
+
+    const existingRequest = referencePitchRequests.get(cacheKey);
+    if (existingRequest) return existingRequest;
+
+    const request = (async () => {
+      const cachedResponse = await fetch(
+        `${API_URL}/api/references/${encodeURIComponent(referenceId)}/pitch`,
+        {
+          headers: { ...authHeader },
+          method: "GET",
+          cache: "default",
+        }
+      );
+
+      let response = cachedResponse;
+      if (cachedResponse.status === 404) {
+        const fallbackForm = new FormData();
+        fallbackForm.append("reference_id", referenceId);
+        response = await fetch(`${API_URL}/api/extract-pitch`, {
+          headers: { ...authHeader },
+          method: "POST",
+          body: fallbackForm,
+        });
+      }
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(
+          `Pitch extraction failed: ${response.status} - ${errorText}`
+        );
+      }
+
+      const pitchData = normalizePitchResponse(await response.json());
+      referencePitchMemoryCache.set(cacheKey, pitchData);
+      return pitchData;
+    })();
+
+    referencePitchRequests.set(cacheKey, request);
+    try {
+      return await request;
+    } finally {
+      referencePitchRequests.delete(cacheKey);
+    }
+  }
+
+  if (!audioBlob) {
     throw new Error("Either audioBlob or referenceId must be provided");
   }
 
-  try {
-    const response = await fetch(`${API_URL}/api/extract-pitch`, {
-      headers: {
-        ...getAuthHeader(),
-      },
-      method: "POST",
-      body: formData,
-    });
+  const formData = new FormData();
+  formData.append("audio", audioBlob, filename);
+  const response = await fetch(`${API_URL}/api/extract-pitch`, {
+    headers: { ...getAuthHeader() },
+    method: "POST",
+    body: formData,
+  });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(
-        `Pitch extraction failed: ${response.status} - ${errorText}`
-      );
-    }
-
-    const data = await response.json();
-
-    // Convert backend format to frontend format
-    // Backend returns: { reference: [{time, f_hz, midi, confidence}, ...], student: [], ayah_timing: [...] }
-    // Frontend expects: { reference: PitchData[], student: PitchData[], ayah_timing?: AyahTiming[] }
-    const pitchData: PitchDataResponse = {
-      reference: (data.reference || []).map(
-        (p: any) =>
-          ({
-            time: p.time,
-            f_hz: p.f_hz,
-            midi: p.midi,
-            confidence: p.confidence || 0.9,
-          } as PitchData)
-      ),
-      student: data.student || [],
-      ayah_timing: data.ayah_timing || [], // Include text timing if available
-    };
-
-    // Debug: Log received ayah_timing data
-    if (pitchData.ayah_timing && pitchData.ayah_timing.length > 0) {
-      console.log(`[apiService] Received ${pitchData.ayah_timing.length} text segments from backend`);
-      console.log(`[apiService] Segments:`, pitchData.ayah_timing);
-    } else {
-      console.log(`[apiService] No text segments received from backend`);
-    }
-
-    return pitchData;
-  } catch (error) {
-    console.error("Error extracting reference pitch:", error);
-    throw error;
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(
+      `Pitch extraction failed: ${response.status} - ${errorText}`
+    );
   }
+
+  return normalizePitchResponse(await response.json());
 };

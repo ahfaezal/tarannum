@@ -1054,6 +1054,7 @@ class DBReferenceLibrary:
             "duration": float(ref.duration),
             "upload_date": ref.upload_date.isoformat() if ref.upload_date else "",
             "file_size": ref.file_size,
+            "is_public": bool(ref.is_public),
             "is_preset": ref.is_preset,
             "text_segments": []
         }
