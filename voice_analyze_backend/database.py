@@ -452,6 +452,7 @@ class ExpertEvaluationBatch(Base):
     target_count = Column(Integer, nullable=False, default=50)
     duplicate_count = Column(Integer, nullable=False, default=5)
     random_seed = Column(Integer, nullable=False)
+    target_reference_id = Column(String, ForeignKey("references.id", ondelete="RESTRICT"), nullable=True, index=True)
     cohort_start = Column(DateTime, nullable=True)
     cohort_end = Column(DateTime, nullable=True)
     consent_confirmed_at = Column(DateTime, nullable=False)
@@ -591,6 +592,7 @@ def init_db():
         ensure_student_activity_events_table()
         ensure_user_session_metadata_columns()
         ensure_qari_dashboard_columns()
+        ensure_expert_evaluation_columns()
         logger.info("Database tables created successfully")
     except Exception as e:
         logger.error(f"Error creating database tables: {e}", exc_info=True)
@@ -643,6 +645,17 @@ def ensure_email_otp_columns():
                 WHERE email_verified IS TRUE
             """))
             conn.execute(text("ALTER TABLE users ALTER COLUMN email_verified SET DEFAULT FALSE"))
+
+
+def ensure_expert_evaluation_columns():
+    """Add the frozen target reference to deployments created before single-reference validation."""
+    with engine.begin() as conn:
+        if not _column_exists(conn, "expert_evaluation_batches", "target_reference_id"):
+            conn.execute(text("ALTER TABLE expert_evaluation_batches ADD COLUMN target_reference_id VARCHAR"))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_expert_evaluation_batches_target_reference_id "
+            "ON expert_evaluation_batches (target_reference_id)"
+        ))
 
 
 def ensure_qari_dashboard_columns():

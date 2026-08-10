@@ -14,6 +14,8 @@ const AdminExpertValidation: React.FC = () => {
   const [qaris, setQaris] = useState<ExpertQariOption[]>([]);
   const [selectedQaris, setSelectedQaris] = useState<string[]>([]);
   const [summary, setSummary] = useState<CandidateSummary | null>(null);
+  const [referenceOptions, setReferenceOptions] = useState<CandidateSummary["references"]>([]);
+  const [selectedReferenceId, setSelectedReferenceId] = useState<string>("");
   const [batches, setBatches] = useState<ExpertBatchSummary[]>([]);
   const [startDate, setStartDate] = useState("2026-07-29");
   const [endDate, setEndDate] = useState("2026-07-31");
@@ -33,7 +35,16 @@ const AdminExpertValidation: React.FC = () => {
         getExpertBatches(),
       ]);
       setQaris(qariData);
-      setSummary(candidateData);
+      setReferenceOptions(candidateData.references);
+      const preferredReference = candidateData.references.find(
+        (reference) => reference.title.trim().toLowerCase() === "al fatihah",
+      ) || candidateData.references[0];
+      if (preferredReference) {
+        setSelectedReferenceId(preferredReference.reference_id);
+        setSummary(await getExpertCandidateSummary(startDate, endDate, preferredReference.reference_id));
+      } else {
+        setSummary(candidateData);
+      }
       setBatches(batchData);
     } catch (err: any) {
       setError(err.message || "Data validasi gagal dimuatkan");
@@ -47,9 +58,27 @@ const AdminExpertValidation: React.FC = () => {
   const refreshCandidates = async () => {
     try {
       setError(null);
-      setSummary(await getExpertCandidateSummary(startDate, endDate));
+      const allReferences = await getExpertCandidateSummary(startDate, endDate);
+      setReferenceOptions(allReferences.references);
+      const nextReference = allReferences.references.find(
+        (reference) => reference.reference_id === selectedReferenceId,
+      ) || allReferences.references[0];
+      setSelectedReferenceId(nextReference?.reference_id || "");
+      setSummary(nextReference
+        ? await getExpertCandidateSummary(startDate, endDate, nextReference.reference_id)
+        : allReferences);
     } catch (err: any) {
       setError(err.message || "Calon rakaman gagal diaudit");
+    }
+  };
+
+  const selectReference = async (referenceId: string) => {
+    try {
+      setError(null);
+      setSelectedReferenceId(referenceId);
+      setSummary(await getExpertCandidateSummary(startDate, endDate, referenceId));
+    } catch (err: any) {
+      setError(err.message || "Rakaman rujukan gagal dipilih");
     }
   };
 
@@ -64,8 +93,12 @@ const AdminExpertValidation: React.FC = () => {
       setError("Pilih tepat dua orang qari yang telah diluluskan.");
       return;
     }
-    if (!summary || summary.eligible_recordings < 50) {
-      setError("Sekurang-kurangnya 50 rakaman yang layak diperlukan.");
+    if (!selectedReferenceId) {
+      setError("Pilih satu rakaman rujukan terlebih dahulu.");
+      return;
+    }
+    if (!summary || summary.eligible_recordings < 40) {
+      setError("Sekurang-kurangnya 40 rakaman yang menggunakan rujukan sama diperlukan.");
       return;
     }
     try {
@@ -78,7 +111,8 @@ const AdminExpertValidation: React.FC = () => {
         evaluator_ids: selectedQaris,
         cohort_start: startDate,
         cohort_end: endDate,
-        target_count: 50,
+        target_reference_id: selectedReferenceId,
+        target_count: 40,
         duplicate_count: 5,
         random_seed: 20260816,
         consent_confirmed: consentConfirmed,
@@ -103,26 +137,26 @@ const AdminExpertValidation: React.FC = () => {
 
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
         <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-          <div className="flex items-center gap-3"><Database className="h-6 w-6 text-emerald-700" /><div><h2 className="font-bold text-slate-900">1. Audit rakaman layak</h2><p className="text-sm text-slate-500">V2.3, integriti lengkap dan audio tersedia</p></div></div>
+          <div className="flex items-center gap-3"><Database className="h-6 w-6 text-emerald-700" /><div><h2 className="font-bold text-slate-900">1. Pilih satu rakaman rujukan</h2><p className="text-sm text-slate-500">V2.3, integriti lengkap dan audio tersedia</p></div></div>
           <div className="mt-5 grid grid-cols-2 gap-3"><label className="text-sm font-semibold text-slate-700">Tarikh mula<input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} className="mt-2 w-full rounded-xl border border-slate-300 px-3 py-2 font-normal" /></label><label className="text-sm font-semibold text-slate-700">Tarikh akhir (tidak termasuk)<input type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} className="mt-2 w-full rounded-xl border border-slate-300 px-3 py-2 font-normal" /></label></div>
           <button onClick={refreshCandidates} className="mt-4 rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold hover:bg-slate-50">Audit semula</button>
+          <div className="mt-5 space-y-2">{referenceOptions.map((reference) => { const selected = selectedReferenceId === reference.reference_id; return <button type="button" key={reference.reference_id} onClick={() => selectReference(reference.reference_id)} className={`flex w-full items-center justify-between rounded-xl border px-4 py-3 text-left text-sm ${selected ? "border-emerald-500 bg-emerald-50 text-emerald-950" : "border-slate-200 bg-white text-slate-700 hover:border-emerald-300"}`}><span className="truncate pr-3 font-semibold">{reference.title}</span><strong>{reference.count}</strong></button>; })}</div>
           {summary && <div className="mt-5 grid grid-cols-2 gap-3"><Stat label="Rakaman layak" value={summary.eligible_recordings} /><Stat label="Peserta unik" value={summary.participants} /></div>}
-          {summary && <div className="mt-4 space-y-2">{summary.references.map((reference) => <div key={reference.reference_id} className="flex justify-between rounded-lg bg-slate-50 px-3 py-2 text-sm"><span className="truncate pr-3 text-slate-700">{reference.title}</span><strong>{reference.count}</strong></div>)}</div>}
         </section>
 
         <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
           <div className="flex items-center gap-3"><Users className="h-6 w-6 text-emerald-700" /><div><h2 className="font-bold text-slate-900">2. Pilih dua qari</h2><p className="text-sm text-slate-500">Hanya qari aktif dan telah diluluskan</p></div></div>
           <div className="mt-5 space-y-3">{qaris.map((qari) => { const selected = selectedQaris.includes(qari.id); return <button key={qari.id} onClick={() => toggleQari(qari.id)} className={`flex w-full items-center justify-between rounded-xl border p-4 text-left ${selected ? "border-emerald-500 bg-emerald-50" : "border-slate-200 hover:border-emerald-300"}`}><div><div className="font-semibold text-slate-900">{qari.name}</div><div className="text-xs text-slate-500">{qari.email}</div></div><div className={`flex h-6 w-6 items-center justify-center rounded-full border ${selected ? "border-emerald-600 bg-emerald-600 text-white" : "border-slate-300"}`}>{selected && <CheckCircle2 className="h-4 w-4" />}</div></button>; })}</div>
           {!qaris.length && !loading && <p className="mt-5 rounded-xl bg-amber-50 p-4 text-sm text-amber-800">Tiada akaun qari yang aktif dan diluluskan.</p>}
-          <div className="mt-6 rounded-xl bg-slate-50 p-4 text-sm text-slate-700"><strong>Batch tetap:</strong> 50 rakaman unik + 5 pendua tersembunyi bagi setiap qari. Skor AI dan identiti peserta tidak dipaparkan.</div>
+          <div className="mt-6 rounded-xl bg-slate-50 p-4 text-sm text-slate-700"><strong>Batch tetap:</strong> 40 rakaman unik daripada satu rujukan + 5 pendua tersembunyi bagi setiap qari. Skor AI dan identiti peserta tidak dipaparkan.</div>
           <label className="mt-4 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"><input type="checkbox" checked={consentConfirmed} onChange={(event) => setConsentConfirmed(event.target.checked)} className="mt-1 h-4 w-4 accent-emerald-600" /><span>Saya mengesahkan penggunaan rakaman peserta untuk penilaian pakar secara anonim telah mendapat kebenaran yang sewajarnya.</span></label>
-          <button disabled={creating || selectedQaris.length !== 2 || !summary || summary.eligible_recordings < 50 || !consentConfirmed} onClick={createBatch} className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-5 py-3 font-bold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40"><ClipboardCheck className="h-5 w-5" />{creating ? "Membina batch..." : "Cipta dan tugaskan batch"}</button>
+          <button disabled={creating || selectedQaris.length !== 2 || !selectedReferenceId || !summary || summary.eligible_recordings < 40 || !consentConfirmed} onClick={createBatch} className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-5 py-3 font-bold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40"><ClipboardCheck className="h-5 w-5" />{creating ? "Membina batch..." : "Cipta dan tugaskan batch"}</button>
         </section>
       </div>
 
       <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
         <h2 className="font-bold text-slate-900">Status batch</h2>
-        <div className="mt-4 space-y-3">{batches.map((batch) => <div key={batch.id} className="grid gap-3 rounded-xl border border-slate-200 p-4 sm:grid-cols-[1fr_auto] sm:items-center"><div><div className="font-semibold text-slate-900">{batch.name}</div><div className="mt-1 text-xs text-slate-500">{batch.recording_count} rakaman · {batch.evaluator_count} qari · Rubrik {batch.rubric_version}</div></div><div className="text-sm font-bold text-emerald-700">{batch.submitted_tasks}/{batch.total_tasks} dihantar</div></div>)}</div>
+        <div className="mt-4 space-y-3">{batches.map((batch) => <div key={batch.id} className="grid gap-3 rounded-xl border border-slate-200 p-4 sm:grid-cols-[1fr_auto] sm:items-center"><div><div className="font-semibold text-slate-900">{batch.name}</div><div className="mt-1 text-xs text-slate-500">{batch.recording_count} rakaman · {batch.evaluator_count} qari · {batch.target_reference_title || "Rujukan belum direkodkan"} · Rubrik {batch.rubric_version}</div></div><div className="text-sm font-bold text-emerald-700">{batch.submitted_tasks}/{batch.total_tasks} dihantar</div></div>)}</div>
         {!batches.length && !loading && <p className="mt-4 text-sm text-slate-500">Belum ada batch validasi.</p>}
       </section>
     </div>

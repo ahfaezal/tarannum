@@ -50,7 +50,8 @@ class CreateBatchPayload(BaseModel):
     evaluator_ids: List[uuid.UUID]
     cohort_start: Optional[datetime] = None
     cohort_end: Optional[datetime] = None
-    target_count: int = Field(default=50, ge=10, le=200)
+    target_reference_id: str = Field(min_length=1, max_length=255)
+    target_count: int = Field(default=40, ge=10, le=200)
     duplicate_count: int = Field(default=5, ge=0, le=20)
     random_seed: int = Field(default=20260816, ge=1)
     consent_confirmed: bool
@@ -101,7 +102,12 @@ class RatingPayload(BaseModel):
         return value
 
 
-def _candidate_query(db: Session, start: Optional[datetime], end: Optional[datetime]):
+def _candidate_query(
+    db: Session,
+    start: Optional[datetime],
+    end: Optional[datetime],
+    reference_id: Optional[str] = None,
+):
     query = (
         db.query(
             UserSession.id.label("session_id"),
@@ -125,6 +131,8 @@ def _candidate_query(db: Session, start: Optional[datetime], end: Optional[datet
         query = query.filter(UserSession.created_at >= start)
     if end:
         query = query.filter(UserSession.created_at < end)
+    if reference_id:
+        query = query.filter(UserSession.reference_id == reference_id)
     return query.order_by(AnalysisResult.score.asc(), UserSession.created_at.asc())
 
 
@@ -303,10 +311,11 @@ def admin_qari_options(
 def admin_candidate_summary(
     cohort_start: Optional[datetime] = None,
     cohort_end: Optional[datetime] = None,
+    reference_id: Optional[str] = None,
     current_user: User = Depends(get_current_admin_user),
     db: Session = Depends(get_db),
 ):
-    rows = _candidate_query(db, cohort_start, cohort_end).all()
+    rows = _candidate_query(db, cohort_start, cohort_end, reference_id).all()
     participants = {str(row.user_id) for row in rows}
     references = {}
     for row in rows:
@@ -317,7 +326,11 @@ def admin_candidate_summary(
         "eligible_recordings": len(rows),
         "participants": len(participants),
         "references": sorted(references.values(), key=lambda item: item["count"], reverse=True),
-        "filters": {"scoring_version": "V2.3", "integrity_status": "complete"},
+        "filters": {
+            "scoring_version": "V2.3",
+            "integrity_status": "complete",
+            "reference_id": reference_id,
+        },
     }
 
 
@@ -337,7 +350,15 @@ def create_batch(
     ):
         raise HTTPException(status_code=400, detail="Both evaluators must be active, approved Qari accounts")
 
-    rows = _candidate_query(db, payload.cohort_start, payload.cohort_end).all()
+    target_reference = db.query(Reference).filter(Reference.id == payload.target_reference_id).first()
+    if not target_reference:
+        raise HTTPException(status_code=400, detail="The selected reference audio does not exist")
+    rows = _candidate_query(
+        db,
+        payload.cohort_start,
+        payload.cohort_end,
+        payload.target_reference_id,
+    ).all()
     selected = _select_stratified(rows, payload.target_count, payload.random_seed)
     batch = ExpertEvaluationBatch(
         name=payload.name.strip(),
@@ -347,6 +368,7 @@ def create_batch(
         target_count=payload.target_count,
         duplicate_count=payload.duplicate_count,
         random_seed=payload.random_seed,
+        target_reference_id=payload.target_reference_id,
         cohort_start=payload.cohort_start,
         cohort_end=payload.cohort_end,
         consent_confirmed_at=datetime.utcnow(),
@@ -398,6 +420,8 @@ def create_batch(
             "target_count": payload.target_count,
             "duplicate_count": payload.duplicate_count,
             "random_seed": payload.random_seed,
+            "target_reference_id": payload.target_reference_id,
+            "target_reference_title": target_reference.title,
             "consent_confirmed": True,
             "evaluator_ids": [str(value) for value in payload.evaluator_ids],
         },
@@ -432,6 +456,11 @@ def list_admin_batches(
             "id": str(batch.id), "name": batch.name, "status": batch.status,
             "rubric_version": batch.rubric_version, "recording_count": batch.target_count,
             "duplicate_count": batch.duplicate_count, "evaluator_count": len(assignments),
+            "target_reference_id": batch.target_reference_id,
+            "target_reference_title": (
+                db.query(Reference.title).filter(Reference.id == batch.target_reference_id).scalar()
+                if batch.target_reference_id else None
+            ),
             "submitted_tasks": submitted, "total_tasks": total_tasks,
             "created_at": batch.created_at.isoformat(),
         })

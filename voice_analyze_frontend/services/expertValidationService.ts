@@ -12,7 +12,7 @@ export interface CandidateSummary {
   eligible_recordings: number;
   participants: number;
   references: Array<{ reference_id: string; title: string; count: number }>;
-  filters: { scoring_version: string; integrity_status: string };
+  filters: { scoring_version: string; integrity_status: string; reference_id?: string | null };
 }
 
 export interface ExpertBatchSummary {
@@ -26,6 +26,8 @@ export interface ExpertBatchSummary {
   submitted_tasks: number;
   total_tasks: number;
   created_at: string;
+  target_reference_id?: string | null;
+  target_reference_title?: string | null;
 }
 
 export interface ExpertAssignmentSummary {
@@ -94,10 +96,11 @@ export const getExpertQariOptions = async (): Promise<ExpertQariOption[]> => {
   return (await jsonOrError(response)).qaris;
 };
 
-export const getExpertCandidateSummary = async (start?: string, end?: string): Promise<CandidateSummary> => {
+export const getExpertCandidateSummary = async (start?: string, end?: string, referenceId?: string): Promise<CandidateSummary> => {
   const params = new URLSearchParams();
   if (start) params.set("cohort_start", `${start}T00:00:00`);
   if (end) params.set("cohort_end", `${end}T00:00:00`);
+  if (referenceId) params.set("reference_id", referenceId);
   const response = await fetch(`${API_URL}/api/expert-validation/admin/candidates?${params.toString()}`, { headers: getAuthHeader() });
   return jsonOrError(response);
 };
@@ -113,6 +116,7 @@ export const createExpertBatch = async (payload: {
   evaluator_ids: string[];
   cohort_start?: string;
   cohort_end?: string;
+  target_reference_id: string;
   target_count: number;
   duplicate_count: number;
   random_seed: number;
