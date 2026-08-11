@@ -46,7 +46,7 @@ from database import (
     TrainingChallengeParticipant,
 )
 from sqlalchemy.orm import Session
-from sqlalchemy import and_
+from sqlalchemy import and_, func
 from db_session_service import db_session_service
 from cloud_storage import cloud_storage, S3Storage
 from qari_service import qari_service
@@ -721,13 +721,39 @@ def get_recording_assessment_summary(
 @app.get("/api/scoring/capacity")
 def get_scoring_capacity(db: Session = Depends(get_db)):
     """Return non-sensitive live queue pressure for the recording UI."""
+    now = datetime.utcnow()
     active = db.query(ScoringJob).filter(ScoringJob.status == "processing").count()
     waiting = db.query(ScoringJob).filter(ScoringJob.status == "queued").count()
+    completed_last_hour = db.query(ScoringJob).filter(
+        ScoringJob.status == "completed",
+        ScoringJob.completed_at >= now - timedelta(hours=1),
+    ).count()
+    failed_last_hour = db.query(ScoringJob).filter(
+        ScoringJob.status == "failed",
+        ScoringJob.completed_at >= now - timedelta(hours=1),
+    ).count()
+    oldest_queued_at = db.query(func.min(ScoringJob.queued_at)).filter(
+        ScoringJob.status == "queued"
+    ).scalar()
+    oldest_started_at = db.query(func.min(ScoringJob.started_at)).filter(
+        ScoringJob.status == "processing"
+    ).scalar()
     return {
         "active": active,
         "waiting": waiting,
         "limit": max(1, int(os.getenv("SCORING_WORKER_CONCURRENCY", "4"))),
         "mode": "asynchronous" if CELERY_AVAILABLE else "synchronous",
+        "completed_last_hour": completed_last_hour,
+        "failed_last_hour": failed_last_hour,
+        "oldest_wait_seconds": (
+            max(0, round((now - oldest_queued_at).total_seconds()))
+            if oldest_queued_at else 0
+        ),
+        "oldest_processing_seconds": (
+            max(0, round((now - oldest_started_at).total_seconds()))
+            if oldest_started_at else 0
+        ),
+        "captured_at": now.isoformat(),
     }
 
 
@@ -940,11 +966,17 @@ def get_scoring_job(
                 db.commit()
         job = db.query(ScoringJob).filter(ScoringJob.id == parsed_job_id).first()
 
-    # Celery enforces a five-minute hard limit. A job still marked as
-    # processing after the grace period cannot be healthy (for example, a
-    # worker can fail before its normal exception handler starts). Convert it
-    # to a recoverable terminal state so clients do not poll forever.
-    stale_after_seconds = max(330, int(os.getenv("SCORING_STALE_TIMEOUT_SECONDS", "360")))
+    # Keep stale-job recovery beyond the worker hard limit. Four-minute azan
+    # recordings can run for several minutes under CPU contention; marking a
+    # healthy task failed earlier than Celery's configured limit creates a
+    # false terminal result while the worker is still processing it.
+    worker_hard_limit_seconds = max(
+        300, int(os.getenv("SCORING_TASK_TIME_LIMIT_SECONDS", "900"))
+    )
+    stale_after_seconds = max(
+        worker_hard_limit_seconds + 30,
+        int(os.getenv("SCORING_STALE_TIMEOUT_SECONDS", "960")),
+    )
     if (
         job.status == "processing"
         and job.started_at

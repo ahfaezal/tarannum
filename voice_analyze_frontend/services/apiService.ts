@@ -1,76 +1,16 @@
 import { AnalysisResult, AyahTiming, PitchDataResponse, PitchData, TrainingFeedback } from "../types";
 import { getAuthHeader } from "./authService";
 
-// Helper function to convert AudioBuffer to WAV Blob
-const audioBufferToWav = (audioBuffer: AudioBuffer): Blob => {
-  const numberOfChannels = audioBuffer.numberOfChannels;
-  const length = audioBuffer.length * numberOfChannels * 2;
-  const buffer = new ArrayBuffer(44 + length);
-  const view = new DataView(buffer);
-
-  // WAV header helper
-  const writeString = (offset: number, string: string): void => {
-    for (let i = 0; i < string.length; i++) {
-      view.setUint8(offset + i, string.charCodeAt(i));
-    }
-  };
-
-  writeString(0, "RIFF");
-  view.setUint32(4, 36 + length, true);
-  writeString(8, "WAVE");
-  writeString(12, "fmt ");
-  view.setUint32(16, 16, true);
-  view.setUint16(20, 1, true);
-  view.setUint16(22, numberOfChannels, true);
-  view.setUint32(24, audioBuffer.sampleRate, true);
-  view.setUint32(28, audioBuffer.sampleRate * numberOfChannels * 2, true);
-  view.setUint16(32, numberOfChannels * 2, true);
-  view.setUint16(34, 16, true);
-  writeString(36, "data");
-  view.setUint32(40, length, true);
-
-  // Write audio data
-  const channelData: Float32Array[] = [];
-  for (let i = 0; i < numberOfChannels; i++) {
-    channelData.push(audioBuffer.getChannelData(i));
-  }
-
-  let offset = 44;
-  for (let i = 0; i < audioBuffer.length; i++) {
-    for (let channel = 0; channel < numberOfChannels; channel++) {
-      const sample = Math.max(-1, Math.min(1, channelData[channel][i]));
-      view.setInt16(
-        offset,
-        sample < 0 ? sample * 0x8000 : sample * 0x7fff,
-        true
-      );
-      offset += 2;
-    }
-  }
-
-  return new Blob([buffer], { type: "audio/wav" });
-};
-
-// Helper function to convert Blob to WAV format
-const convertBlobToWav = async (blob: Blob): Promise<Blob> => {
-  const audioContext = new (window.AudioContext ||
-    (window as any).webkitAudioContext)();
-  try {
-    const arrayBuffer = await blob.arrayBuffer();
-    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-
-    // Convert to WAV
-    const wavBlob = audioBufferToWav(audioBuffer);
-    return wavBlob;
-  } finally {
-    await audioContext.close();
-  }
-};
-
 export type ScoringCapacity = {
   active: number;
   waiting: number;
   limit: number;
+  mode?: 'asynchronous' | 'synchronous';
+  completed_last_hour?: number;
+  failed_last_hour?: number;
+  oldest_wait_seconds?: number;
+  oldest_processing_seconds?: number;
+  captured_at?: string;
 };
 
 export type ScoringJobProgress = {
@@ -140,26 +80,26 @@ export const analyzeRecitation = async (
     metadata?.onProgress?.('preparing');
     const formData = new FormData();
 
-    // Always send WAV to avoid backend ffmpeg dependency for WebM conversion.
-    let userAudioFile: File;
-    if ((studentBlob.type || "").toLowerCase().includes("wav")) {
-      userAudioFile = new File([studentBlob], "recitation.wav", {
-        type: "audio/wav",
-      });
-    } else {
-      try {
-        const wavBlob = await convertBlobToWav(studentBlob);
-        userAudioFile = new File([wavBlob], "recitation.wav", {
-          type: "audio/wav",
-        });
-      } catch (error) {
-        console.error("WAV conversion failed in browser:", error);
-        throw new Error(
-          "Could not convert recording to WAV in browser. " +
-            "Retry in Chrome/Edge, or install ffmpeg on backend to support WebM."
-        );
-      }
-    }
+    // Preserve the recorder's compressed format. Converting a four-minute
+    // recording to WAV on every iPad creates a 20-25 MB allocation and makes a
+    // 40-device classroom upload close to 1 GB. Production API and workers ship
+    // with ffmpeg, so decoding belongs in the scoring pipeline rather than on
+    // the participant device.
+    const normalizedAudioType = (studentBlob.type || "audio/webm")
+      .split(";")[0]
+      .toLowerCase();
+    const audioExtension = normalizedAudioType.includes("mp4")
+      ? "m4a"
+      : normalizedAudioType.includes("ogg")
+      ? "ogg"
+      : normalizedAudioType.includes("wav")
+      ? "wav"
+      : "webm";
+    const userAudioFile = new File(
+      [studentBlob],
+      `recitation.${audioExtension}`,
+      { type: studentBlob.type || normalizedAudioType }
+    );
 
     formData.append("user_audio", userAudioFile, userAudioFile.name);
 
@@ -200,11 +140,38 @@ export const analyzeRecitation = async (
     // upload and server analysis are represented as one honest processing stage.
     metadata?.onProgress?.('processing');
     const uploadStartedAt = performance.now();
-    const response = await fetch(`${API_URL}${metadata?.demoMode ? "/score" : "/api/scoring/jobs"}`, {
-      method: "POST",
-      headers: headers,
-      body: formData,
-    });
+    const submissionUrl = `${API_URL}${metadata?.demoMode ? "/score" : "/api/scoring/jobs"}`;
+    const maximumSubmissionAttempts = metadata?.demoMode ? 1 : 3;
+    let response: Response | null = null;
+    let lastSubmissionError: unknown = null;
+    for (let attempt = 1; attempt <= maximumSubmissionAttempts; attempt += 1) {
+      try {
+        response = await fetch(submissionUrl, {
+          method: "POST",
+          headers,
+          body: formData,
+        });
+        if (
+          response.ok ||
+          ![408, 429, 502, 503, 504].includes(response.status) ||
+          attempt === maximumSubmissionAttempts
+        ) {
+          break;
+        }
+      } catch (submissionError) {
+        lastSubmissionError = submissionError;
+        if (attempt === maximumSubmissionAttempts) throw submissionError;
+      }
+      await new Promise((resolve) =>
+        window.setTimeout(resolve, 1000 * Math.pow(2, attempt - 1))
+      );
+    }
+
+    if (!response) {
+      throw lastSubmissionError instanceof Error
+        ? lastSubmissionError
+        : new Error("The recording could not be uploaded.");
+    }
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => response.statusText);

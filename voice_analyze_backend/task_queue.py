@@ -24,6 +24,14 @@ try:
         broker=redis_url,
         backend=redis_url
     )
+
+    scoring_task_time_limit = max(
+        300, int(os.getenv("SCORING_TASK_TIME_LIMIT_SECONDS", "900"))
+    )
+    scoring_task_soft_time_limit = min(
+        scoring_task_time_limit - 30,
+        max(240, int(os.getenv("SCORING_TASK_SOFT_TIME_LIMIT_SECONDS", "780"))),
+    )
     
     # Celery configuration
     celery_app.conf.update(
@@ -35,8 +43,12 @@ try:
         task_track_started=True,
         task_acks_late=True,
         task_reject_on_worker_lost=True,
-        task_time_limit=300,  # 5 minutes max per task
-        task_soft_time_limit=240,  # 4 minutes soft limit
+        # Four-minute azan recordings can legitimately take longer than five
+        # minutes when several CPU-bound jobs share a replica. Keep the guard
+        # configurable and comfortably above the expected classroom p95; this
+        # prevents Celery from killing healthy work without changing scoring.
+        task_time_limit=scoring_task_time_limit,
+        task_soft_time_limit=scoring_task_soft_time_limit,
         worker_prefetch_multiplier=1,  # Process one task at a time
         worker_max_tasks_per_child=50,  # Restart worker after 50 tasks
     )

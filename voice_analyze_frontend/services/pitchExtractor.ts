@@ -27,7 +27,10 @@ export const LIVE_PITCH_FILTER_OPTIONS: PitchFilterOptions = {
   // detections are normally harmonics/octave errors and should not drive the
   // live student graph. Backend scoring continues to use the original audio.
   maxHz: 500,
-  minConfidence: 0.6,
+  // Mobile Safari and USB headsets can produce a lower-confidence fundamental
+  // even when the voice is clearly audible. Keep the live guide responsive;
+  // backend scoring continues to analyse the original recording independently.
+  minConfidence: 0.4,
   smoothingWindow: 7,
   enabled: true,
 };
@@ -239,6 +242,13 @@ export class RealTimePitchExtractor {
     // Create AudioContext
     this.audioContext = new (window.AudioContext ||
       (window as any).webkitAudioContext)();
+
+    // Safari/iPadOS commonly creates Web Audio contexts in a suspended state,
+    // especially after an audio-route change (USB headset or HDMI adapter).
+    // Starting from a user gesture lets us resume it before analysing samples.
+    if (this.audioContext.state === "suspended") {
+      await this.audioContext.resume();
+    }
 
     // Create analyser node with optimal settings
     this.analyser = this.audioContext.createAnalyser();

@@ -10,6 +10,7 @@ import {
 import PresetEditor from '../components/PresetEditor';
 import ConfirmModal from '../components/ConfirmModal';
 import AlertModal from '../components/AlertModal';
+import { getScoringCapacity, ScoringCapacity } from '../services/apiService';
 
 type TabType = 'presets' | 'users' | 'monitoring';
 
@@ -60,6 +61,8 @@ const AdminMode: React.FC<AdminModeProps> = ({ view = 'presets' }) => {
   const [usageMetrics, setUsageMetrics] = useState<UsageMetrics | null>(null);
   const [metricsLoading, setMetricsLoading] = useState(false);
   const [monitoringView, setMonitoringView] = useState<'overview' | 'users' | 'sessions' | 'usage'>('overview');
+  const [scoringCapacity, setScoringCapacity] = useState<ScoringCapacity | null>(null);
+  const [scoringCapacityError, setScoringCapacityError] = useState(false);
   
   // Modal states
   const [deletePresetConfirm, setDeletePresetConfirm] = useState<{ isOpen: boolean; presetId: string }>({
@@ -95,6 +98,29 @@ const AdminMode: React.FC<AdminModeProps> = ({ view = 'presets' }) => {
       }
     }
   }, [activeTab, userFilter, monitoringView]);
+
+  useEffect(() => {
+    if (activeTab !== 'monitoring' || monitoringView !== 'overview') return;
+    let active = true;
+    const refreshCapacity = async () => {
+      try {
+        const capacity = await getScoringCapacity();
+        if (active) {
+          setScoringCapacity(capacity);
+          setScoringCapacityError(false);
+        }
+      } catch (error) {
+        console.error('Failed to load scoring queue:', error);
+        if (active) setScoringCapacityError(true);
+      }
+    };
+    refreshCapacity();
+    const interval = window.setInterval(refreshCapacity, 5000);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, [activeTab, monitoringView]);
 
   const loadStatistics = async () => {
     try {
@@ -764,6 +790,33 @@ const AdminMode: React.FC<AdminModeProps> = ({ view = 'presets' }) => {
                   Refresh
                 </button>
               </div>
+
+              <section className="mb-6 rounded-xl border border-emerald-200 bg-emerald-50 p-5" aria-label="Live classroom scoring queue">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <h3 className="text-lg font-semibold text-emerald-950">Live Classroom Queue</h3>
+                    <p className="text-sm text-emerald-800">Refreshes automatically every five seconds.</p>
+                  </div>
+                  <span className={`rounded-full px-3 py-1 text-xs font-semibold ${scoringCapacityError ? 'bg-red-100 text-red-700' : 'bg-white text-emerald-700'}`}>
+                    {scoringCapacityError ? 'Queue unavailable' : scoringCapacity?.mode === 'synchronous' ? 'Worker unavailable' : 'Worker online'}
+                  </span>
+                </div>
+                <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-6">
+                  {[
+                    ['Active', scoringCapacity?.active ?? '—'],
+                    ['Waiting', scoringCapacity?.waiting ?? '—'],
+                    ['Oldest wait', scoringCapacity ? `${scoringCapacity.oldest_wait_seconds ?? 0}s` : '—'],
+                    ['Longest active', scoringCapacity ? `${scoringCapacity.oldest_processing_seconds ?? 0}s` : '—'],
+                    ['Completed · 1h', scoringCapacity?.completed_last_hour ?? '—'],
+                    ['Failed · 1h', scoringCapacity?.failed_last_hour ?? '—'],
+                  ].map(([label, value]) => (
+                    <div key={label} className="rounded-lg border border-emerald-100 bg-white p-3">
+                      <p className="text-xs font-medium text-slate-500">{label}</p>
+                      <p className="mt-1 text-2xl font-bold text-slate-900">{value}</p>
+                    </div>
+                  ))}
+                </div>
+              </section>
 
           {statsLoading ? (
             <div className="text-center py-12">

@@ -173,8 +173,9 @@ const Recorder: React.FC<RecorderProps> = ({
         }
       };
 
-      // Start with timeslice to ensure regular data collection
-      mediaRecorder.start(100); // 100ms timeslice
+      // One-second chunks keep long iPad recordings recoverable without
+      // allocating thousands of tiny Blob parts during a four-minute azan.
+      mediaRecorder.start(1000);
       console.log("Recording started, state:", mediaRecorder.state);
       setIsRecording(true);
       setTimer(0);
