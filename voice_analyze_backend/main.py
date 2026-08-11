@@ -41,7 +41,7 @@ from scoring_engine import (
 from reference_library import reference_library
 from db_reference_library import db_reference_library
 from database import (
-    init_db, check_db_connection, get_db, User, UserRole, UserSession,
+    init_db, check_db_connection, get_db, SessionLocal, User, UserRole, UserSession,
     AnalysisResult, ScoringJob, TrainingChallenge,
     TrainingChallengeParticipant,
 )
@@ -53,7 +53,7 @@ from qari_service import qari_service
 from quran_correctness_service import build_ai_recitation_notes, evaluate_quran_correctness
 from progress_service import progress_service
 from selected_recording_service import selected_recording_service
-from auth import get_current_user_optional, require_registered_user, get_current_admin_user
+from auth import get_current_user_optional, require_registered_user, get_current_admin_user, get_password_hash
 from auth_endpoints import router as auth_router, debug_router as auth_debug_router, log_email_config_startup
 from platform_endpoints import router as platform_router
 import librosa
@@ -275,6 +275,49 @@ def recover_stale_queued_scoring_jobs() -> int:
         db.close()
     return recovered
 
+
+def bootstrap_nonproduction_admin() -> bool:
+    """Create or promote an initial admin only in an explicitly enabled test environment."""
+    if os.getenv("ENABLE_ADMIN_BOOTSTRAP", "false").strip().lower() != "true":
+        return False
+
+    environment_name = os.getenv("RAILWAY_ENVIRONMENT_NAME", "").strip().lower()
+    if environment_name not in {"staging", "development", "test"}:
+        logger.error(
+            "Admin bootstrap refused in environment %r; production is never eligible",
+            environment_name,
+        )
+        return False
+
+    email = os.getenv("BOOTSTRAP_ADMIN_EMAIL", "").strip().lower()
+    password = os.getenv("BOOTSTRAP_ADMIN_PASSWORD", "")
+    if not email or len(password) < 12:
+        logger.error("Admin bootstrap requires an email and a password of at least 12 characters")
+        return False
+
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(func.lower(User.email) == email).first()
+        if user is None:
+            user = User(email=email, full_name="STAGING ADMIN")
+            db.add(user)
+
+        user.hashed_password = get_password_hash(password)
+        user.role = UserRole.ADMIN
+        user.is_active = True
+        user.is_approved = True
+        user.email_verified = True
+        user.email_verified_at = user.email_verified_at or datetime.utcnow()
+        db.commit()
+        logger.warning("Non-production bootstrap admin prepared for %s", email)
+        return True
+    except Exception:
+        db.rollback()
+        logger.error("Could not bootstrap non-production admin", exc_info=True)
+        return False
+    finally:
+        db.close()
+
 # Lifespan event handler (replaces deprecated @app.on_event)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -289,6 +332,7 @@ async def lifespan(app: FastAPI):
     try:
         logger.info("Initializing database...")
         init_db()
+        bootstrap_nonproduction_admin()
         if check_db_connection():
             logger.info("✓ Database connection successful")
         else:
