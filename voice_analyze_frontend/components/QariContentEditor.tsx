@@ -367,7 +367,7 @@ const QariContentEditor: React.FC = () => {
             ) : (
               <TextAlignmentEditor
                 audioUrl={audioUrl}
-                duration={referenceAudio.duration || content.reference_duration || content.duration || 0}
+                duration={referenceAudio?.duration ?? content.reference_duration ?? content.duration ?? 0}
                 referencePitch={referencePitch}
                 onSegmentsChange={handleSegmentsChange}
                 initialSegments={textSegments}
