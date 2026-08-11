@@ -3,7 +3,8 @@ builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile.worker"
 
 [deploy]
-# Four scoring slots support the staged 60-student classroom audit.
-startCommand = "celery -A task_queue.celery_app worker --loglevel=INFO --pool=threads --concurrency=4 --prefetch-multiplier=1"
+# Keep production at four slots by default while allowing CPU-bound staging
+# load tests to isolate one scoring job per replica.
+startCommand = "sh -c 'celery -A task_queue.celery_app worker --loglevel=INFO --pool=threads --concurrency=${SCORING_WORKER_CONCURRENCY:-4} --prefetch-multiplier=1'"
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 10
