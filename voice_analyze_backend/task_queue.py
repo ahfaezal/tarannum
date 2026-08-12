@@ -7,7 +7,10 @@ import time
 from typing import Optional, Dict, Any
 import logging
 
+from observability import initialize_observability
+
 logger = logging.getLogger(__name__)
+initialize_observability(os.getenv("SERVICE_ROLE", "scoring-worker"))
 
 # Try to initialize Celery
 celery_app = None

@@ -58,6 +58,7 @@ from auth_endpoints import router as auth_router, debug_router as auth_debug_rou
 from platform_endpoints import router as platform_router
 import librosa
 import logging
+from observability import initialize_observability
 
 # Memory optimization: File size limits
 MAX_FILE_SIZE = 100 * 1024 * 1024  # 20MB maximum file size
@@ -113,6 +114,7 @@ def guess_audio_extension(upload: UploadFile, default_ext: str = ".mp3") -> str:
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+initialize_observability(os.getenv("SERVICE_ROLE", "api"))
 SCORING_CONCURRENCY = max(1, int(os.getenv("SCORING_CONCURRENCY", "2")))
 scoring_semaphore = asyncio.Semaphore(SCORING_CONCURRENCY)
 _scoring_active = 0
@@ -353,8 +355,11 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning(f"Startup model download failed: {e}")
 
-    # Load Vosk model once at startup (CRITICAL for Railway memory efficiency)
-    if VOSK_MODEL_AVAILABLE:
+    # The production API must stay lightweight. Scoring workers load their own
+    # shared model; the API only loads Vosk when explicitly requested (local
+    # demo/synchronous mode).
+    load_vosk_in_api = os.getenv("LOAD_VOSK_MODEL", "true").lower() == "true"
+    if VOSK_MODEL_AVAILABLE and load_vosk_in_api:
         try:
             from vosk import Model as VoskModel
             logger.info(f"Loading Vosk model at startup from: {VOSK_MODEL_PATH}")
@@ -365,6 +370,8 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.error(f"Failed to load Vosk model at startup: {e}")
             vosk_model = None
+    elif not load_vosk_in_api:
+        logger.info("Vosk model loading skipped for lightweight API process")
     else:
         logger.info("Vosk model not available - text extraction will be disabled")
 
@@ -953,6 +960,42 @@ async def create_scoring_job(
                 local_path.unlink()
         except Exception as cleanup_error:
             logger.warning("Could not remove staged upload temp file %s: %s", local_path, cleanup_error)
+
+
+@app.get("/api/scoring/jobs/latest/mine")
+def get_latest_scoring_job(
+    client_session_id: Optional[str] = None,
+    reference_id: Optional[str] = None,
+    current_user: User = Depends(require_registered_user),
+    db: Session = Depends(get_db),
+):
+    """Return the user's latest durable job for refresh/reconnect recovery."""
+    query = db.query(ScoringJob).filter(ScoringJob.user_id == current_user.id)
+    if client_session_id:
+        try:
+            uuid.UUID(client_session_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="client_session_id must be a valid UUID")
+        query = query.filter(ScoringJob.client_session_id == client_session_id)
+    if reference_id:
+        query = query.filter(ScoringJob.reference_id == reference_id)
+    job = query.order_by(ScoringJob.queued_at.desc()).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="No scoring job found")
+    return {
+        "job_id": str(job.id),
+        "status": job.status,
+        "stage": job.stage,
+        "recording_mode": job.recording_mode,
+        "recording_attempt": job.recording_attempt,
+        "client_session_id": job.client_session_id,
+        "reference_id": job.reference_id,
+        "queued_at": job.queued_at.isoformat() if job.queued_at else None,
+        "started_at": job.started_at.isoformat() if job.started_at else None,
+        "completed_at": job.completed_at.isoformat() if job.completed_at else None,
+        "result": job.result_json if job.status == "completed" else None,
+        "error": job.error_message if job.status == "failed" else None,
+    }
 
 
 @app.get("/api/scoring/jobs/{job_id}")

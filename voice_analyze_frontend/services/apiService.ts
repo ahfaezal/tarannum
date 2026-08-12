@@ -199,6 +199,22 @@ export const analyzeRecitation = async (
       const submittedJob = await response.json();
       jobId = submittedJob.job_id as string | undefined;
       if (!jobId) throw new Error("The scoring server did not return a Job ID.");
+      metadata?.onQueueUpdate?.({
+        jobId,
+        status: submittedJob.status === 'processing' ? 'processing' : 'queued',
+        stage: submittedJob.stage || 'queued',
+      });
+      try {
+        localStorage.setItem('tarannum_active_scoring_job', JSON.stringify({
+          jobId,
+          clientSessionId: metadata?.clientSessionId,
+          referenceId,
+          recordingMode: metadata?.recordingMode,
+          savedAt: new Date().toISOString(),
+        }));
+      } catch {
+        // Storage restrictions must never block scoring.
+      }
 
       const pollingStartedAt = Date.now();
       // Classroom queues can be long when many students submit together. Keep
@@ -236,9 +252,18 @@ export const analyzeRecitation = async (
         } catch (statusError) {
           if ((statusError as Error & { terminal?: boolean }).terminal) throw statusError;
           transientStatusFailures += 1;
-          if (transientStatusFailures >= 5) throw statusError;
+          metadata?.onQueueUpdate?.({
+            jobId,
+            status: finalJobStatus?.status === 'processing' ? 'processing' : 'queued',
+            stage: 'reconnecting',
+            queuePosition: finalJobStatus?.queue_position,
+          });
         }
-        await new Promise((resolve) => window.setTimeout(resolve, 4000));
+        const queueIsBusy = Number(finalJobStatus?.queue_position || 0) > 4;
+        const retryDelay = transientStatusFailures > 0
+          ? Math.min(30_000, 4_000 * Math.pow(2, Math.min(transientStatusFailures - 1, 3)))
+          : queueIsBusy ? 12_000 : 8_000;
+        await new Promise((resolve) => window.setTimeout(resolve, retryDelay));
       }
     }
     if (!data) throw new Error(metadata?.demoMode ? "Demo scoring could not be completed." : "Scoring is taking longer than expected. The Job ID remains safe; please retry status recovery.");
@@ -259,6 +284,7 @@ export const analyzeRecitation = async (
     };
     try {
       localStorage.setItem('tarannum_last_scoring_timing', JSON.stringify(timing));
+      localStorage.removeItem('tarannum_active_scoring_job');
     } catch {
       // Private browsing/storage restrictions must never block scoring.
     }
@@ -636,4 +662,67 @@ export const extractReferencePitch = async (
   }
 
   return normalizePitchResponse(await response.json());
+};
+
+export interface DurableScoringJobStatus {
+  job_id: string;
+  status: 'queued' | 'processing' | 'completed' | 'failed';
+  stage?: string;
+  queue_position?: number | null;
+  recording_mode: 'R1' | 'R2';
+  recording_attempt: number;
+  client_session_id?: string;
+  reference_id?: string;
+  result?: unknown;
+  error?: string | null;
+}
+
+export const getScoringJobStatus = async (jobId: string): Promise<DurableScoringJobStatus> => {
+  const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+  const response = await fetch(`${API_URL}/api/scoring/jobs/${encodeURIComponent(jobId)}`, {
+    headers: { ...getAuthHeader() },
+  });
+  if (!response.ok) throw new Error(`Unable to read scoring job status (${response.status})`);
+  return response.json();
+};
+
+export const getLatestScoringJob = async (
+  clientSessionId: string,
+  referenceId?: string,
+): Promise<DurableScoringJobStatus | null> => {
+  const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+  const query = new URLSearchParams({ client_session_id: clientSessionId });
+  if (referenceId) query.set("reference_id", referenceId);
+  const response = await fetch(`${API_URL}/api/scoring/jobs/latest/mine?${query.toString()}`, {
+    headers: { ...getAuthHeader() },
+  });
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(`Unable to recover the latest scoring job (${response.status})`);
+  return response.json();
+};
+
+export const waitForScoringJob = async (
+  initialJob: DurableScoringJobStatus,
+  onUpdate?: (job: DurableScoringJobStatus) => void,
+): Promise<DurableScoringJobStatus> => {
+  const startedAt = Date.now();
+  const maximumWait = 45 * 60 * 1000;
+  let job = initialJob;
+  let failures = 0;
+  while (Date.now() - startedAt < maximumWait) {
+    onUpdate?.(job);
+    if (job.status === 'completed' || job.status === 'failed') return job;
+    const delay = failures > 0
+      ? Math.min(30_000, 4_000 * Math.pow(2, Math.min(failures - 1, 3)))
+      : Number(job.queue_position || 0) > 4 ? 12_000 : 8_000;
+    await new Promise((resolve) => window.setTimeout(resolve, delay));
+    try {
+      job = await getScoringJobStatus(job.job_id);
+      failures = 0;
+    } catch {
+      failures += 1;
+      onUpdate?.({ ...job, stage: 'reconnecting' });
+    }
+  }
+  throw new Error(`Scoring is taking longer than expected. Job ID: ${initialJob.job_id}`);
 };

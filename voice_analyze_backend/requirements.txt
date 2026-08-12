@@ -25,3 +25,4 @@ boto3>=1.34.0  # AWS S3 cloud storage
 celery[redis]>=5.3.4  # Async task queue
 redis>=5.0.0  # Redis client for Celery
 psutil>=5.9.0  # System monitoring (optional but recommended)
+sentry-sdk[fastapi]>=2.20.0,<3.0.0  # Optional when SENTRY_DSN is configured

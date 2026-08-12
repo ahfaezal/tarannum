@@ -2,7 +2,7 @@ import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useStat
 import { Link, useSearchParams } from "react-router-dom";
 import { CheckCircle2, Headphones, Maximize2, Mic2, RotateCcw, ShieldCheck } from "lucide-react";
 import { getAvailableContent } from "../../services/platformService";
-import { analyzeRecitation, AssessmentRecordingSummary, extractReferencePitch, getRecordingSessionStatus, getScoringCapacity, restoreCompletedRecordingResult, ScoringCapacity, ScoringJobProgress } from "../../services/apiService";
+import { analyzeRecitation, AssessmentRecordingSummary, extractReferencePitch, getLatestScoringJob, getRecordingSessionStatus, getScoringCapacity, restoreCompletedRecordingResult, ScoringCapacity, ScoringJobProgress, waitForScoringJob } from "../../services/apiService";
 import { PitchPoint } from "../../services/pitchExtractor";
 import { AnalysisResult, AyahTiming, PitchData } from "../../types";
 
@@ -60,6 +60,7 @@ const RecordingPage: React.FC = () => {
   const [params, setParams] = useSearchParams();
   const initialMode = params.get("mode");
   const participantSessionId = useRef(getParticipantSessionId());
+  const submissionInFlightRef = useRef(false);
   const recordingAttemptRef = useRef(0);
   const recordingTimeRef = useRef(0);
   const recordingPitchCountRef = useRef(0);
@@ -148,6 +149,54 @@ const RecordingPage: React.FC = () => {
       .catch((statusError) => {
         if (active) console.warn("Recording session status could not be restored", statusError);
       });
+    return () => { active = false; };
+  }, [referenceId]);
+
+  useEffect(() => {
+    let active = true;
+    if (!referenceId || submissionInFlightRef.current) return;
+    (async () => {
+      try {
+        const latest = await getLatestScoringJob(participantSessionId.current, referenceId);
+        if (!active || !latest || !["queued", "processing"].includes(latest.status)) return;
+        submissionInFlightRef.current = true;
+        setSubmitting(true);
+        setScoringStage("processing");
+        const terminal = await waitForScoringJob(latest, (job) => {
+          if (!active) return;
+          setScoringJobProgress({
+            jobId: job.job_id,
+            status: job.status === "processing" ? "processing" : "queued",
+            stage: job.stage,
+            queuePosition: job.queue_position,
+          });
+        });
+        if (!active) return;
+        if (terminal.status === "failed") throw new Error(terminal.error || "The scoring worker could not complete this recording.");
+        const status = await getRecordingSessionStatus(participantSessionId.current, referenceId);
+        const restored = restoreCompletedRecordingResult(status, terminal.recording_mode);
+        if (!restored) throw new Error(`Job ${terminal.job_id} completed, but its result could not be restored.`);
+        setResult(restored);
+        setCompletedModes((completed) => new Set(completed).add(terminal.recording_mode));
+        setAssessmentJourney({
+          baseline: status.assessment?.baseline || null,
+          progressCount: status.assessment?.progress_count || 0,
+          medianProgress: status.assessment?.median_progress || null,
+          bestProgress: status.assessment?.best_progress || null,
+        });
+        if (terminal.recording_mode === "R1") setMode("R2");
+        localStorage.removeItem("tarannum_active_scoring_job");
+      } catch (recoveryError: any) {
+        if (active) setError(recoveryError.message || "The active scoring job could not be restored.");
+      } finally {
+        if (active) {
+          submissionInFlightRef.current = false;
+          setSubmitting(false);
+          setScoringStage("idle");
+          setScoringJobProgress(null);
+        }
+      }
+    })();
     return () => { active = false; };
   }, [referenceId]);
 
@@ -253,7 +302,8 @@ const RecordingPage: React.FC = () => {
   };
 
   const submitAudio = async (audio: Blob | null) => {
-    if (!audio || !selected) return;
+    if (!audio || !selected || submissionInFlightRef.current) return;
+    submissionInFlightRef.current = true;
     const submittedMode = mode;
     try {
       setSubmitting(true);
@@ -326,6 +376,7 @@ const RecordingPage: React.FC = () => {
       }
       setError(submitError.message || "The recording could not be submitted.");
     } finally {
+      submissionInFlightRef.current = false;
       setSubmitting(false);
       setScoringStage("idle");
       setScoringJobProgress(null);
@@ -531,7 +582,8 @@ const RecordingPage: React.FC = () => {
         <div className="mt-3 h-2 overflow-hidden rounded-full bg-blue-100">
           <div className="h-full w-1/3 animate-pulse rounded-full bg-blue-600" />
         </div>
-        <p className="mt-2 text-xs text-blue-800">Keep this page open. The original recording is being processed securely.</p>
+        {scoringJobProgress?.jobId && <p className="mt-3 break-all text-xs font-medium text-blue-900">Job ID: {scoringJobProgress.jobId}</p>}
+        <p className="mt-2 text-xs text-blue-800">{scoringJobProgress?.stage === "reconnecting" ? "Your recording is safe. The server is recovering and this page will reconnect automatically." : "Once a Job ID appears, your recording is safely acknowledged. Keep this page open while scoring finishes."}</p>
         {scoringCapacity && <p className="mt-1 text-xs text-blue-700">Scoring service: {scoringCapacity.active}/{scoringCapacity.limit} active{scoringCapacity.waiting > 0 ? ` · ${scoringCapacity.waiting} waiting` : ""}</p>}
       </div>}
     </div>}
@@ -552,7 +604,8 @@ const RecordingPage: React.FC = () => {
             <div className="mt-3 h-2 overflow-hidden rounded-full bg-blue-100">
               <div className="h-full w-1/3 animate-pulse rounded-full bg-blue-700" />
             </div>
-            <p className="mt-2 text-xs text-blue-800">Keep this page open while the original file is scored and stored.</p>
+            {scoringJobProgress?.jobId && <p className="mt-3 break-all text-xs font-medium text-blue-900">Job ID: {scoringJobProgress.jobId}</p>}
+            <p className="mt-2 text-xs text-blue-800">{scoringJobProgress?.stage === "reconnecting" ? "Your baseline recording is safe. The server is recovering and this page will reconnect automatically." : "Once a Job ID appears, the original recording is safely acknowledged and will not be uploaded again."}</p>
             {scoringCapacity && <p className="mt-1 text-xs text-blue-700">Scoring service: {scoringCapacity.active}/{scoringCapacity.limit} active{scoringCapacity.waiting > 0 ? ` · ${scoringCapacity.waiting} waiting` : ""}</p>}
           </div>
         : r1TechnicalError
