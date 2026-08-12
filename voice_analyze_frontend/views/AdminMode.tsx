@@ -63,6 +63,8 @@ const AdminMode: React.FC<AdminModeProps> = ({ view = 'presets' }) => {
   const [monitoringView, setMonitoringView] = useState<'overview' | 'users' | 'sessions' | 'usage'>('overview');
   const [scoringCapacity, setScoringCapacity] = useState<ScoringCapacity | null>(null);
   const [scoringCapacityError, setScoringCapacityError] = useState(false);
+  const [capacityLatencyMs, setCapacityLatencyMs] = useState<number | null>(null);
+  const [capacityUpdatedAt, setCapacityUpdatedAt] = useState<Date | null>(null);
   
   // Modal states
   const [deletePresetConfirm, setDeletePresetConfirm] = useState<{ isOpen: boolean; presetId: string }>({
@@ -103,15 +105,21 @@ const AdminMode: React.FC<AdminModeProps> = ({ view = 'presets' }) => {
     if (activeTab !== 'monitoring' || monitoringView !== 'overview') return;
     let active = true;
     const refreshCapacity = async () => {
+      const startedAt = performance.now();
       try {
         const capacity = await getScoringCapacity();
         if (active) {
           setScoringCapacity(capacity);
           setScoringCapacityError(false);
+          setCapacityLatencyMs(Math.round(performance.now() - startedAt));
+          setCapacityUpdatedAt(new Date());
         }
       } catch (error) {
         console.error('Failed to load scoring queue:', error);
-        if (active) setScoringCapacityError(true);
+        if (active) {
+          setScoringCapacityError(true);
+          setCapacityLatencyMs(null);
+        }
       }
     };
     refreshCapacity();
@@ -381,6 +389,44 @@ const AdminMode: React.FC<AdminModeProps> = ({ view = 'presets' }) => {
 
   const formatDisplayName = (name?: string | null, fallback?: string) =>
     (name?.trim() || fallback || '').toUpperCase();
+
+  const classroomHealth = (() => {
+    if (scoringCapacityError || !scoringCapacity) {
+      return {
+        label: 'MERAH — Hentikan penghantaran',
+        detail: 'API pemantauan tidak dapat dihubungi. Rakaman sedia ada mungkin masih selamat; jangan submit semula.',
+        panel: 'border-red-300 bg-red-50',
+        badge: 'bg-red-600 text-white',
+      };
+    }
+    const failed = scoringCapacity.failed_last_hour ?? 0;
+    const oldestWait = scoringCapacity.oldest_wait_seconds ?? 0;
+    const oldestActive = scoringCapacity.oldest_processing_seconds ?? 0;
+    const waiting = scoringCapacity.waiting ?? 0;
+    const apiSlow = (capacityLatencyMs ?? 0) >= 2500;
+    if (failed > 0 || oldestWait >= 300 || oldestActive >= 600 || apiSlow) {
+      return {
+        label: 'MERAH — Hentikan penghantaran',
+        detail: 'Terdapat kegagalan, tugasan terlalu lama atau API sangat perlahan. Tunggu queue pulih sebelum kumpulan seterusnya.',
+        panel: 'border-red-300 bg-red-50',
+        badge: 'bg-red-600 text-white',
+      };
+    }
+    if (waiting >= 10 || oldestWait >= 90 || oldestActive >= 300 || (capacityLatencyMs ?? 0) >= 1000) {
+      return {
+        label: 'KUNING — Tunggu sebentar',
+        detail: 'Sistem sedang sibuk. Jangan mulakan kumpulan baharu sehingga angka Waiting dan Oldest wait menurun.',
+        panel: 'border-amber-300 bg-amber-50',
+        badge: 'bg-amber-500 text-white',
+      };
+    }
+    return {
+      label: 'HIJAU — Boleh teruskan',
+      detail: waiting > 0 ? 'Queue masih terkawal. Teruskan secara berperingkat.' : 'API dan scoring queue berada dalam keadaan baik.',
+      panel: 'border-emerald-300 bg-emerald-50',
+      badge: 'bg-emerald-600 text-white',
+    };
+  })();
 
   if (creatingNew || editingPreset) {
     return (
@@ -791,30 +837,36 @@ const AdminMode: React.FC<AdminModeProps> = ({ view = 'presets' }) => {
                 </button>
               </div>
 
-              <section className="mb-6 rounded-xl border border-emerald-200 bg-emerald-50 p-5" aria-label="Live classroom scoring queue">
+              <section className={`mb-6 rounded-xl border p-5 ${classroomHealth.panel}`} aria-label="Live classroom scoring queue">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
-                    <h3 className="text-lg font-semibold text-emerald-950">Live Classroom Queue</h3>
-                    <p className="text-sm text-emerald-800">Refreshes automatically every five seconds.</p>
+                    <h3 className="text-lg font-semibold text-slate-950">Classroom Control Centre</h3>
+                    <p className="text-sm text-slate-700">Dikemas kini automatik setiap 5 saat. {capacityUpdatedAt ? `Kemaskini terakhir ${capacityUpdatedAt.toLocaleTimeString()}.` : 'Menghubungi API...'}</p>
                   </div>
-                  <span className={`rounded-full px-3 py-1 text-xs font-semibold ${scoringCapacityError ? 'bg-red-100 text-red-700' : 'bg-white text-emerald-700'}`}>
-                    {scoringCapacityError ? 'Queue unavailable' : scoringCapacity?.mode === 'synchronous' ? 'Worker unavailable' : 'Worker online'}
+                  <span className={`rounded-full px-3 py-2 text-sm font-bold ${classroomHealth.badge}`}>
+                    {classroomHealth.label}
                   </span>
                 </div>
+                <p className="mt-3 rounded-lg bg-white/80 px-3 py-2 text-sm font-medium text-slate-800">{classroomHealth.detail}</p>
                 <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-6">
                   {[
+                    ['API response', capacityLatencyMs === null ? '—' : `${capacityLatencyMs}ms`],
                     ['Active', scoringCapacity?.active ?? '—'],
                     ['Waiting', scoringCapacity?.waiting ?? '—'],
                     ['Oldest wait', scoringCapacity ? `${scoringCapacity.oldest_wait_seconds ?? 0}s` : '—'],
-                    ['Longest active', scoringCapacity ? `${scoringCapacity.oldest_processing_seconds ?? 0}s` : '—'],
-                    ['Completed · 1h', scoringCapacity?.completed_last_hour ?? '—'],
                     ['Failed · 1h', scoringCapacity?.failed_last_hour ?? '—'],
+                    ['Completed · 1h', scoringCapacity?.completed_last_hour ?? '—'],
                   ].map(([label, value]) => (
-                    <div key={label} className="rounded-lg border border-emerald-100 bg-white p-3">
+                    <div key={label} className="rounded-lg border border-slate-200 bg-white p-3">
                       <p className="text-xs font-medium text-slate-500">{label}</p>
                       <p className="mt-1 text-2xl font-bold text-slate-900">{value}</p>
                     </div>
                   ))}
+                </div>
+                <div className="mt-3 grid gap-2 text-xs text-slate-700 md:grid-cols-3">
+                  <p><strong>Hijau:</strong> teruskan kumpulan seterusnya secara berperingkat.</p>
+                  <p><strong>Kuning:</strong> berhenti sementara dan tunggu queue menurun.</p>
+                  <p><strong>Merah:</strong> jangan submit semula; semak API, worker dan job gagal.</p>
                 </div>
               </section>
 
