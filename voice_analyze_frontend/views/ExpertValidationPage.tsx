@@ -101,6 +101,8 @@ const ExpertValidationPage: React.FC = () => {
   const submittedCount = tasks.filter((entry) => entry.status === "submitted").length;
   const completion = tasks.length ? Math.round((submittedCount / tasks.length) * 100) : 0;
   const locked = task?.rating?.status === "submitted";
+  const commentsOnly = task?.rating?.status === "reopened" && task.rating.reopen_scope === "comments_only";
+  const rubricLocked = locked || commentsOnly;
   const allScored = rubric.every((entry) => form[entry.key] !== null);
   const calculatedTotal = useMemo(() => {
     if (!form.audio_evaluable || !allScored) return null;
@@ -199,7 +201,7 @@ const ExpertValidationPage: React.FC = () => {
             {tasks.map((entry, index) => (
               <button key={entry.id} onClick={() => setTaskIndex(index)} className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm ${index === taskIndex ? "bg-emerald-600 text-white" : "hover:bg-slate-100"}`}>
                 <span>{entry.order}. {entry.code}</span>
-                {entry.status === "submitted" ? <CheckCircle2 className="h-4 w-4" /> : entry.status === "draft" ? <Save className="h-4 w-4 text-amber-500" /> : null}
+                {entry.status === "submitted" ? <CheckCircle2 className="h-4 w-4" /> : entry.status === "draft" || entry.status === "reopened" ? <Save className="h-4 w-4 text-amber-500" /> : null}
               </button>
             ))}
           </div>
@@ -213,8 +215,10 @@ const ExpertValidationPage: React.FC = () => {
                 <h2 className="mt-1 text-xl font-bold text-slate-900">Kod {task.code}</h2>
                 <p className="mt-1 text-sm text-slate-500">{task.reference.title}{task.reference.maqam ? ` · ${task.reference.maqam}` : ""}</p>
               </div>
-              {locked && <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-800">Telah dihantar · Dikunci</span>}
+              {locked && <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-800">Telah dihantar · Dikunci{(task.rating?.revision_number || 1) > 1 ? ` · Semakan ${task.rating?.revision_number}` : ""}</span>}
+              {task.rating?.status === "reopened" && <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-800">Dibuka semula · {commentsOnly ? "Komen sahaja" : "Markah dan komen"}</span>}
             </div>
+            {task.rating?.status === "reopened" && task.rating.reopen_reason && <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"><span className="font-semibold">Arahan admin:</span> {task.rating.reopen_reason}</p>}
             <div className="mt-5 grid gap-3 sm:grid-cols-2">
               <button type="button" onClick={() => play("reference")} className="flex items-center justify-center gap-3 rounded-xl border border-cyan-200 bg-cyan-50 px-4 py-4 font-semibold text-cyan-900 hover:bg-cyan-100">
                 {playing === "reference" ? <Pause /> : <Headphones />} {playing === "reference" ? "Hentikan rujukan" : "Dengar rakaman rujukan"}
@@ -234,18 +238,18 @@ const ExpertValidationPage: React.FC = () => {
             <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4">
               <p className="text-sm font-semibold text-slate-800">Adakah audio cukup jelas untuk dinilai?</p>
               <div className="mt-2 flex gap-3">
-                {[{ value: true, label: "Ya" }, { value: false, label: "Tidak" }].map((option) => <button key={String(option.value)} disabled={locked} onClick={() => setForm({ ...form, audio_evaluable: option.value })} className={`rounded-lg px-5 py-2 text-sm font-semibold ${form.audio_evaluable === option.value ? "bg-emerald-600 text-white" : "border bg-white text-slate-700"}`}>{option.label}</button>)}
+                {[{ value: true, label: "Ya" }, { value: false, label: "Tidak" }].map((option) => <button key={String(option.value)} disabled={rubricLocked} onClick={() => setForm({ ...form, audio_evaluable: option.value })} className={`rounded-lg px-5 py-2 text-sm font-semibold ${form.audio_evaluable === option.value ? "bg-emerald-600 text-white" : "border bg-white text-slate-700"}`}>{option.label}</button>)}
               </div>
             </div>
 
             {form.audio_evaluable && <div className="mt-5 space-y-5">
-              {rubric.map((entry) => <RubricRow key={entry.key} entry={entry} value={form[entry.key]} disabled={locked} onChange={(value) => setForm({ ...form, [entry.key]: value })} />)}
+              {rubric.map((entry) => <RubricRow key={entry.key} entry={entry} value={form[entry.key]} disabled={rubricLocked} onChange={(value) => setForm({ ...form, [entry.key]: value })} />)}
             </div>}
 
             <div className="mt-6 grid gap-4 sm:grid-cols-2">
-              <SelectField label="Tarannum dapat dikenal pasti" value={form.tarannum_identifiable} disabled={locked} onChange={(value) => setForm({ ...form, tarannum_identifiable: value as ExpertRatingForm["tarannum_identifiable"] })} options={[['yes','Ya'],['no','Tidak'],['unsure','Tidak pasti']]} />
-              <SelectField label="Tahap keyakinan penilai" value={form.confidence} disabled={locked} onChange={(value) => setForm({ ...form, confidence: value as ExpertRatingForm["confidence"] })} options={[['low','Rendah'],['medium','Sederhana'],['high','Tinggi']]} />
-              <SelectField label="Kesalahan utama" value={form.primary_issue} disabled={locked} onChange={(value) => setForm({ ...form, primary_issue: value })} options={[["","Tiada / tidak pasti"],["melody","Kontur melodi"],["pitch","Nada / pic"],["rhythm","Irama / tempo"],["breath","Nafas / kesinambungan"],["identity","Identiti tarannum"],["audio","Kualiti audio"]]} />
+              <SelectField label="Tarannum dapat dikenal pasti" value={form.tarannum_identifiable} disabled={rubricLocked} onChange={(value) => setForm({ ...form, tarannum_identifiable: value as ExpertRatingForm["tarannum_identifiable"] })} options={[['yes','Ya'],['no','Tidak'],['unsure','Tidak pasti']]} />
+              <SelectField label="Tahap keyakinan penilai" value={form.confidence} disabled={rubricLocked} onChange={(value) => setForm({ ...form, confidence: value as ExpertRatingForm["confidence"] })} options={[['low','Rendah'],['medium','Sederhana'],['high','Tinggi']]} />
+              <SelectField label="Kesalahan utama" value={form.primary_issue} disabled={rubricLocked} onChange={(value) => setForm({ ...form, primary_issue: value })} options={[["","Tiada / tidak pasti"],["melody","Kontur melodi"],["pitch","Nada / pic"],["rhythm","Irama / tempo"],["breath","Nafas / kesinambungan"],["identity","Identiti tarannum"],["audio","Kualiti audio"]]} />
               <label className="block"><span className="text-sm font-semibold text-slate-800">Komen dan cadangan</span><textarea disabled={locked} value={form.comments} maxLength={2000} onChange={(event) => setForm({ ...form, comments: event.target.value })} className="mt-2 min-h-24 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-100" /></label>
             </div>
 

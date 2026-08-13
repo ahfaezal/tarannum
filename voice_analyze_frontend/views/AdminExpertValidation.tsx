@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from "react";
-import { AlertTriangle, CheckCircle2, ClipboardCheck, Database, ShieldCheck, Users } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ClipboardCheck, Database, Eye, ShieldCheck, Users, X } from "lucide-react";
 import {
   CandidateSummary,
+  AdminEvaluatorTask,
   ExpertBatchSummary,
   ExpertQariOption,
   addExpertBatchEvaluator,
@@ -9,6 +10,8 @@ import {
   getExpertBatches,
   getExpertCandidateSummary,
   getExpertQariOptions,
+  getAdminEvaluatorTasks,
+  reopenExpertRating,
 } from "../services/expertValidationService";
 
 const AdminExpertValidation: React.FC = () => {
@@ -25,6 +28,13 @@ const AdminExpertValidation: React.FC = () => {
   const [consentConfirmed, setConsentConfirmed] = useState(false);
   const [addEvaluatorSelection, setAddEvaluatorSelection] = useState<Record<string, string>>({});
   const [addingEvaluatorBatchId, setAddingEvaluatorBatchId] = useState<string | null>(null);
+  const [reviewPanel, setReviewPanel] = useState<{ batchId: string; evaluatorId: string; evaluatorName: string; tasks: AdminEvaluatorTask[] } | null>(null);
+  const [taskFilter, setTaskFilter] = useState("");
+  const [reviewLoading, setReviewLoading] = useState(false);
+  const [reopenTarget, setReopenTarget] = useState<AdminEvaluatorTask | null>(null);
+  const [reopenScope, setReopenScope] = useState<"comments_only" | "full">("comments_only");
+  const [reopenReason, setReopenReason] = useState("");
+  const [reopening, setReopening] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -152,6 +162,50 @@ const AdminExpertValidation: React.FC = () => {
     }
   };
 
+  const openEvaluatorTasks = async (batchId: string, evaluatorId: string, evaluatorName: string) => {
+    try {
+      setReviewLoading(true);
+      setError(null);
+      const data = await getAdminEvaluatorTasks(batchId, evaluatorId);
+      setReviewPanel({ batchId, evaluatorId, evaluatorName, tasks: data.tasks });
+      setTaskFilter("");
+    } catch (err: any) {
+      setError(err.message || "Senarai penilaian gagal dimuatkan");
+    } finally {
+      setReviewLoading(false);
+    }
+  };
+
+  const confirmReopen = async () => {
+    if (!reviewPanel || !reopenTarget) return;
+    if (reopenReason.trim().length < 5) {
+      setError("Nyatakan sebab pembukaan semula sekurang-kurangnya lima aksara.");
+      return;
+    }
+    try {
+      setReopening(true);
+      setError(null);
+      await reopenExpertRating(
+        reviewPanel.batchId,
+        reviewPanel.evaluatorId,
+        reopenTarget.id,
+        reopenScope,
+        reopenReason.trim(),
+      );
+      const refreshed = await getAdminEvaluatorTasks(reviewPanel.batchId, reviewPanel.evaluatorId);
+      setReviewPanel({ ...reviewPanel, tasks: refreshed.tasks });
+      setBatches(await getExpertBatches());
+      setMessage(`${reopenTarget.code} telah dibuka semula untuk ${reviewPanel.evaluatorName}.`);
+      setReopenTarget(null);
+      setReopenReason("");
+      setReopenScope("comments_only");
+    } catch (err: any) {
+      setError(err.message || "Penilaian gagal dibuka semula");
+    } finally {
+      setReopening(false);
+    }
+  };
+
   return (
     <div className="mx-auto max-w-6xl p-4 sm:p-6 lg:p-8">
       <header className="rounded-3xl bg-gradient-to-r from-emerald-950 to-slate-950 p-6 text-white shadow-xl sm:p-8">
@@ -182,9 +236,21 @@ const AdminExpertValidation: React.FC = () => {
 
       <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
         <h2 className="font-bold text-slate-900">Status batch</h2>
-        <div className="mt-4 space-y-3">{batches.map((batch) => { const availableQaris = qaris.filter((qari) => !batch.evaluators.some((evaluator) => evaluator.id === qari.id)); return <div key={batch.id} className="rounded-xl border border-slate-200 p-4"><div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-center"><div><div className="font-semibold text-slate-900">{batch.name}</div><div className="mt-1 text-xs text-slate-500">{batch.recording_count} rakaman · {batch.evaluator_count} dijemput · {batch.completed_evaluator_count} lengkap · {batch.target_reference_title || "Rujukan belum direkodkan"}</div><div className="mt-2 text-xs font-semibold text-slate-600">{batch.readiness === "target_met" ? "Sasaran 3 panel telah dicapai" : batch.readiness === "minimum_met" ? "Minimum 2 panel telah dicapai" : `Menunggu minimum ${batch.minimum_evaluator_count} panel lengkap`}</div></div><div className="text-sm font-bold text-emerald-700">{batch.submitted_tasks}/{batch.total_tasks} penilaian</div></div><div className="mt-3 flex flex-wrap gap-2">{batch.evaluators.map((evaluator) => <span key={evaluator.id} className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">{evaluator.name} · {evaluator.status}</span>)}</div>{batch.evaluator_count < 5 && <div className="mt-4 flex flex-col gap-2 border-t border-slate-100 pt-4 sm:flex-row"><select value={addEvaluatorSelection[batch.id] || ""} onChange={(event) => setAddEvaluatorSelection((current) => ({ ...current, [batch.id]: event.target.value }))} className="min-w-0 flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"><option value="">Pilih qari tambahan</option>{availableQaris.map((qari) => <option key={qari.id} value={qari.id}>{qari.name}</option>)}</select><button onClick={() => addEvaluator(batch.id)} disabled={!addEvaluatorSelection[batch.id] || addingEvaluatorBatchId === batch.id} className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-bold text-white disabled:opacity-40">{addingEvaluatorBatchId === batch.id ? "Menambah..." : "Tambah Panel Pakar"}</button></div>}</div>; })}</div>
+        <div className="mt-4 space-y-3">{batches.map((batch) => { const availableQaris = qaris.filter((qari) => !batch.evaluators.some((evaluator) => evaluator.id === qari.id)); return <div key={batch.id} className="rounded-xl border border-slate-200 p-4"><div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-center"><div><div className="font-semibold text-slate-900">{batch.name}</div><div className="mt-1 text-xs text-slate-500">{batch.recording_count} rakaman · {batch.evaluator_count} dijemput · {batch.completed_evaluator_count} lengkap · {batch.target_reference_title || "Rujukan belum direkodkan"}</div><div className="mt-2 text-xs font-semibold text-slate-600">{batch.readiness === "target_met" ? "Sasaran 3 panel telah dicapai" : batch.readiness === "minimum_met" ? "Minimum 2 panel telah dicapai" : `Menunggu minimum ${batch.minimum_evaluator_count} panel lengkap`}</div></div><div className="text-sm font-bold text-emerald-700">{batch.submitted_tasks}/{batch.total_tasks} penilaian</div></div><div className="mt-3 flex flex-wrap gap-2">{batch.evaluators.map((evaluator) => <button type="button" key={evaluator.id} onClick={() => openEvaluatorTasks(batch.id, evaluator.id, evaluator.name)} disabled={reviewLoading} className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-emerald-100 hover:text-emerald-800"><Eye className="h-3.5 w-3.5" />{evaluator.name} · {evaluator.status}</button>)}</div>{batch.evaluator_count < 5 && <div className="mt-4 flex flex-col gap-2 border-t border-slate-100 pt-4 sm:flex-row"><select value={addEvaluatorSelection[batch.id] || ""} onChange={(event) => setAddEvaluatorSelection((current) => ({ ...current, [batch.id]: event.target.value }))} className="min-w-0 flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"><option value="">Pilih qari tambahan</option>{availableQaris.map((qari) => <option key={qari.id} value={qari.id}>{qari.name}</option>)}</select><button onClick={() => addEvaluator(batch.id)} disabled={!addEvaluatorSelection[batch.id] || addingEvaluatorBatchId === batch.id} className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-bold text-white disabled:opacity-40">{addingEvaluatorBatchId === batch.id ? "Menambah..." : "Tambah Panel Pakar"}</button></div>}</div>; })}</div>
         {!batches.length && !loading && <p className="mt-4 text-sm text-slate-500">Belum ada batch validasi.</p>}
       </section>
+
+      {reviewPanel && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4" role="dialog" aria-modal="true">
+        <div className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+          <div className="flex items-start justify-between border-b p-5"><div><p className="text-xs font-bold uppercase tracking-wider text-emerald-700">Penilaian panel</p><h2 className="mt-1 text-xl font-bold text-slate-900">{reviewPanel.evaluatorName}</h2><p className="mt-1 text-sm text-slate-500">Pilih rakaman yang telah dihantar untuk dibuka semula.</p></div><button onClick={() => { setReviewPanel(null); setReopenTarget(null); }} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100" aria-label="Tutup"><X className="h-5 w-5" /></button></div>
+          <div className="border-b p-4"><input value={taskFilter} onChange={(event) => setTaskFilter(event.target.value)} placeholder="Cari kod, contohnya KP-087E5CC0" className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-100" /></div>
+          <div className="flex-1 space-y-2 overflow-y-auto p-4">{reviewPanel.tasks.filter((task) => task.code.toLowerCase().includes(taskFilter.trim().toLowerCase())).map((task) => <div key={task.id} className="grid gap-3 rounded-xl border border-slate-200 p-3 sm:grid-cols-[1fr_auto] sm:items-center"><div><div className="font-semibold text-slate-900">{task.order}. {task.code}</div><div className="mt-1 text-xs text-slate-500">Status: {task.status} · Semakan {task.revision_number}</div>{task.comments && <p className="mt-2 line-clamp-2 text-sm text-slate-600">{task.comments}</p>}{task.status === "reopened" && <p className="mt-1 text-xs font-semibold text-amber-700">Sedang dibuka semula: {task.reopen_scope === "comments_only" ? "komen sahaja" : "markah dan komen"}</p>}</div><button disabled={task.status !== "submitted"} onClick={() => { setReopenTarget(task); setReopenScope("comments_only"); setReopenReason(""); }} className="rounded-lg border border-amber-300 px-3 py-2 text-xs font-bold text-amber-800 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-40">Buka Semula</button></div>)}</div>
+        </div>
+      </div>}
+
+      {reviewPanel && reopenTarget && <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/70 p-4" role="dialog" aria-modal="true">
+        <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl"><div className="flex items-start justify-between"><div><p className="text-xs font-bold uppercase tracking-wider text-amber-700">Buka semula penilaian</p><h2 className="mt-1 text-xl font-bold text-slate-900">{reopenTarget.code}</h2></div><button onClick={() => setReopenTarget(null)} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"><X className="h-5 w-5" /></button></div><label className="mt-5 block text-sm font-semibold text-slate-800">Skop pembetulan<select value={reopenScope} onChange={(event) => setReopenScope(event.target.value as "comments_only" | "full")} className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 font-normal"><option value="comments_only">Komen sahaja</option><option value="full">Markah dan komen</option></select></label><label className="mt-4 block text-sm font-semibold text-slate-800">Sebab pembukaan semula<textarea value={reopenReason} onChange={(event) => setReopenReason(event.target.value)} maxLength={500} placeholder="Contoh: Pembetulan komen atas permintaan penilai" className="mt-2 min-h-24 w-full rounded-xl border border-slate-300 px-3 py-2 font-normal" /></label><p className="mt-3 text-xs leading-5 text-slate-500">Nilai asal dan sebab ini akan disimpan dalam audit log. Penilai perlu menghantar semula penilaian selepas pembetulan.</p><div className="mt-5 flex justify-end gap-3"><button onClick={() => setReopenTarget(null)} className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold">Batal</button><button onClick={confirmReopen} disabled={reopening || reopenReason.trim().length < 5} className="rounded-xl bg-amber-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-40">{reopening ? "Membuka..." : "Sahkan Buka Semula"}</button></div></div>
+      </div>}
     </div>
   );
 };

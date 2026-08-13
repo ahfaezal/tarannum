@@ -536,7 +536,12 @@ class ExpertRating(Base):
     confidence = Column(String, nullable=False, default="medium")  # low | medium | high
     primary_issue = Column(String, nullable=True)
     comments = Column(Text, nullable=True)
-    status = Column(String, nullable=False, default="draft", index=True)  # draft | submitted
+    status = Column(String, nullable=False, default="draft", index=True)  # draft | reopened | submitted
+    revision_number = Column(Integer, nullable=False, default=1)
+    reopen_scope = Column(String, nullable=True)  # comments_only | full
+    reopen_reason = Column(Text, nullable=True)
+    reopened_at = Column(DateTime, nullable=True)
+    reopened_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     submitted_at = Column(DateTime, nullable=True)
@@ -661,6 +666,18 @@ def ensure_expert_evaluation_columns():
             if not _column_exists(conn, "expert_evaluation_batches", column_name):
                 conn.execute(text(
                     f"ALTER TABLE expert_evaluation_batches ADD COLUMN {column_name} {column_def}"
+                ))
+        rating_columns = {
+            "revision_number": "INTEGER DEFAULT 1 NOT NULL",
+            "reopen_scope": "VARCHAR",
+            "reopen_reason": "TEXT",
+            "reopened_at": "TIMESTAMP",
+            "reopened_by": "UUID",
+        }
+        for column_name, column_def in rating_columns.items():
+            if not _column_exists(conn, "expert_ratings", column_name):
+                conn.execute(text(
+                    f"ALTER TABLE expert_ratings ADD COLUMN {column_name} {column_def}"
                 ))
         conn.execute(text(
             "CREATE INDEX IF NOT EXISTS ix_expert_evaluation_batches_target_reference_id "

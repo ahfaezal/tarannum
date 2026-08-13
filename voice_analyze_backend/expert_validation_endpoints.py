@@ -108,6 +108,17 @@ class AddEvaluatorPayload(BaseModel):
     evaluator_id: uuid.UUID
 
 
+class ReopenRatingPayload(BaseModel):
+    scope: str
+    reason: str = Field(min_length=5, max_length=500)
+
+    @validator("scope")
+    def valid_scope(cls, value):
+        if value not in {"comments_only", "full"}:
+            raise ValueError("scope must be comments_only or full")
+        return value
+
+
 def _candidate_query(
     db: Session,
     start: Optional[datetime],
@@ -264,7 +275,12 @@ def _rating_payload(rating: Optional[ExpertRating]):
         "confidence": rating.confidence,
         "primary_issue": rating.primary_issue,
         "comments": rating.comments,
+        "weighted_total": rating.weighted_total,
         "status": rating.status,
+        "revision_number": rating.revision_number or 1,
+        "reopen_scope": rating.reopen_scope,
+        "reopen_reason": rating.reopen_reason,
+        "reopened_at": rating.reopened_at.isoformat() if rating.reopened_at else None,
         "submitted_at": rating.submitted_at.isoformat() if rating.submitted_at else None,
     }
 
@@ -610,6 +626,116 @@ def admin_batch_results(
     }
 
 
+@router.get("/admin/batches/{batch_id}/evaluators/{evaluator_id}/tasks")
+def admin_evaluator_tasks(
+    batch_id: uuid.UUID,
+    evaluator_id: uuid.UUID,
+    current_user: User = Depends(get_current_admin_user),
+    db: Session = Depends(get_db),
+):
+    assignment = db.query(ExpertEvaluationAssignment).filter(
+        ExpertEvaluationAssignment.batch_id == batch_id,
+        ExpertEvaluationAssignment.evaluator_id == evaluator_id,
+    ).first()
+    if not assignment:
+        raise HTTPException(status_code=404, detail="Evaluator assignment not found")
+    evaluator = db.query(User).filter(User.id == evaluator_id).first()
+    rows = (
+        db.query(ExpertEvaluationTask, ExpertRating)
+        .outerjoin(ExpertRating, ExpertRating.task_id == ExpertEvaluationTask.id)
+        .filter(ExpertEvaluationTask.assignment_id == assignment.id)
+        .order_by(ExpertEvaluationTask.display_order)
+        .all()
+    )
+    return {
+        "evaluator": {
+            "id": str(evaluator_id),
+            "name": (evaluator.full_name or evaluator.email) if evaluator else "Qari",
+            "status": assignment.status,
+        },
+        "tasks": [{
+            "id": str(task.id),
+            "code": task.presentation_code,
+            "order": task.display_order,
+            "status": rating.status if rating else "pending",
+            "revision_number": (rating.revision_number or 1) if rating else 1,
+            "comments": rating.comments if rating else None,
+            "reopen_scope": rating.reopen_scope if rating else None,
+            "reopen_reason": rating.reopen_reason if rating else None,
+        } for task, rating in rows],
+    }
+
+
+@router.post("/admin/batches/{batch_id}/evaluators/{evaluator_id}/tasks/{task_id}/reopen")
+def reopen_expert_rating(
+    batch_id: uuid.UUID,
+    evaluator_id: uuid.UUID,
+    task_id: uuid.UUID,
+    payload: ReopenRatingPayload,
+    current_user: User = Depends(get_current_admin_user),
+    db: Session = Depends(get_db),
+):
+    row = (
+        db.query(ExpertEvaluationTask, ExpertEvaluationAssignment, ExpertRating)
+        .join(ExpertEvaluationAssignment, ExpertEvaluationAssignment.id == ExpertEvaluationTask.assignment_id)
+        .join(ExpertRating, ExpertRating.task_id == ExpertEvaluationTask.id)
+        .filter(
+            ExpertEvaluationTask.id == task_id,
+            ExpertEvaluationAssignment.batch_id == batch_id,
+            ExpertEvaluationAssignment.evaluator_id == evaluator_id,
+        )
+        .first()
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Submitted evaluation was not found")
+    task, assignment, rating = row
+    if rating.status != "submitted":
+        raise HTTPException(status_code=409, detail="Only a submitted and locked evaluation can be reopened")
+
+    old_values = _rating_payload(rating)
+    rating.status = "reopened"
+    rating.revision_number = (rating.revision_number or 1) + 1
+    rating.reopen_scope = payload.scope
+    rating.reopen_reason = payload.reason.strip()
+    rating.reopened_at = datetime.utcnow()
+    rating.reopened_by = current_user.id
+    assignment.status = "in_progress"
+    assignment.submitted_at = None
+
+    batch = db.query(ExpertEvaluationBatch).filter(ExpertEvaluationBatch.id == batch_id).first()
+    completed_evaluators = db.query(ExpertEvaluationAssignment).filter(
+        ExpertEvaluationAssignment.batch_id == batch_id,
+        ExpertEvaluationAssignment.status == "completed",
+    ).count()
+    if batch:
+        batch.completed_at = None
+        batch.status = (
+            "target_met" if completed_evaluators >= batch.target_evaluator_count
+            else "minimum_met" if completed_evaluators >= batch.minimum_evaluator_count
+            else "active"
+        )
+
+    db.add(AuditLog(
+        action="reopen",
+        entity_type="expert_rating",
+        entity_id=str(rating.id),
+        user_id=current_user.id,
+        old_values=old_values,
+        new_values={
+            **_rating_payload(rating),
+            "task_code": task.presentation_code,
+            "evaluator_id": str(evaluator_id),
+        },
+    ))
+    db.commit()
+    return {
+        "success": True,
+        "status": rating.status,
+        "revision_number": rating.revision_number,
+        "scope": rating.reopen_scope,
+    }
+
+
 @router.get("/qari/assignments")
 def qari_assignments(
     current_user: User = Depends(get_current_qari_user),
@@ -731,20 +857,27 @@ def save_qari_rating(
     existing = db.query(ExpertRating).filter(ExpertRating.task_id == task.id).first()
     if existing and existing.status == "submitted":
         raise HTTPException(status_code=409, detail="This evaluation has already been submitted and locked")
+    is_comments_only_revision = bool(
+        existing and existing.status == "reopened" and existing.reopen_scope == "comments_only"
+    )
     if payload.submit and (not task.reference_played_at or not task.participant_played_at):
         raise HTTPException(status_code=422, detail="Play both the reference and participant audio before submitting")
-    total = _weighted_total(payload)
-    if payload.submit and payload.audio_evaluable and total is None:
-        raise HTTPException(status_code=422, detail="A complete rubric is required before submission")
     rating = existing or ExpertRating(task_id=task.id, evaluator_id=current_user.id)
     old_values = _rating_payload(existing) if existing else None
-    for field in (
-        "melodic_contour", "pitch_control", "rhythm_continuity", "voice_stability", "tarannum_suitability",
-        "audio_evaluable", "tarannum_identifiable", "confidence", "primary_issue", "comments",
-    ):
-        setattr(rating, field, getattr(payload, field))
-    rating.weighted_total = total
-    rating.status = "submitted" if payload.submit else "draft"
+    if is_comments_only_revision:
+        # The API, not merely the UI, protects the original rubric and metadata.
+        rating.comments = payload.comments
+    else:
+        total = _weighted_total(payload)
+        if payload.submit and payload.audio_evaluable and total is None:
+            raise HTTPException(status_code=422, detail="A complete rubric is required before submission")
+        for field in (
+            "melodic_contour", "pitch_control", "rhythm_continuity", "voice_stability", "tarannum_suitability",
+            "audio_evaluable", "tarannum_identifiable", "confidence", "primary_issue", "comments",
+        ):
+            setattr(rating, field, getattr(payload, field))
+        rating.weighted_total = total
+    rating.status = "submitted" if payload.submit else ("reopened" if existing and existing.status == "reopened" else "draft")
     rating.submitted_at = datetime.utcnow() if payload.submit else None
     if not existing:
         db.add(rating)

@@ -77,7 +77,7 @@ export interface ExpertTaskSummary {
   id: string;
   code: string;
   order: number;
-  status: "pending" | "draft" | "submitted";
+  status: "pending" | "draft" | "reopened" | "submitted";
 }
 
 export interface ExpertTaskDetail {
@@ -87,7 +87,23 @@ export interface ExpertTaskDetail {
   reference: { title: string; maqam?: string | null };
   participant_audio_url: string;
   reference_audio_url: string;
-  rating: (ExpertRatingForm & { status: "draft" | "submitted" }) | null;
+  rating: (ExpertRatingForm & {
+    status: "draft" | "reopened" | "submitted";
+    revision_number: number;
+    reopen_scope?: "comments_only" | "full" | null;
+    reopen_reason?: string | null;
+  }) | null;
+}
+
+export interface AdminEvaluatorTask {
+  id: string;
+  code: string;
+  order: number;
+  status: "pending" | "draft" | "reopened" | "submitted";
+  revision_number: number;
+  comments?: string | null;
+  reopen_scope?: "comments_only" | "full" | null;
+  reopen_reason?: string | null;
 }
 
 const jsonOrError = async (response: Response) => {
@@ -146,6 +162,31 @@ export const addExpertBatchEvaluator = async (batchId: string, evaluatorId: stri
     method: "POST",
     headers: { "Content-Type": "application/json", ...getAuthHeader() },
     body: JSON.stringify({ evaluator_id: evaluatorId }),
+  });
+  return jsonOrError(response);
+};
+
+export const getAdminEvaluatorTasks = async (batchId: string, evaluatorId: string): Promise<{
+  evaluator: { id: string; name: string; status: string };
+  tasks: AdminEvaluatorTask[];
+}> => {
+  const response = await fetch(`${API_URL}/api/expert-validation/admin/batches/${batchId}/evaluators/${evaluatorId}/tasks`, {
+    headers: getAuthHeader(),
+  });
+  return jsonOrError(response);
+};
+
+export const reopenExpertRating = async (
+  batchId: string,
+  evaluatorId: string,
+  taskId: string,
+  scope: "comments_only" | "full",
+  reason: string,
+) => {
+  const response = await fetch(`${API_URL}/api/expert-validation/admin/batches/${batchId}/evaluators/${evaluatorId}/tasks/${taskId}/reopen`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...getAuthHeader() },
+    body: JSON.stringify({ scope, reason }),
   });
   return jsonOrError(response);
 };
