@@ -137,6 +137,7 @@ const MuazzinCoursePage: React.FC = () => {
               <span className="text-2xl font-light text-amber-200">×</span>
               <div className="rounded-xl bg-white px-3 py-2"><img src="/images/logobsp.png" alt="Logo Masjid Bandar Seri Putra" className="h-11 w-auto" /></div>
             </div>
+            <p className="mb-5 text-sm font-bold uppercase tracking-[.16em] text-emerald-100/80">Program kerjasama antara Tarannum Technologies dan Masjid Bandar Seri Putra</p>
             <p className="mb-5 inline-flex items-center gap-2 rounded-full border border-amber-300/40 bg-amber-200/10 px-4 py-2 text-sm font-semibold text-amber-100"><Sparkles className="h-4 w-4" /> 20 peserta sahaja</p>
             <h1 className="max-w-3xl text-4xl font-black tracking-tight sm:text-6xl">Kursus Pemantapan Muazzin</h1>
             <p className="mt-4 max-w-2xl text-xl font-semibold text-amber-200 sm:text-2xl">Azan dalam Maqam Hijjaz, diperkukuh dengan latihan Tarannum.ai</p>
@@ -253,8 +254,6 @@ const MuazzinCoursePage: React.FC = () => {
             <ul className="mt-5 space-y-3 text-sm leading-6 text-emerald-50/80">
               <li>Makanan dan minuman pagi serta makan tengah hari disediakan.</li>
               <li>Akses Tarannum.ai termasuk selama 30 hari; sambungan pilihan ialah RM30 sebulan.</li>
-              <li>Gred kompetensi: Mumtaz 85–100, Jayyid Jiddan 80–84 dan Jayyid 75–79.</li>
-              <li>Nombor kad pengenalan hanya diminta selepas bayaran, ketika pembukaan akaun untuk tujuan sijil.</li>
             </ul>
             <p className="mt-6 text-sm">Pertanyaan: <a className="font-bold text-amber-300" href="https://wa.me/60192504000">WhatsApp 019-250 4000</a> atau <a className="font-bold text-amber-300" href="mailto:appstarannum@gmail.com">appstarannum@gmail.com</a></p>
           </article>

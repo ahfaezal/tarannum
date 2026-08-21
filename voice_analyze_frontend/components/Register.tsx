@@ -188,22 +188,21 @@ const Register: React.FC<RegisterProps> = ({ onSwitchToLogin, onSuccess, onClose
             </div>
           </div>
 
-          <div>
+          {!courseRegistrationToken && <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              IC Number {courseRegistrationToken ? <span className="text-red-500">*</span> : "(Optional)"}
+              IC Number (Optional)
             </label>
             <div className="relative">
               <User className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
               <input
                 type="text"
                 value={icNumber}
-                required={Boolean(courseRegistrationToken)}
                 onChange={(e) => setIcNumber(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                placeholder={courseRegistrationToken ? "Nombor kad pengenalan untuk sijil" : "IC Number / Identity Card Number (Optional)"}
+                placeholder="IC Number / Identity Card Number (Optional)"
               />
             </div>
-          </div>
+          </div>}
 
           {!courseRegistrationToken && <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
