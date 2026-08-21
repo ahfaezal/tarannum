@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import re
 import secrets
@@ -22,6 +23,7 @@ from auth import get_current_admin_user
 
 
 router = APIRouter(prefix="/api/promotions", tags=["promotions"])
+logger = logging.getLogger(__name__)
 CAMPAIGN_SLUG = "kursus-muazzin-hijjaz-2026"
 RESERVATION_MINUTES = 60
 
@@ -130,9 +132,10 @@ def _create_toyyibpay_bill(campaign: PromotionCampaign, registration: PromotionR
         "billChargeToCustomer": "",
         "billChargeToPrepaid": "0",
         "billExpiryDate": expiry.strftime("%d-%m-%Y %H:%M:%S"),
-        "enableDuitNowQR": "1",
-        "chargeDuitNowQR": "0",
     }
+    if os.getenv("TOYYIBPAY_ENABLE_DUITNOW_QR", "false").strip().lower() == "true":
+        data["enableDuitNowQR"] = "1"
+        data["chargeDuitNowQR"] = "0"
     encoded = parse.urlencode(data).encode("utf-8")
     req = request.Request(
         "https://toyyibpay.com/index.php/api/createBill",
@@ -142,9 +145,14 @@ def _create_toyyibpay_bill(campaign: PromotionCampaign, registration: PromotionR
     )
     try:
         with request.urlopen(req, timeout=15) as response:
-            result = json.loads(response.read().decode("utf-8"))
-    except (error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+            raw_result = response.read().decode("utf-8").strip()
+    except (error.URLError, TimeoutError) as exc:
         raise HTTPException(502, "ToyyibPay tidak dapat dihubungi. Sila cuba lagi.") from exc
+    try:
+        result = json.loads(raw_result)
+    except json.JSONDecodeError as exc:
+        logger.warning("ToyyibPay createBill rejected request: %s", raw_result[:200])
+        raise HTTPException(502, "ToyyibPay menolak permintaan bil. Sila hubungi pihak penganjur.") from exc
     if not isinstance(result, list) or not result or not result[0].get("BillCode"):
         raise HTTPException(502, "ToyyibPay tidak menghasilkan pautan pembayaran.")
     return str(result[0]["BillCode"])
