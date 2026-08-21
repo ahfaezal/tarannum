@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 from urllib import error, parse, request
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
@@ -26,6 +27,7 @@ router = APIRouter(prefix="/api/promotions", tags=["promotions"])
 logger = logging.getLogger(__name__)
 CAMPAIGN_SLUG = "kursus-muazzin-hijjaz-2026"
 RESERVATION_MINUTES = 60
+MALAYSIA_TZ = ZoneInfo("Asia/Kuala_Lumpur")
 
 
 class RegistrationCreate(BaseModel):
@@ -111,7 +113,8 @@ def _create_toyyibpay_bill(campaign: PromotionCampaign, registration: PromotionR
     if not secret_key or not category_code:
         raise HTTPException(503, "Pembayaran sedang disediakan. Pendaftaran minat anda telah disimpan.")
 
-    expiry = datetime.utcnow() + timedelta(minutes=30)
+    # ToyyibPay reads billExpiryDate as Malaysia local time, not UTC.
+    expiry = datetime.now(MALAYSIA_TZ) + timedelta(minutes=30)
     data = {
         "userSecretKey": secret_key,
         "categoryCode": category_code,
