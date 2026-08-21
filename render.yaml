@@ -82,6 +82,7 @@ services:
     plan: starter
     numInstances: 1
     dockerfilePath: ./voice_analyze_backend/Dockerfile.worker
+    dockerContext: ./voice_analyze_backend
     dockerCommand: celery -A task_queue.celery_app worker --loglevel=INFO --pool=threads --concurrency=2 --prefetch-multiplier=1
     maxShutdownDelaySeconds: 300
     autoDeployTrigger: commit
