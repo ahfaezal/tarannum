@@ -140,7 +140,11 @@ def _create_toyyibpay_bill(campaign: PromotionCampaign, registration: PromotionR
     req = request.Request(
         "https://toyyibpay.com/index.php/api/createBill",
         data=encoded,
-        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        headers={
+            "Content-Type": "application/x-www-form-urlencoded",
+            # ToyyibPay's edge security rejects Python urllib's default user agent.
+            "User-Agent": "Mozilla/5.0 (compatible; Tarannum.ai/1.0; +https://tarannum.ai)",
+        },
         method="POST",
     )
     try:
