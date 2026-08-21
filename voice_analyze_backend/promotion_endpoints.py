@@ -131,7 +131,20 @@ def _create_toyyibpay_bill(campaign: PromotionCampaign, registration: PromotionR
         "billPhone": registration.phone,
         "billSplitPayment": "0",
         "billPaymentChannel": "0",
-        "billContentEmail": "Terima kasih. Tempat anda disahkan selepas pembayaran berjaya.",
+        "billContentEmail": (
+            "Terima kasih. Pembayaran RM100 anda telah berjaya dan tempat anda disahkan "
+            "untuk Kursus Pemantapan Muazzin - Azan Maqam Hijjaz.\n\n"
+            "Tarikh: 19 September 2026\n"
+            "Masa: 8:30 pagi - 4:30 petang\n"
+            "Lokasi: Masjid Bandar Seri Putra, Bangi\n"
+            "Makanan dan minuman disediakan.\n\n"
+            "Sila buka akaun pelajar di https://tarannum.ai sebelum kursus bermula "
+            "bagi melancarkan perjalanan kursus.\n\n"
+            "Maklumat lanjut akan dihantar melalui WhatsApp atau e-mel.\n"
+            "Pertanyaan: 019-250 4000\n\n"
+            "Daripada team,\n"
+            "Tarannum Technologies"
+        ),
         "billChargeToCustomer": "",
         "billChargeToPrepaid": "0",
         "billExpiryDate": expiry.strftime("%d-%m-%Y %H:%M:%S"),
