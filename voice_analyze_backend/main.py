@@ -395,10 +395,14 @@ try:
     from auth_endpoints import router as auth_router, debug_router as auth_debug_router
     from platform_endpoints import router as platform_router
     from expert_validation_endpoints import router as expert_validation_router
+    from certification_endpoints import router as certification_router
+    from promotion_endpoints import router as promotion_router
     app.include_router(auth_router)
     app.include_router(auth_debug_router)
     app.include_router(platform_router)
     app.include_router(expert_validation_router)
+    app.include_router(certification_router)
+    app.include_router(promotion_router)
 except ImportError as e:
     logger.warning(f"Could not import routers: {e}")
 
@@ -1894,6 +1898,31 @@ async def score_performance(
                             )
                         finally:
                             mark_persistence("selected_recordings_ms")
+
+                        # Refresh course-certificate progress after every valid student recording.
+                        # This is deliberately non-fatal so certification can never break scoring.
+                        if user_role == UserRole.STUDENT and user_id and reference_id:
+                            try:
+                                from certification_service import recalculate_enrollment
+                                from database import Course, CourseEnrollment
+
+                                active_enrollments = (
+                                    db.query(CourseEnrollment)
+                                    .join(Course, Course.id == CourseEnrollment.course_id)
+                                    .filter(
+                                        CourseEnrollment.student_id == user_id,
+                                        Course.reference_id == reference_id,
+                                        Course.status.in_(["published", "completed"]),
+                                    )
+                                    .all()
+                                )
+                                for enrollment in active_enrollments:
+                                    recalculate_enrollment(db, enrollment, actor_id=user_id)
+                            except Exception as certification_error:
+                                logger.error(
+                                    f"Error refreshing certification progress (non-fatal): {certification_error}",
+                                    exc_info=True,
+                                )
 
                         # Save student progress (only for students)
                         if user_role == UserRole.STUDENT and user_id:

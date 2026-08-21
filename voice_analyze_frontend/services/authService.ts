@@ -29,6 +29,7 @@ export interface RegisterData {
   ic_number?: string;
   address?: string;
   referral_code?: string;
+  course_registration_token?: string;
   role: "student" | "qari"; // Allow both student and qari registration
 }
 

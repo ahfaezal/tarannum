@@ -13,6 +13,8 @@ const HowToUsePage = lazy(() => import("./views/public/HowToUsePage"));
 const DemoPage = lazy(() => import("./views/public/DemoPage"));
 const DemoInteractivePage = lazy(() => import("./views/public/DemoInteractivePage"));
 const ContactPage = lazy(() => import("./views/public/ContactPage"));
+const MuazzinCoursePage = lazy(() => import("./views/public/MuazzinCoursePage"));
+const VerifyCertificatePage = lazy(() => import("./views/public/VerifyCertificatePage"));
 const Login = lazy(() => import("./components/Login"));
 const Register = lazy(() => import("./components/Register"));
 const VerifyEmail = lazy(() => import("./components/VerifyEmail"));
@@ -29,6 +31,9 @@ const AdminMode = lazy(() => import("./views/AdminMode"));
 const AdminDashboard = lazy(() => import("./views/AdminDashboard"));
 const ExpertValidationPage = lazy(() => import("./views/ExpertValidationPage"));
 const AdminExpertValidation = lazy(() => import("./views/AdminExpertValidation"));
+const CertificatesPage = lazy(() => import("./views/CertificatesPage"));
+const QariCertification = lazy(() => import("./views/QariCertification"));
+const AdminCertification = lazy(() => import("./views/AdminCertification"));
 
 const PageLoader = () => (
   <div className="flex min-h-[40vh] items-center justify-center" role="status">
@@ -49,7 +54,7 @@ const App: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { isAuthenticated } = useSelector((state: RootState) => state.auth);
-  const isLightweightPublicPage = ["/", "/about", "/how-to-use", "/demo", "/demo/interactive", "/contact"].includes(location.pathname);
+  const isLightweightPublicPage = ["/", "/about", "/how-to-use", "/demo", "/demo/interactive", "/contact"].includes(location.pathname) || location.pathname.startsWith("/verify/");
 
   useEffect(() => {
     if (!isLightweightPublicPage && !isAuthenticated && localStorage.getItem("tarannum_auth_token")) {
@@ -67,6 +72,8 @@ const App: React.FC = () => {
           <Route path="/demo" element={<DemoPage />} />
           <Route path="/demo/interactive" element={<DemoInteractivePage />} />
           <Route path="/contact" element={<ContactPage />} />
+          <Route path="/kursus-pemantapan-muazzin/*" element={<MuazzinCoursePage />} />
+          <Route path="/verify/:token" element={<VerifyCertificatePage />} />
           <Route path="/login" element={isAuthenticated ? <Navigate to="/training" replace /> : <Login onSwitchToRegister={() => navigate("/register")} onSuccess={() => navigate(new URLSearchParams(location.search).get("next") || "/training")} />} />
           <Route path="/register" element={isAuthenticated ? <Navigate to="/training" replace /> : <Register onSwitchToLogin={() => navigate("/login")} onSuccess={(email) => navigate(`/verify-email?email=${encodeURIComponent(email || "")}`)} />} />
           <Route path="/verify-email" element={isAuthenticated ? <Navigate to="/training" replace /> : <VerifyEmail />} />
@@ -79,6 +86,7 @@ const App: React.FC = () => {
             <Route path="/recording" element={<RecordingPage />} />
             <Route element={<ProtectedRoute roles={["student"]} />}>
               <Route path="/progress" element={<StudentProgress />} />
+              <Route path="/certificates" element={<CertificatesPage />} />
             </Route>
             <Route element={<ProtectedRoute roles={["student", "qari"]} />}>
               <Route path="/profile" element={<ProfileRoute />} />
@@ -86,6 +94,7 @@ const App: React.FC = () => {
             <Route element={<ProtectedRoute roles={["qari"]} />}>
               <Route path="/dashboard" element={<QariDashboard />} />
               <Route path="/qari/expert-validation" element={<ExpertValidationPage />} />
+              <Route path="/qari/certification" element={<QariCertification />} />
               <Route path="/qari/content/edit/:contentId" element={<QariContentEditor />} />
             </Route>
             <Route element={<ProtectedRoute roles={["admin"]} />}>
@@ -96,6 +105,7 @@ const App: React.FC = () => {
               <Route path="/admin/users" element={<AdminMode view="users" />} />
               <Route path="/admin/monitoring" element={<AdminMode view="monitoring" />} />
               <Route path="/admin/expert-validation" element={<AdminExpertValidation />} />
+              <Route path="/admin/certification" element={<AdminCertification />} />
             </Route>
           </Route>
         </Route>

@@ -30,6 +30,7 @@ const Register: React.FC<RegisterProps> = ({ onSwitchToLogin, onSuccess, onClose
   const [referralCode, setReferralCode] = useState<string | null>(null);
   const [referralQariName, setReferralQariName] = useState<string | null>(null);
   const [referralWarning, setReferralWarning] = useState<string | null>(null);
+  const courseRegistrationToken = searchParams.get("course_registration");
   const normalizeFullName = (value: string) => value.toUpperCase();
 
   React.useEffect(() => {
@@ -65,6 +66,15 @@ const Register: React.FC<RegisterProps> = ({ onSwitchToLogin, onSuccess, onClose
     };
   }, [searchParams]);
 
+  React.useEffect(() => {
+    if (!courseRegistrationToken) return;
+    const courseEmail = searchParams.get("email");
+    const courseName = searchParams.get("name");
+    if (courseEmail) setEmail(courseEmail.trim().toLowerCase());
+    if (courseName) setFullName(normalizeFullName(courseName));
+    setRole("student");
+  }, [courseRegistrationToken, searchParams]);
+
   // Password validation rules
   const passwordRules = useMemo(() => {
     const hasMinLength = password.length >= 8;
@@ -96,6 +106,7 @@ const Register: React.FC<RegisterProps> = ({ onSwitchToLogin, onSuccess, onClose
           ic_number: icNumber || undefined,
           address: address || undefined,
           referral_code: role === "student" ? referralCode || undefined : undefined,
+          course_registration_token: courseRegistrationToken || undefined,
           role: role, // Use selected role (student or qari)
         })
       ).unwrap();
@@ -179,21 +190,22 @@ const Register: React.FC<RegisterProps> = ({ onSwitchToLogin, onSuccess, onClose
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              IC Number (Optional)
+              IC Number {courseRegistrationToken ? <span className="text-red-500">*</span> : "(Optional)"}
             </label>
             <div className="relative">
               <User className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
               <input
                 type="text"
                 value={icNumber}
+                required={Boolean(courseRegistrationToken)}
                 onChange={(e) => setIcNumber(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                placeholder="IC Number / Identity Card Number (Optional)"
+                placeholder={courseRegistrationToken ? "Nombor kad pengenalan untuk sijil" : "IC Number / Identity Card Number (Optional)"}
               />
             </div>
           </div>
 
-          <div>
+          {!courseRegistrationToken && <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Address (Optional)
             </label>
@@ -207,9 +219,9 @@ const Register: React.FC<RegisterProps> = ({ onSwitchToLogin, onSuccess, onClose
                 placeholder="Address (Optional)"
               />
             </div>
-          </div>
+          </div>}
 
-          <div>
+          {!courseRegistrationToken && <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Account Type <span className="text-red-500">*</span>
             </label>
@@ -229,7 +241,7 @@ const Register: React.FC<RegisterProps> = ({ onSwitchToLogin, onSuccess, onClose
                 ? "Students can log in after email verification."
                 : "Qari accounts require admin approval before you can log in."}
             </p>
-          </div>
+          </div>}
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">

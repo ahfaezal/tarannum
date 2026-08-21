@@ -1,3 +1,6 @@
+# Production blueprint: two lightweight API replicas, a dedicated scoring
+# worker, and a private Redis-compatible queue. Applying this blueprint creates
+# paid resources; review the current Render price estimate before syncing it.
 services:
   - type: web
     name: tarannum-backend
@@ -5,17 +8,27 @@ services:
     repo: https://github.com/ahfaezal/tarannum
     branch: main
     region: singapore
-    plan: free
+    plan: starter
+    numInstances: 2
+    healthCheckPath: /health
+    maxShutdownDelaySeconds: 60
     buildCommand: cd voice_analyze_backend && pip install --upgrade pip && pip install -r requirements.txt
-    startCommand: cd voice_analyze_backend && uvicorn main:app --host 0.0.0.0 --port $PORT
+    preDeployCommand: cd voice_analyze_backend && python migrations/add_official_certification_system.py && python migrations/add_promotion_registration_system.py
+    startCommand: cd voice_analyze_backend && uvicorn main:app --host 0.0.0.0 --port $PORT --timeout-keep-alive 15
     autoDeployTrigger: commit
     envVars:
       - key: ENVIRONMENT
         value: production
+      - key: SERVICE_ROLE
+        value: api
+      - key: LOAD_VOSK_MODEL
+        value: "false"
+      - key: PYTHON_VERSION
+        value: 3.10.16
       - key: DEBUG
         value: "false"
       - key: ALLOWED_ORIGINS
-        value: https://tarannum.vercel.app,https://voice-analyze-frontend-lsyr.vercel.app,http://localhost:5173,http://localhost:3000
+        value: https://tarannum.ai,https://www.tarannum.ai,https://tarannum.vercel.app,https://voice-analyze-frontend-lsyr.vercel.app,http://localhost:5173,http://localhost:3000
       - key: CLOUD_STORAGE_TYPE
         value: s3
       - key: S3_BUCKET_NAME
@@ -28,10 +41,17 @@ services:
         value: ar-mgb2
       - key: VOSK_MODEL_PATH
         value: /opt/render/project/src/voice_analyze_backend/models
-      - key: USE_ASYNC_PROCESSING
-        value: "false"
       - key: ENABLE_RATE_LIMITING
         value: "true"
+      - key: SLOW_REQUEST_MS
+        value: "1000"
+      - key: SCORING_WORKER_CONCURRENCY
+        value: "2"
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: tarannum-scoring-queue
+          property: connectionString
       - key: DATABASE_URL
         sync: false
       - key: SECRET_KEY
@@ -40,3 +60,71 @@ services:
         sync: false
       - key: AWS_SECRET_ACCESS_KEY
         sync: false
+      - key: SENTRY_DSN
+        sync: false
+      - key: SENTRY_TRACES_SAMPLE_RATE
+        value: "0.10"
+      - key: TOYYIBPAY_SECRET_KEY
+        sync: false
+      - key: TOYYIBPAY_CATEGORY_CODE
+        value: 7d359q4h
+      - key: PROMOTION_FRONTEND_URL
+        value: https://tarannum.ai/kursus-pemantapan-muazzin
+      - key: API_URL
+        value: https://tarannum-backend.onrender.com
+
+  - type: worker
+    name: tarannum-scoring-worker
+    runtime: docker
+    repo: https://github.com/ahfaezal/tarannum
+    branch: main
+    region: singapore
+    plan: starter
+    numInstances: 1
+    dockerfilePath: ./voice_analyze_backend/Dockerfile.worker
+    dockerCommand: celery -A task_queue.celery_app worker --loglevel=INFO --pool=threads --concurrency=2 --prefetch-multiplier=1
+    maxShutdownDelaySeconds: 300
+    autoDeployTrigger: commit
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: SERVICE_ROLE
+        value: scoring-worker
+      - key: SCORING_WORKER_CONCURRENCY
+        value: "2"
+      - key: CLOUD_STORAGE_TYPE
+        value: s3
+      - key: S3_BUCKET_NAME
+        value: tarannum-audio-prod
+      - key: AWS_REGION
+        value: ap-southeast-1
+      - key: AUTO_DOWNLOAD_MODEL
+        value: "false"
+      - key: VOSK_MODEL_TYPE
+        value: ar-mgb2
+      - key: VOSK_MODEL_PATH
+        value: /app/models
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: tarannum-scoring-queue
+          property: connectionString
+      - key: DATABASE_URL
+        sync: false
+      - key: SECRET_KEY
+        sync: false
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+      - key: SENTRY_DSN
+        sync: false
+      - key: SENTRY_TRACES_SAMPLE_RATE
+        value: "0.05"
+
+  - type: keyvalue
+    name: tarannum-scoring-queue
+    region: singapore
+    plan: starter
+    maxmemoryPolicy: noeviction
+    ipAllowList: []

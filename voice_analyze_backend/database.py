@@ -421,6 +421,184 @@ class StudentSelectedRecording(Base):
     analysis_result = relationship("AnalysisResult", foreign_keys=[analysis_result_id])
 
 
+class Course(Base):
+    """A scheduled Tarannum.ai course whose attendance can lead to certification."""
+    __tablename__ = "courses"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    title = Column(String, nullable=False)
+    certificate_category = Column(String, nullable=False)  # tarannum | azan
+    reference_id = Column(String, ForeignKey("references.id", ondelete="RESTRICT"), nullable=False, index=True)
+    starts_at = Column(DateTime, nullable=False, index=True)
+    duration_minutes = Column(Integer, nullable=False, default=360)
+    location = Column(String, nullable=True)
+    completion_window_days = Column(Integer, nullable=False, default=30)
+    required_practice_seconds = Column(Integer, nullable=False, default=3600)
+    status = Column(String, nullable=False, default="draft", index=True)  # draft | published | completed | archived
+    created_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    reference = relationship("Reference", foreign_keys=[reference_id])
+
+
+class PromotionCampaign(Base):
+    """A public course campaign with a payment-enforced seat limit."""
+    __tablename__ = "promotion_campaigns"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    slug = Column(String, unique=True, nullable=False, index=True)
+    title = Column(String, nullable=False)
+    starts_at = Column(DateTime, nullable=False, index=True)
+    capacity = Column(Integer, nullable=False, default=20)
+    price_cents = Column(Integer, nullable=False, default=10000)
+    status = Column(String, nullable=False, default="published", index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class PromotionRegistration(Base):
+    """A prospect, reserved checkout, paid participant, or waitlist record."""
+    __tablename__ = "promotion_registrations"
+    __table_args__ = (
+        UniqueConstraint("campaign_id", "email", name="uq_promotion_registration_email"),
+    )
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    campaign_id = Column(UUID(as_uuid=True), ForeignKey("promotion_campaigns.id", ondelete="CASCADE"), nullable=False, index=True)
+    public_token = Column(String, unique=True, nullable=False, index=True)
+    full_name = Column(String, nullable=False)
+    phone = Column(String, nullable=False)
+    email = Column(String, nullable=False, index=True)
+    state = Column(String, nullable=False, index=True)
+    district = Column(String, nullable=False, index=True)
+    organization = Column(String, nullable=True)
+    registration_consent = Column(Boolean, nullable=False, default=False)
+    marketing_consent = Column(Boolean, nullable=False, default=False)
+    consented_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    status = Column(String, nullable=False, default="interested", index=True)
+    reservation_expires_at = Column(DateTime, nullable=True, index=True)
+    toyyibpay_bill_code = Column(String, nullable=True, unique=True, index=True)
+    toyyibpay_reference_no = Column(String, nullable=True, unique=True, index=True)
+    payment_amount = Column(Float, nullable=True)
+    paid_at = Column(DateTime, nullable=True, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    preferred_month = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    campaign = relationship("PromotionCampaign", foreign_keys=[campaign_id])
+    user = relationship("User", foreign_keys=[user_id])
+
+
+class CourseEnrollment(Base):
+    """A student's enrollment, verified attendance, and practice completion state."""
+    __tablename__ = "course_enrollments"
+    __table_args__ = (UniqueConstraint("course_id", "student_id", name="uq_course_enrollment_student"),)
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    course_id = Column(UUID(as_uuid=True), ForeignKey("courses.id", ondelete="CASCADE"), nullable=False, index=True)
+    student_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    attendance_status = Column(String, nullable=False, default="registered", index=True)  # registered | attended | absent
+    attendance_verified_at = Column(DateTime, nullable=True)
+    attendance_verified_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    valid_recording_count = Column(Integer, nullable=False, default=0)
+    required_recording_count = Column(Integer, nullable=False, default=0)
+    credited_practice_seconds = Column(Integer, nullable=False, default=0)
+    practice_completed_at = Column(DateTime, nullable=True)
+    enrolled_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    course = relationship("Course", foreign_keys=[course_id])
+    student = relationship("User", foreign_keys=[student_id])
+
+
+class CertificateApplication(Base):
+    """A competency recording submitted to its owner Qari for a final decision."""
+    __tablename__ = "certificate_applications"
+    __table_args__ = (UniqueConstraint("session_id", name="uq_certificate_application_session"),)
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    certificate_type = Column(String, nullable=False, index=True)  # competency_tarannum | competency_azan
+    student_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    qari_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True)
+    reference_id = Column(String, ForeignKey("references.id", ondelete="RESTRICT"), nullable=False, index=True)
+    session_id = Column(UUID(as_uuid=True), ForeignKey("user_sessions.id", ondelete="RESTRICT"), nullable=False, index=True)
+    score_snapshot = Column(Float, nullable=False)
+    suggested_grade = Column(String, nullable=False)
+    final_grade = Column(String, nullable=True)
+    status = Column(String, nullable=False, default="pending", index=True)  # pending | approved | rejected | resubmission_requested
+    qari_notes = Column(Text, nullable=True)
+    submitted_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    decided_at = Column(DateTime, nullable=True)
+
+
+class QariSignature(Base):
+    """Protected signature asset uploaded by an approved Qari."""
+    __tablename__ = "qari_signatures"
+    __table_args__ = (UniqueConstraint("qari_id", name="uq_qari_signature_qari"),)
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    qari_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    storage_path = Column(String, nullable=False)
+    checksum = Column(String, nullable=False)
+    mime_type = Column(String, nullable=False)
+    is_active = Column(Boolean, nullable=False, default=True)
+    uploaded_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class Certificate(Base):
+    """Immutable issued-certificate record and verification metadata."""
+    __tablename__ = "certificates"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    certificate_number = Column(String, unique=True, nullable=False, index=True)
+    verification_token = Column(String, unique=True, nullable=False, index=True)
+    certificate_type = Column(String, nullable=False, index=True)
+    student_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True)
+    course_id = Column(UUID(as_uuid=True), ForeignKey("courses.id", ondelete="SET NULL"), nullable=True, index=True)
+    enrollment_id = Column(UUID(as_uuid=True), ForeignKey("course_enrollments.id", ondelete="SET NULL"), nullable=True)
+    application_id = Column(UUID(as_uuid=True), ForeignKey("certificate_applications.id", ondelete="SET NULL"), nullable=True)
+    reference_id = Column(String, ForeignKey("references.id", ondelete="RESTRICT"), nullable=False)
+    qari_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    final_grade = Column(String, nullable=True)
+    status = Column(String, nullable=False, default="valid", index=True)  # valid | revoked | replaced
+    snapshot_json = Column(JSON, nullable=False)
+    document_path = Column(String, nullable=True)
+    document_hash = Column(String, nullable=True)
+    issued_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    issued_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    revoked_at = Column(DateTime, nullable=True)
+    revocation_reason = Column(Text, nullable=True)
+
+
+class CertificateEvent(Base):
+    """Append-only lifecycle history for an issued certificate."""
+    __tablename__ = "certificate_events"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    certificate_id = Column(UUID(as_uuid=True), ForeignKey("certificates.id", ondelete="CASCADE"), nullable=False, index=True)
+    event_type = Column(String, nullable=False, index=True)  # issued | downloaded | revoked | replaced
+    actor_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    details_json = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+
+class CertificationNotification(Base):
+    """In-app notification generated by the certification workflow."""
+    __tablename__ = "certification_notifications"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    notification_type = Column(String, nullable=False, index=True)
+    title = Column(String, nullable=False)
+    message = Column(Text, nullable=False)
+    metadata_json = Column(JSON, nullable=True)
+    read_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+
 class AuditLog(Base):
     """Audit trail for certification-grade data integrity (Milestone 4)."""
     __tablename__ = "audit_logs"

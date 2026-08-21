@@ -1,8 +1,14 @@
 import React from "react";
-import { Activity, BookOpenCheck, ClipboardCheck, Settings2, ShieldCheck, Users } from "lucide-react";
+import { Activity, Award, BookOpenCheck, ClipboardCheck, Settings2, ShieldCheck, Users } from "lucide-react";
 import { Link } from "react-router-dom";
 
 const adminSections = [
+  {
+    to: "/admin/certification",
+    title: "Kursus & Persijilan",
+    description: "Urus kursus, kehadiran, latihan 60 minit dan sijil rasmi.",
+    icon: Award,
+  },
   {
     to: "/admin/users",
     title: "Users and Qaris",

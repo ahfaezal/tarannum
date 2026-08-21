@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel, EmailStr
 from typing import Optional
 from datetime import datetime, timedelta
-from database import User, UserRole, StudentQariRelationship, SessionLocal, get_db
+from database import User, UserRole, StudentQariRelationship, PromotionRegistration, SessionLocal, get_db
 from auth import (
     get_password_hash, authenticate_user, create_access_token,
     get_current_user, get_current_active_user, get_current_admin_user,
@@ -48,6 +48,7 @@ class UserRegister(BaseModel):
     address: Optional[str] = None
     referral_code: Optional[str] = None
     role: str = "student"  # Default to student (allow both "student" and "qari")
+    course_registration_token: Optional[str] = None
 
 
 class UserLogin(BaseModel):
@@ -633,6 +634,17 @@ def register(
         _set_new_otp(new_user, otp_code, now, resend_count=0)
 
         db.add(new_user)
+        db.flush()
+        if user_data.course_registration_token:
+            course_registration = db.query(PromotionRegistration).filter(
+                PromotionRegistration.public_token == user_data.course_registration_token,
+                PromotionRegistration.email == normalized_email,
+                PromotionRegistration.status.in_(["paid", "account_linked", "attended"]),
+            ).with_for_update().first()
+            if not course_registration:
+                raise HTTPException(status_code=400, detail="Paid course registration not found for this email")
+            course_registration.user_id = new_user.id
+            course_registration.status = "account_linked"
         db.commit()
         db.refresh(new_user)
         background_tasks.add_task(_send_verification_email_background, normalized_email, otp_code)

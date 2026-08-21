@@ -1,6 +1,10 @@
 {
   "rewrites": [
     {
+      "source": "/kursus-pemantapan-muazzin(.*)",
+      "destination": "/promotion.html"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }
