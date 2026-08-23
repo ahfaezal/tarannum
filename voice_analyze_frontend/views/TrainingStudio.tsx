@@ -458,7 +458,8 @@ const TrainingStudio: React.FC = () => {
               if (contentData.content && contentData.content.length > 0) {
                 refs = contentData.content.map((item: any) => ({
                   id: item.id || item.reference_id,
-                  title: item.title || `Demo Content`,
+                  title: item.reference_title || item.title || `Demo Content`,
+                  reference_title: item.reference_title || item.title || "",
                   maqam: item.maqam,
                   filename: item.filename || item.title || "",
                   file_path: item.file_path || "",
@@ -485,7 +486,8 @@ const TrainingStudio: React.FC = () => {
               // Map content to references
               const mappedRefs = contentData.content.map((item: any) => ({
                 id: item.reference_id || item.id,
-                title: item.title || item.reference_title || `Surah ${item.surah_number || 'N/A'}`,
+                title: item.reference_title || item.title || `Surah ${item.surah_number || 'N/A'}`,
+                reference_title: item.reference_title || item.title || "",
                 maqam: item.maqam,
                 filename: item.filename || item.title || item.reference_title || "",
                 file_path: item.file_path || "",
@@ -2725,6 +2727,7 @@ const TrainingStudio: React.FC = () => {
                     const mappedRefs = contentData.content.map((item: any) => ({
                       id: item.reference_id || item.id,
                       title: item.reference_title || item.title || `Surah ${item.surah_number || 'N/A'}`,
+                      reference_title: item.reference_title || item.title || "",
                       maqam: item.maqam,
                       filename: item.filename || item.reference_title || item.title || "",
                       file_path: item.file_path || "",

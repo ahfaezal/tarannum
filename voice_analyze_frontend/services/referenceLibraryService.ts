@@ -19,6 +19,7 @@ export interface TextSegment {
 export interface ReferenceAudio {
   id: string;
   title: string;
+  reference_title?: string;
   maqam?: string;
   filename: string;
   file_path: string;

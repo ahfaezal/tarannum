@@ -17,6 +17,9 @@ const ReferenceLibrary: React.FC<ReferenceLibraryProps> = ({
   isLoading = false,
   error = null,
 }) => {
+  const getReferenceLabel = (ref: ReferenceAudio) =>
+    ref.reference_title || ref.title || ref.filename || "Untitled reference";
+
   return (
     <div className="relative">
       <select
@@ -34,7 +37,7 @@ const ReferenceLibrary: React.FC<ReferenceLibraryProps> = ({
         </option>
         {references.map((ref) => (
           <option key={ref.id} value={ref.id}>
-            {ref.filename || ref.title}
+            {getReferenceLabel(ref)}
           </option>
         ))}
       </select>
@@ -49,5 +52,4 @@ const ReferenceLibrary: React.FC<ReferenceLibraryProps> = ({
 };
 
 export default ReferenceLibrary;
-
 
