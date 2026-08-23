@@ -220,6 +220,14 @@ const QariDashboard: React.FC = () => {
     return minutes > 0 ? `${minutes}m ${remainder}s` : `${remainder}s`;
   };
 
+  const getContentDisplayName = (item: QariContent) =>
+    item.reference_title || item.surah_name || item.title || item.filename || "Untitled Reference";
+
+  const getContentSubtitle = (item: QariContent) =>
+    [item.surah_name || (item.surah_number ? `Surah ${item.surah_number}` : ""), item.maqam]
+      .filter(Boolean)
+      .join(" • ") || "Nama paparan belum diset";
+
   const formatPracticeMinutes = (minutes?: number | null) => {
     if (!minutes) return "0m";
     if (minutes < 1) return `${Math.round(minutes * 60)}s`;
@@ -959,7 +967,7 @@ const QariDashboard: React.FC = () => {
                       setDeleteConfirm({
                         isOpen: true,
                         contentId: item.id,
-                        filename: item.filename || item.reference_title || 'Untitled',
+                        filename: getContentDisplayName(item),
                       });
                     }}
                     className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
@@ -969,10 +977,10 @@ const QariDashboard: React.FC = () => {
                   </button>
                 </div>
                 <h3 className="font-semibold text-gray-800 mb-1 pr-16">
-                  {item.surah_name || item.reference_title || item.filename || "Untitled Reference"}
+                  {getContentDisplayName(item)}
                 </h3>
                 <p className="text-xs text-slate-500 mb-2">
-                  {item.filename || item.reference_title || "No filename"}
+                  {getContentSubtitle(item)}
                 </p>
                 {item.surah_number || item.surah_name ? (
                   <p className="text-sm text-gray-600">

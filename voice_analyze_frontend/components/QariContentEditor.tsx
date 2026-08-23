@@ -17,6 +17,7 @@ const QariContentEditor: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   
   // Form state
+  const [referenceTitle, setReferenceTitle] = useState<string>('');
   const [surahNumber, setSurahNumber] = useState<string>('');
   const [surahName, setSurahName] = useState<string>('');
   const [ayahNumber, setAyahNumber] = useState<string>('');
@@ -68,6 +69,7 @@ const QariContentEditor: React.FC = () => {
       }
       
       setContent(foundContent);
+      setReferenceTitle(foundContent.reference_title || foundContent.title || foundContent.filename || '');
       setSurahNumber(foundContent.surah_number?.toString() || '');
       setSurahName(foundContent.surah_name || '');
       setAyahNumber(foundContent.ayah_number?.toString() || '');
@@ -178,6 +180,7 @@ const QariContentEditor: React.FC = () => {
       
       // First, save the metadata (surah/ayah/maqam)
       const metadata = {
+        reference_title: referenceTitle.trim() || undefined,
         surah_number: surahNumber ? parseInt(surahNumber) : undefined,
         surah_name: surahName || undefined,
         ayah_number: ayahNumber ? parseInt(ayahNumber) : undefined,
@@ -199,7 +202,7 @@ const QariContentEditor: React.FC = () => {
           await referenceLibraryService.updatePreset(
             content.reference_id,
             textSegments,
-            ref.title || content.reference_title || 'Untitled',
+            referenceTitle.trim() || ref.title || content.reference_title || 'Untitled',
             maqam || undefined,
             isAdminManagingQari ? qariId : undefined
           );
@@ -207,7 +210,7 @@ const QariContentEditor: React.FC = () => {
           // Create new preset
           await referenceLibraryService.createPreset(
             content.reference_id,
-            content.reference_title || 'Untitled',
+            referenceTitle.trim() || content.reference_title || 'Untitled',
             textSegments,
             maqam || undefined,
             isAdminManagingQari ? qariId : undefined
@@ -291,6 +294,21 @@ const QariContentEditor: React.FC = () => {
         {/* Content Info */}
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
           <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-2">
+                Nama Paparan / Reference Title
+              </label>
+              <input
+                type="text"
+                value={referenceTitle}
+                onChange={(e) => setReferenceTitle(e.target.value)}
+                placeholder="Contoh: Surah Al-Fatihah - Hijaz (Ustaz ...)"
+                className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+              />
+              <p className="text-xs text-slate-500 mt-1">
+                Nama ini dipaparkan dalam senarai content dan pilihan audio pelajar.
+              </p>
+            </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-2">
                 Surah Number

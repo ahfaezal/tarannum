@@ -76,6 +76,7 @@ class QariContentRequest(BaseModel):
 
 
 class UpdateQariContentRequest(BaseModel):
+    reference_title: Optional[str] = None
     surah_number: Optional[int] = None
     surah_name: Optional[str] = None
     ayah_number: Optional[int] = None
@@ -234,6 +235,7 @@ async def update_admin_qari_content(
         qari_content = qari_service.update_qari_content(
             content_id=content_id,
             qari_id=str(qari.id),
+            reference_title=content.reference_title,
             surah_number=content.surah_number,
             surah_name=content.surah_name,
             ayah_number=content.ayah_number,
@@ -293,6 +295,7 @@ async def update_qari_content(
         qari_content = qari_service.update_qari_content(
             content_id=content_id,
             qari_id=str(current_user.id),
+            reference_title=content.reference_title,
             surah_number=content.surah_number,
             surah_name=content.surah_name,
             ayah_number=content.ayah_number,

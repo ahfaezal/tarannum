@@ -9,6 +9,7 @@ const API_URL =
 export interface QariContent {
   id: string;
   reference_id: string;
+  title?: string;
   surah_number?: number;
   surah_name?: string;
   ayah_number?: number;
@@ -239,6 +240,7 @@ export const getAdminQariContent = async (
 export const updateQariContent = async (
   contentId: string,
   content: {
+    reference_title?: string;
     surah_number?: number;
     surah_name?: string;
     ayah_number?: number;
@@ -270,6 +272,7 @@ export const updateAdminQariContent = async (
   qariId: string,
   contentId: string,
   content: {
+    reference_title?: string;
     surah_number?: number;
     surah_name?: string;
     ayah_number?: number;

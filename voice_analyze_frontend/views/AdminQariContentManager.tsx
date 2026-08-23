@@ -12,6 +12,14 @@ const formatDuration = (seconds?: number): string => {
   return `${mins}m ${secs}s`;
 };
 
+const getContentDisplayName = (item: QariContent): string =>
+  item.reference_title || item.surah_name || item.title || item.filename || "Untitled Reference";
+
+const getContentSubtitle = (item: QariContent): string =>
+  [item.surah_name || (item.surah_number ? `Surah ${item.surah_number}` : ""), item.maqam]
+    .filter(Boolean)
+    .join(" • ") || "Nama paparan belum diset";
+
 const AdminQariContentManager: React.FC = () => {
   const navigate = useNavigate();
   const { qariId } = useParams<{ qariId: string }>();
@@ -188,7 +196,7 @@ const AdminQariContentManager: React.FC = () => {
                       setDeleteConfirm({
                         isOpen: true,
                         contentId: item.id,
-                        filename: item.filename || item.reference_title || "Untitled",
+                        filename: getContentDisplayName(item),
                       })
                     }
                     className="rounded-lg p-2 text-slate-400 transition hover:bg-red-50 hover:text-red-600"
@@ -198,9 +206,9 @@ const AdminQariContentManager: React.FC = () => {
                   </button>
                 </div>
                 <h3 className="mb-1 pr-16 font-semibold text-slate-800">
-                  {item.surah_name || item.reference_title || item.filename || "Untitled Reference"}
+                  {getContentDisplayName(item)}
                 </h3>
-                <p className="mb-2 text-xs text-slate-500">{item.filename || item.reference_title || "No filename"}</p>
+                <p className="mb-2 text-xs text-slate-500">{getContentSubtitle(item)}</p>
                 {item.surah_number || item.surah_name ? (
                   <p className="text-sm text-slate-600">
                     {item.surah_name || `Surah ${item.surah_number}`}

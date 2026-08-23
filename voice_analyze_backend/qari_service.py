@@ -93,6 +93,7 @@ class QariService:
     def update_qari_content(
         content_id: str,
         qari_id: str,
+        reference_title: Optional[str] = None,
         surah_number: Optional[int] = None,
         surah_name: Optional[str] = None,
         ayah_number: Optional[int] = None,
@@ -145,6 +146,19 @@ class QariService:
             
             if not qari_content:
                 raise ValueError(f"Content {content_id} not found or access denied")
+
+            if reference_title is not None:
+                cleaned_title = reference_title.strip()
+                if not cleaned_title:
+                    raise ValueError("Reference title cannot be empty")
+                reference = db_session.query(Reference).filter(
+                    and_(
+                        Reference.id == qari_content.reference_id,
+                        Reference.owner_id == qari_uuid
+                    )
+                ).first()
+                if reference:
+                    reference.title = cleaned_title
             
             # Update fields if provided
             if surah_number is not None:
