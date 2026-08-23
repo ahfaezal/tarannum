@@ -33,6 +33,23 @@ const QURAN_TEXT_TEMPLATES: Record<number, { segments: string[] }> = {
   },
 };
 
+const AZAN_TEXT_TEMPLATE = {
+  segments: [
+    'اللَّهُ أَكْبَرُ اللَّهُ أَكْبَرُ',
+    'اللَّهُ أَكْبَرُ اللَّهُ أَكْبَرُ',
+    'أَشْهَدُ أَنْ لَا إِلَٰهَ إِلَّا اللَّهُ',
+    'أَشْهَدُ أَنْ لَا إِلَٰهَ إِلَّا اللَّهُ',
+    'أَشْهَدُ أَنَّ مُحَمَّدًا رَسُولُ اللَّهِ',
+    'أَشْهَدُ أَنَّ مُحَمَّدًا رَسُولُ اللَّهِ',
+    'حَيَّ عَلَى الصَّلَاةِ',
+    'حَيَّ عَلَى الصَّلَاةِ',
+    'حَيَّ عَلَى الْفَلَاحِ',
+    'حَيَّ عَلَى الْفَلَاحِ',
+    'اللَّهُ أَكْبَرُ اللَّهُ أَكْبَرُ',
+    'لَا إِلَٰهَ إِلَّا اللَّهُ',
+  ],
+};
+
 const TextAlignmentEditor: React.FC<TextAlignmentEditorProps> = ({
   audioUrl,
   duration,
@@ -430,19 +447,10 @@ const TextAlignmentEditor: React.FC<TextAlignmentEditorProps> = ({
     return null;
   };
 
-  const handleLoadTemplate = () => {
-    const template = getCurrentTemplate();
-    if (!template) {
-      setAlertModal({
-        isOpen: true,
-        message: 'Template is available for Al-Fatihah only at this stage. Enter Surah Number 1 or Surah Name Al-Fatihah.',
-      });
-      return;
-    }
-
+  const applyTextTemplate = (template: { segments: string[] }, label: string) => {
     if (segments.length > 0) {
       const shouldReplace = window.confirm(
-        'This will replace the current text segments with the Al-Fatihah template. Continue?'
+        `This will replace the current text segments with the ${label} template. Continue?`
       );
       if (!shouldReplace) return;
     }
@@ -469,6 +477,23 @@ const TextAlignmentEditor: React.FC<TextAlignmentEditorProps> = ({
     });
 
     setSegments(nextSegments);
+  };
+
+  const handleLoadTemplate = () => {
+    const template = getCurrentTemplate();
+    if (!template) {
+      setAlertModal({
+        isOpen: true,
+        message: 'Template is available for Al-Fatihah only at this stage. Enter Surah Number 1 or Surah Name Al-Fatihah.',
+      });
+      return;
+    }
+
+    applyTextTemplate(template, 'Al-Fatihah');
+  };
+
+  const handleLoadAzanTemplate = () => {
+    applyTextTemplate(AZAN_TEXT_TEMPLATE, 'Azan');
   };
 
   const handleClearSegments = () => {
@@ -760,6 +785,14 @@ const TextAlignmentEditor: React.FC<TextAlignmentEditorProps> = ({
             >
               <Wand2 size={16} />
               Load Al-Fatihah Text
+            </button>
+            <button
+              type="button"
+              onClick={handleLoadAzanTemplate}
+              className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700"
+            >
+              <FileText size={16} />
+              Load Azan Text
             </button>
             <button
               type="button"
