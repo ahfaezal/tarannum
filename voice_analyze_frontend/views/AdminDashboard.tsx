@@ -4,6 +4,12 @@ import { Link } from "react-router-dom";
 
 const adminSections = [
   {
+    to: "/admin/pendaftaran-kursus",
+    title: "Pendaftaran Kursus Muazzin",
+    description: "Semak peserta, bayaran, baki tempat dan senarai menunggu.",
+    icon: Users,
+  },
+  {
     to: "/admin/certification",
     title: "Kursus & Persijilan",
     description: "Urus kursus, kehadiran, latihan 60 minit dan sijil rasmi.",

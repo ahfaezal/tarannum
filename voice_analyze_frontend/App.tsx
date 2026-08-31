@@ -29,6 +29,7 @@ const QariContentEditor = lazy(() => import("./components/QariContentEditor"));
 const AdminQariContentManager = lazy(() => import("./views/AdminQariContentManager"));
 const AdminMode = lazy(() => import("./views/AdminMode"));
 const AdminDashboard = lazy(() => import("./views/AdminDashboard"));
+const AdminPromotionRegistrations = lazy(() => import("./views/AdminPromotionRegistrations"));
 const ExpertValidationPage = lazy(() => import("./views/ExpertValidationPage"));
 const AdminExpertValidation = lazy(() => import("./views/AdminExpertValidation"));
 const CertificatesPage = lazy(() => import("./views/CertificatesPage"));
@@ -98,6 +99,7 @@ const App: React.FC = () => {
               <Route path="/qari/content/edit/:contentId" element={<QariContentEditor />} />
             </Route>
             <Route element={<ProtectedRoute roles={["admin"]} />}>
+              <Route path="/admin/pendaftaran-kursus" element={<AdminPromotionRegistrations />} />
               <Route path="/admin" element={<AdminDashboard />} />
               <Route path="/admin/qari/:qariId/content" element={<AdminQariContentManager />} />
               <Route path="/admin/qari/:qariId/content/edit/:contentId" element={<QariContentEditor />} />
