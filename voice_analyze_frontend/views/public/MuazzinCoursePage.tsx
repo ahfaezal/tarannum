@@ -191,6 +191,39 @@ const MuazzinCoursePage: React.FC = () => {
         </div>
       </section>
 
+      <section aria-labelledby="training-preview-title" className="bg-white py-16">
+        <div className="mx-auto max-w-7xl px-5 sm:px-8">
+          <div className="max-w-3xl">
+            <p className="text-sm font-black uppercase tracking-[.2em] text-emerald-700">Contoh pengalaman latihan</p>
+            <h2 id="training-preview-title" className="mt-3 text-3xl font-black sm:text-4xl">Lihat paparan latihan azan dalam Tarannum.ai.</h2>
+            <p id="training-preview-description" className="mt-5 leading-8 text-stone-600">Tonton rakaman skrin contoh latihan azan untuk mengenali ruang latihan yang akan digunakan. Dalam kursus ini, latihan digital melengkapi demonstrasi dan bimbingan Ustaz Dzikri — membantu peserta meneruskan latihan secara lebih tersusun selepas sesi bersemuka.</p>
+          </div>
+          <figure className="mt-8 overflow-hidden rounded-3xl border border-stone-200 bg-stone-50">
+            <video controls playsInline preload="none" aria-label="Video contoh paparan latihan azan Tarannum.ai" aria-describedby="training-preview-description" className="mx-auto max-h-[70vh] w-full bg-black">
+              <source src="/images/muazzin-training-screen.mp4" type="video/mp4" />
+              Pelayar anda tidak menyokong video ini. <a href="/images/muazzin-training-screen.mp4">Buka video latihan azan</a>.
+            </video>
+            <figcaption className="px-5 py-4 text-sm leading-6 text-stone-600">Contoh paparan latihan azan. Tekan butang main untuk menonton; video tidak dimainkan secara automatik. <a href="/images/muazzin-training-screen.mp4" target="_blank" rel="noreferrer" className="font-bold text-emerald-700 underline">Buka video dalam tab baharu</a>.</figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <section aria-labelledby="platform-preview-title" className="mx-auto grid max-w-7xl gap-10 px-5 py-16 sm:px-8 lg:grid-cols-[1.2fr_.8fr] lg:items-center">
+        <figure>
+          <a href="/images/tarannum-home-preview.png" target="_blank" rel="noreferrer" className="block overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-700" aria-label="Lihat gambar muka depan Tarannum.ai dalam saiz penuh">
+            <img src="/images/tarannum-home-preview.png" alt="Muka depan Tarannum.ai dengan aliran dengar, berlatih, rakam dan perbaiki bacaan" width={1337} height={1066} loading="lazy" decoding="async" className="h-auto w-full" />
+          </a>
+          <figcaption className="mt-3 text-sm text-stone-500">Paparan muka depan Tarannum.ai. Tekan gambar untuk melihat saiz penuh.</figcaption>
+        </figure>
+        <div>
+          <p className="text-sm font-black uppercase tracking-[.2em] text-emerald-700">Kenali Tarannum.ai</p>
+          <h2 id="platform-preview-title" className="mt-3 text-3xl font-black sm:text-4xl">Dengar. Berlatih. Rakam. Perbaiki.</h2>
+          <p className="mt-5 leading-8 text-stone-600">Tarannum.ai menyokong latihan berpandukan bacaan rujukan, visualisasi melodi dan rakaman kendiri. Peserta boleh mendengar contoh, mengikuti alunan pada kadar sendiri dan merakam apabila bersedia untuk menyemak latihan.</p>
+          <p className="mt-4 leading-8 text-stone-600">Teknologi membantu proses latihan, bukan menggantikan guru. Ketepatan bacaan dan penilaian kompetensi tetap memerlukan bimbingan serta semakan qari.</p>
+          <Link to="/" className="mt-6 inline-flex items-center gap-2 font-bold text-emerald-700 underline">Kenali platform Tarannum.ai <ArrowRight className="h-5 w-5" /></Link>
+        </div>
+      </section>
+
       <section className="bg-white py-16">
         <div className="mx-auto max-w-7xl px-5 sm:px-8">
           <p className="text-center text-sm font-black uppercase tracking-[.2em] text-emerald-700">Persijilan Tarannum.ai</p>
