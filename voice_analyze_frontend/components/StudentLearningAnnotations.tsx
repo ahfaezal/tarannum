@@ -72,13 +72,29 @@ const StudentLearningAnnotations: React.FC<Props> = ({ referenceId, viewport }) 
           : item.label === "Baris depan" || item.label === "Depan" ? "ﹸ"
           : item.label === "Baris atas" || item.label === "Baris" ? "ﹶ"
           : item.arabic_text || item.label;
+        const ranged = item.end_time != null;
+        const endRatio = ranged ? (item.end_time! - viewport.startTime) / Math.max(viewport.endTime - viewport.startTime, 0.001) : xRatio;
+        const highlightWidth = ranged ? Math.max(46, (endRatio - xRatio) * (viewport.plotRight - viewport.plotLeft)) : 46;
+        const clampedLeft = Math.max(viewport.plotLeft + 22, Math.min(viewport.plotRight - 22, left));
 
         return (
+          <React.Fragment key={item.id}>
           <div
-            key={item.id}
+            aria-hidden="true"
+            className="pointer-events-none absolute z-10 rounded-md"
+            style={{
+              left: `${clampedLeft}px`,
+              top: `${viewport.plotTop}px`,
+              width: `${highlightWidth}px`,
+              height: `${viewport.plotBottom - viewport.plotTop}px`,
+              transform: ranged ? undefined : "translateX(-50%)",
+              background: "linear-gradient(90deg, rgba(251,191,36,0.05), rgba(251,191,36,0.18) 50%, rgba(251,191,36,0.05))",
+            }}
+          />
+          <div
             className={`pointer-events-none absolute z-20 flex h-11 items-center justify-center border border-amber-400 bg-gradient-to-br from-amber-50 to-amber-100 text-slate-950 shadow-md ${isText ? "min-w-11 max-w-48 rounded-full px-2" : "w-11 rounded-full"} ${isBasicMark ? "overflow-hidden" : "overflow-visible"}`}
             style={{
-              left: `${Math.max(viewport.plotLeft + 22, Math.min(viewport.plotRight - 22, left))}px`,
+              left: `${clampedLeft}px`,
               top: `${Math.max(viewport.plotTop + 22, Math.min(viewport.plotBottom - 22, top))}px`,
               transform: "translate(-50%, -50%)",
               fontFamily: '"Noto Naskh Arabic", "Traditional Arabic", Arial, sans-serif',
@@ -89,6 +105,7 @@ const StudentLearningAnnotations: React.FC<Props> = ({ referenceId, viewport }) 
               {text}
             </bdi>
           </div>
+          </React.Fragment>
         );
       })}
     </>

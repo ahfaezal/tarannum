@@ -133,6 +133,13 @@ const QariAnnotationEditor: React.FC<Props> = ({ referenceId, duration, currentT
     if (!selected.id.startsWith("local-")) setInactiveIds((current) => [...new Set([...current, selected.id])]);
     setItems((current) => current.filter((item) => item.id !== selected.id)); setSelectedId(null);
   };
+  const removeAll = () => {
+    const persistedIds = items.filter((item) => !item.id.startsWith("local-")).map((item) => item.id);
+    setInactiveIds((current) => [...new Set([...current, ...persistedIds])]);
+    setItems([]);
+    setSelectedId(null);
+    setMessage("Semua ikon telah dikeluarkan. Tekan Simpan & terbitkan untuk kemas kini paparan pelajar.");
+  };
   const save = async (status: "draft" | "published") => {
     setSaving(status); setMessage("");
     try {
@@ -180,11 +187,15 @@ const QariAnnotationEditor: React.FC<Props> = ({ referenceId, duration, currentT
           const fallbackRow = [...String(item.id)].reduce<number>((total, char) => total + char.charCodeAt(0), 0) % 4;
           const normalizedY = item.vertical_position ?? (0.1 + fallbackRow * 0.21);
           const top = viewport.plotTop + normalizedY * (viewport.plotBottom - viewport.plotTop);
-          return <div key={item.id} draggable onDragStart={(event) => event.dataTransfer.setData("application/x-qari-marker", item.id)} onClick={(event) => { event.stopPropagation(); setSelectedId(item.id); }} className={`absolute z-20 flex h-11 cursor-move items-center border border-amber-400 bg-gradient-to-br from-amber-50 to-amber-100 text-slate-950 shadow-md ${ranged ? "rounded-xl" : isTextMarker ? "min-w-11 max-w-48 rounded-full px-2" : "w-11 rounded-full"} ${isBasicMark ? "overflow-hidden" : "overflow-visible"} ${selectedId === item.id ? "ring-2 ring-blue-500 ring-offset-2" : ""}`} style={{ left: `${Math.max(viewport.plotLeft + 22, Math.min(viewport.plotRight - 22, left))}px`, top: `${Math.max(viewport.plotTop + 22, Math.min(viewport.plotBottom - 22, top))}px`, width: ranged ? `${width}px` : undefined, transform: ranged ? "translateY(-50%)" : "translate(-50%, -50%)" }}>
+          const clampedLeft = Math.max(viewport.plotLeft + 22, Math.min(viewport.plotRight - 22, left));
+          const highlightWidth = ranged ? width : 46;
+          return <React.Fragment key={item.id}>
+          <div className="pointer-events-none absolute z-10 rounded-md" aria-hidden="true" style={{ left: `${clampedLeft}px`, top: `${viewport.plotTop}px`, width: `${highlightWidth}px`, height: `${viewport.plotBottom - viewport.plotTop}px`, transform: ranged ? undefined : "translateX(-50%)", background: "linear-gradient(90deg, rgba(251,191,36,0.05), rgba(251,191,36,0.18) 50%, rgba(251,191,36,0.05))" }} />
+          <div draggable onDragStart={(event) => event.dataTransfer.setData("application/x-qari-marker", item.id)} onClick={(event) => { event.stopPropagation(); setSelectedId(item.id); }} className={`absolute z-20 flex h-11 cursor-move items-center border border-amber-400 bg-gradient-to-br from-amber-50 to-amber-100 text-slate-950 shadow-md ${ranged ? "rounded-xl" : isTextMarker ? "min-w-11 max-w-48 rounded-full px-2" : "w-11 rounded-full"} ${isBasicMark ? "overflow-hidden" : "overflow-visible"} ${selectedId === item.id ? "ring-2 ring-blue-500 ring-offset-2" : ""}`} style={{ left: `${clampedLeft}px`, top: `${Math.max(viewport.plotTop + 22, Math.min(viewport.plotBottom - 22, top))}px`, width: ranged ? `${width}px` : undefined, transform: ranged ? "translateY(-50%)" : "translate(-50%, -50%)" }}>
             {ranged && <button type="button" onPointerDown={(event) => resize(item, "start", event)} className="h-full w-3 cursor-ew-resize rounded-l-md bg-black/15" aria-label="Panjangkan dari kiri" />}
             <span className={`flex min-w-0 flex-1 items-center justify-center px-1 ${isBasicMark ? "overflow-hidden" : "overflow-visible"}`}><bdi className={`whitespace-nowrap font-bold ${isBasicMark ? "inline-flex translate-y-6 items-center justify-center text-5xl leading-none" : isTextMarker ? "overflow-hidden text-2xl leading-relaxed" : "overflow-visible text-3xl leading-relaxed"}`} style={{ fontFamily: '"Noto Naskh Arabic", "Traditional Arabic", Arial, sans-serif' }}>{displayText}</bdi></span>
             {ranged && <button type="button" onPointerDown={(event) => resize(item, "end", event)} className="h-full w-3 cursor-ew-resize rounded-r-md bg-black/15" aria-label="Panjangkan dari kanan" />}
-          </div>;
+          </div></React.Fragment>;
         })}
         {loading && <div className="absolute inset-0 z-30 flex items-center justify-center bg-white/70 text-sm text-slate-600"><RefreshCw className="mr-2 animate-spin" size={17}/>Memuatkan panduan…</div>}
       </div>
@@ -196,7 +207,7 @@ const QariAnnotationEditor: React.FC<Props> = ({ referenceId, duration, currentT
         <button type="button" onClick={removeSelected} className="inline-flex self-end items-center justify-center gap-2 rounded-lg bg-rose-600 px-3 py-2 text-sm font-bold text-white" title="Buang ikon"><Trash2 size={16}/>Buang ikon</button>
       </div>}
 
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-3"><p className="text-xs font-medium text-slate-600">{message || `${items.length} tanda · ${items.some((item) => item.status === "draft") ? "Ada perubahan draf" : "Sedia"}`}</p><div className="flex gap-2"><button type="button" onClick={() => save("draft")} disabled={!!saving} className="inline-flex items-center gap-2 rounded-lg bg-slate-700 px-4 py-2 text-sm font-bold text-white disabled:opacity-50"><Save size={16}/>{saving === "draft" ? "Menyimpan…" : "Simpan draf"}</button><button type="button" onClick={() => save("published")} disabled={!!saving} className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-50"><Send size={16}/>{saving === "published" ? "Menerbitkan…" : "Simpan & terbitkan"}</button></div></div>
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3"><p className="text-xs font-medium text-slate-600">{message || `${items.length} tanda · ${items.some((item) => item.status === "draft") ? "Ada perubahan draf" : "Sedia"}`}</p><div className="flex flex-wrap gap-2">{items.length > 0 && <button type="button" onClick={removeAll} disabled={!!saving} className="inline-flex items-center gap-2 rounded-lg border border-rose-300 bg-white px-4 py-2 text-sm font-bold text-rose-700 disabled:opacity-50"><Trash2 size={16}/>Buang semua ikon</button>}<button type="button" onClick={() => save("draft")} disabled={!!saving} className="inline-flex items-center gap-2 rounded-lg bg-slate-700 px-4 py-2 text-sm font-bold text-white disabled:opacity-50"><Save size={16}/>{saving === "draft" ? "Menyimpan…" : "Simpan draf"}</button><button type="button" onClick={() => save("published")} disabled={!!saving} className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-50"><Send size={16}/>{saving === "published" ? "Menerbitkan…" : "Simpan & terbitkan"}</button></div></div>
     </div>
   );
 };

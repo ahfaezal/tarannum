@@ -131,6 +131,7 @@ def save_learning_annotations(
     require_reference_editor(reference, current_user)
 
     saved = []
+    retained_ids = []
     for annotation in payload.annotations:
         item = None
         if annotation.id:
@@ -145,17 +146,24 @@ def save_learning_annotations(
                 setattr(item, key, value)
             item.status = payload.status
             item.is_active = True
+            retained_ids.append(item.id)
         else:
             item = LearningAnnotation(reference_id=reference_id, qari_id=current_user.id, status=payload.status, **values)
             db.add(item)
+            db.flush()
+            retained_ids.append(item.id)
         saved.append(item)
 
-    if payload.inactive_ids:
-        db.query(LearningAnnotation).filter(
-            LearningAnnotation.id.in_(payload.inactive_ids),
-            LearningAnnotation.reference_id == reference_id,
-            LearningAnnotation.qari_id == current_user.id,
-        ).update({LearningAnnotation.is_active: False}, synchronize_session=False)
+    # The editor submits the complete current canvas. Treat it as the source of
+    # truth so legacy/hidden records cannot remain published for students.
+    stale_query = db.query(LearningAnnotation).filter(
+        LearningAnnotation.reference_id == reference_id,
+        LearningAnnotation.qari_id == current_user.id,
+        LearningAnnotation.is_active.is_(True),
+    )
+    if retained_ids:
+        stale_query = stale_query.filter(LearningAnnotation.id.notin_(retained_ids))
+    stale_query.update({LearningAnnotation.is_active: False}, synchronize_session=False)
     db.commit()
     return {"status": payload.status, "annotations": [serialize(item) for item in saved]}
 
