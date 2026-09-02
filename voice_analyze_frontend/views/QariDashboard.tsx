@@ -13,6 +13,8 @@ import {
   BookOpen,
   Check,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Copy,
   DollarSign,
   Download,
@@ -22,6 +24,7 @@ import {
   Link as LinkIcon,
   QrCode,
   RefreshCw,
+  Search,
   Sparkles,
   Square,
   Target,
@@ -65,6 +68,13 @@ const QariDashboard: React.FC = () => {
   const [showAllRecordings, setShowAllRecordings] = useState(false);
   const [showAllProgress, setShowAllProgress] = useState(false);
   const [updatingContentId, setUpdatingContentId] = useState<string | null>(null);
+  const [studentPage, setStudentPage] = useState(1);
+  const [studentPages, setStudentPages] = useState(1);
+  const [studentCount, setStudentCount] = useState(0);
+  const [studentSearch, setStudentSearch] = useState("");
+  const [studentSort, setStudentSort] = useState<"last_active" | "name" | "sessions" | "best_score">("last_active");
+  const [dashboardSummary, setDashboardSummary] = useState({ total_students: 0, total_sessions: 0, average_score: 0, best_score: 0 });
+  const [selectedStudentPreview, setSelectedStudentPreview] = useState<StudentInfo | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ isOpen: boolean; contentId: string; filename: string }>({
     isOpen: false,
     contentId: '',
@@ -78,25 +88,46 @@ const QariDashboard: React.FC = () => {
   const loadDashboard = async () => {
     try {
       setLoading(true);
-      const [studentsData, contentData, commissionData] = await Promise.all([
-        getQariStudents(),
+      const [studentsData, contentData] = await Promise.all([
+        getQariStudents({ page: 1, pageSize: 20 }),
         getQariContent(),
-        getQariCommissionStats().catch(() => null), // Optional, don't fail if not available
       ]);
-      const referralData = await getQariReferralInfo().catch(() => null);
       setStudents(studentsData.students);
+      setStudentCount(studentsData.count);
+      setStudentPages(studentsData.pages);
+      setDashboardSummary(studentsData.summary || {
+        total_students: studentsData.count || studentsData.students.length,
+        total_sessions: 0,
+        average_score: 0,
+        best_score: 0,
+      });
       setContent(contentData.content);
-      if (commissionData) {
-        setCommissionStats(commissionData);
-      }
-      if (referralData) {
-        setReferralInfo(referralData);
-      }
+      Promise.all([
+        getQariCommissionStats().catch(() => null),
+        getQariReferralInfo().catch(() => null),
+      ]).then(([commissionData, referralData]) => {
+        if (commissionData) setCommissionStats(commissionData);
+        if (referralData) setReferralInfo(referralData);
+      });
     } catch (err: any) {
       setError(err.message || "Failed to load dashboard");
     } finally {
       setLoading(false);
     }
+  };
+
+  const loadStudents = async (page = studentPage, search = studentSearch, filter = studentFilter, sort = studentSort) => {
+    const data = await getQariStudents({ page, pageSize: 20, search, status: filter as "all" | "active" | "inactive", sort });
+    setStudents(data.students);
+    setStudentCount(data.count);
+    setStudentPage(data.page);
+    setStudentPages(data.pages);
+    setDashboardSummary(data.summary || {
+      total_students: data.count || data.students.length,
+      total_sessions: 0,
+      average_score: 0,
+      best_score: 0,
+    });
   };
 
   const referralCode = referralInfo?.referralCode || commissionStats?.referral_code || "";
@@ -132,32 +163,37 @@ const QariDashboard: React.FC = () => {
     }
   };
 
-  const handleStudentClick = async (studentId: string) => {
+  const handleStudentClick = (student: StudentInfo) => {
+    const studentId = student.student_id;
     setSelectedStudentId(studentId);
-    setLoadingDetails(true);
-    setStudentDetails(null);
+    setSelectedStudentPreview(student);
+    setLoadingDetails(false);
+    setStudentDetails({
+      student: {
+        id: student.student_id,
+        email: student.student_email,
+        full_name: student.student_name,
+        joined_at: student.joined_at,
+        last_active: student.last_active,
+      },
+      statistics: student.statistics || {
+        total_sessions: 0, average_score: 0, best_score: 0, latest_score: 0,
+        improvement_trend: [], weakest_verses: [],
+      },
+      progress: [], recordings: [],
+      total_recordings: student.statistics?.total_sessions || 0,
+      total_progress_records: student.statistics?.total_sessions || 0,
+    });
     setStudentActivitySummary(null);
     setSelectedRecordings(null);
     setSelectedRecordingError(null);
     setShowAllRecordings(false);
     setShowAllProgress(false);
-    try {
-      const [details, activitySummary, selectedRecordingData] = await Promise.all([
-        getStudentDetails(studentId),
-        getQariStudentActivitySummary(studentId).catch(() => null),
-        getQariStudentSelectedRecordings(studentId).catch((err) => {
-          setSelectedRecordingError(err.message || "Failed to load selected recordings");
-          return null;
-        }),
-      ]);
-      setStudentDetails(details);
-      setStudentActivitySummary(activitySummary);
-      setSelectedRecordings(selectedRecordingData);
-    } catch (err: any) {
-      setError(err.message || "Failed to load student details");
-    } finally {
-      setLoadingDetails(false);
-    }
+    getStudentDetails(studentId).then(setStudentDetails).catch(() => undefined);
+    getQariStudentActivitySummary(studentId).then(setStudentActivitySummary).catch(() => undefined);
+    getQariStudentSelectedRecordings(studentId).then(setSelectedRecordings).catch((err) => {
+      setSelectedRecordingError(err.message || "Failed to load selected recordings");
+    });
   };
 
   const handleRebuildStudentSelectedRecordings = async () => {
@@ -177,6 +213,7 @@ const QariDashboard: React.FC = () => {
 
   const closeStudentDetails = () => {
     setSelectedStudentId(null);
+    setSelectedStudentPreview(null);
     setStudentDetails(null);
     setStudentActivitySummary(null);
     setSelectedRecordings(null);
@@ -325,22 +362,10 @@ const QariDashboard: React.FC = () => {
   });
 
   const qariName = referralInfo?.qariName || "Qari";
-  const activeStudentCount = commissionStats?.active_students ?? students.length;
-  const totalAssessments = students.reduce(
-    (sum, student) => sum + (student.statistics?.total_sessions || 0),
-    0
-  );
-  const scoredStudents = students.filter(
-    (student) => student.latest_score !== undefined || (student.statistics?.total_sessions || 0) > 0
-  );
-  const averageStudentScore =
-    scoredStudents.length > 0
-      ? scoredStudents.reduce((sum, student) => sum + getStudentScore(student), 0) / scoredStudents.length
-      : 0;
-  const bestStudentScore =
-    students.length > 0
-      ? Math.max(...students.map((student) => student.statistics?.best_score || student.latest_score || 0))
-      : 0;
+  const activeStudentCount = commissionStats?.active_students ?? dashboardSummary.total_students;
+  const totalAssessments = dashboardSummary.total_sessions;
+  const averageStudentScore = dashboardSummary.average_score;
+  const bestStudentScore = dashboardSummary.best_score;
 
   const coachingMessage =
     students.length === 0
@@ -389,7 +414,7 @@ const QariDashboard: React.FC = () => {
     }, {})
   ).sort((a, b) => b.frequency - a.frequency);
 
-  const visibleStudents = showAllStudents ? filteredStudents : filteredStudents.slice(0, 5);
+  const visibleStudents = filteredStudents;
   const visibleWeakVerses = showAllWeakVerses ? commonWeakVerses : commonWeakVerses.slice(0, 5);
   const visibleContent = showAllContent ? content : content.slice(0, 6);
 
@@ -439,7 +464,7 @@ const QariDashboard: React.FC = () => {
               </p>
               <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
                 <div className="rounded-2xl border border-white/10 bg-white/10 p-4">
-                  <div className="text-2xl font-bold">{students.length}</div>
+                  <div className="text-2xl font-bold">{dashboardSummary.total_students}</div>
                   <div className="text-xs text-slate-300">Total Students</div>
                 </div>
                 <div className="rounded-2xl border border-white/10 bg-white/10 p-4">
@@ -474,8 +499,8 @@ const QariDashboard: React.FC = () => {
                   <span className="font-bold">{content.length}</span>
                 </div>
                 <div className="flex items-center justify-between rounded-2xl bg-white/10 px-4 py-3">
-                  <span>Common weak verses</span>
-                  <span className="font-bold">{commonWeakVerses.length}</span>
+                  <span>Active students</span>
+                  <span className="font-bold">{activeStudentCount}</span>
                 </div>
               </div>
             </div>
@@ -488,7 +513,7 @@ const QariDashboard: React.FC = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-slate-600 mb-1">Total Students</p>
-                <p className="text-3xl font-bold text-slate-800">{students.length}</p>
+                <p className="text-3xl font-bold text-slate-800">{dashboardSummary.total_students}</p>
               </div>
               <div className="w-12 h-12 bg-emerald-100 rounded-xl flex items-center justify-center">
                 <Users className="w-6 h-6 text-emerald-600" />
@@ -622,7 +647,7 @@ const QariDashboard: React.FC = () => {
           </div>
         )}
 
-        <div className="grid grid-cols-1 xl:grid-cols-[1fr_1fr] gap-6 mb-8">
+        {false && <div className="grid grid-cols-1 xl:grid-cols-[1fr_1fr] gap-6 mb-8">
           <div className="bg-white rounded-xl shadow-md border border-slate-200 p-6">
             <h2 className="text-xl font-semibold text-slate-800 flex items-center gap-2 mb-1">
               <Trophy className="w-5 h-5 text-amber-500" />
@@ -705,19 +730,30 @@ const QariDashboard: React.FC = () => {
               </div>
             )}
           </div>
-        </div>
+        </div>}
 
         <TrainingChallengePanel students={students} content={content} />
 
         {/* Students List */}
         <div className="bg-white rounded-xl shadow-md border border-slate-200 p-6 mb-8">
-          <div className="flex items-center justify-between mb-6">
+          <div className="flex flex-col gap-4 mb-6 lg:flex-row lg:items-center lg:justify-between">
             <h2 className="text-xl font-semibold text-slate-800 flex items-center gap-2">
               <Users className="w-5 h-5 text-emerald-600" />
               My Students
             </h2>
-            {/* Filter Dropdown */}
-            <div className="relative">
+            <div className="flex flex-wrap items-center gap-2">
+              <form onSubmit={(event) => { event.preventDefault(); loadStudents(1); }} className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <input value={studentSearch} onChange={(event) => setStudentSearch(event.target.value)} placeholder="Search name or email" className="w-64 rounded-xl border border-slate-200 py-2.5 pl-9 pr-3 text-sm focus:border-emerald-400 focus:outline-none" />
+              </form>
+              <select value={studentSort} onChange={(event) => { const value = event.target.value as typeof studentSort; setStudentSort(value); loadStudents(1, studentSearch, studentFilter, value); }} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-700">
+                <option value="last_active">Latest activity</option>
+                <option value="name">Name</option>
+                <option value="sessions">Most sessions</option>
+                <option value="best_score">Best score</option>
+              </select>
+              {/* Filter Dropdown */}
+              <div className="relative">
               <button
                 onClick={() => setShowFilterDropdown(!showFilterDropdown)}
                 className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-medium text-sm transition-all duration-200 shadow-sm border ${
@@ -743,7 +779,7 @@ const QariDashboard: React.FC = () => {
                     </div>
                     <button
                       onClick={() => {
-                        setStudentFilter("all");
+                        setStudentFilter("all"); setStudentPage(1); loadStudents(1, studentSearch, "all", studentSort);
                         setShowFilterDropdown(false);
                       }}
                       className={`w-full flex items-center gap-2 pl-5 pr-4 py-2.5 text-left text-sm transition-colors rounded-lg ${
@@ -757,7 +793,7 @@ const QariDashboard: React.FC = () => {
                     </button>
                     <button
                       onClick={() => {
-                        setStudentFilter("active");
+                        setStudentFilter("active"); setStudentPage(1); loadStudents(1, studentSearch, "active", studentSort);
                         setShowFilterDropdown(false);
                       }}
                       className={`w-full flex items-center gap-2 pl-5 pr-4 py-2.5 text-left text-sm transition-colors rounded-lg ${
@@ -771,7 +807,7 @@ const QariDashboard: React.FC = () => {
                     </button>
                     <button
                       onClick={() => {
-                        setStudentFilter("inactive");
+                        setStudentFilter("inactive"); setStudentPage(1); loadStudents(1, studentSearch, "inactive", studentSort);
                         setShowFilterDropdown(false);
                       }}
                       className={`w-full flex items-center gap-2 pl-5 pr-4 py-2.5 text-left text-sm transition-colors rounded-lg ${
@@ -786,6 +822,7 @@ const QariDashboard: React.FC = () => {
                   </div>
                 </>
               )}
+              </div>
             </div>
           </div>
           {(() => {
@@ -828,98 +865,28 @@ const QariDashboard: React.FC = () => {
                 {visibleStudents.map((student) => (
                   <div
                     key={student.student_id}
-                    onClick={() => handleStudentClick(student.student_id)}
-                    className="border border-slate-200 rounded-xl p-5 hover:shadow-lg hover:border-emerald-300 transition-all duration-300 cursor-pointer bg-gradient-to-r from-white to-slate-50/50"
+                    onClick={() => handleStudentClick(student)}
+                    className="grid cursor-pointer gap-4 rounded-xl border border-slate-200 bg-white p-4 transition hover:border-emerald-300 hover:shadow-md md:grid-cols-[minmax(0,1fr)_repeat(4,minmax(90px,auto))] md:items-center"
                   >
-                <div className="flex items-center justify-between">
-                  <div className="flex-1">
+                  <div className="min-w-0">
                     <h3 className="font-semibold text-gray-800">
                       {student.student_name || student.student_email}
                     </h3>
-                    <p className="text-sm text-gray-600">{student.student_email}</p>
-                    <div className="flex items-center gap-4 mt-2 text-sm text-gray-600">
-                      <span>Joined: {new Date(student.joined_at).toLocaleDateString()}</span>
-                      <span>Last Active: {new Date(student.last_active).toLocaleDateString()}</span>
-                    </div>
+                    <p className="truncate text-sm text-gray-600">{student.student_email}</p>
                   </div>
-                  <div className="text-right">
-                    {student.latest_score !== undefined && (
-                      <div className="flex items-center gap-2">
-                        <span className="text-2xl font-bold text-gray-800">
-                          {Math.round(student.latest_score)}%
-                        </span>
-                        {student.improvement !== undefined && student.improvement > 0 && (
-                          <TrendingUp className="w-5 h-5 text-green-500" />
-                        )}
-                        {student.improvement !== undefined && student.improvement < 0 && (
-                          <TrendingDown className="w-5 h-5 text-red-500" />
-                        )}
-                      </div>
-                    )}
-                    {student.statistics && (
-                      <div className="text-sm text-gray-600 mt-1 space-y-1">
-                        <div>{student.statistics.total_sessions} sessions</div>
-                        <div>Avg: {formatScore(student.statistics.average_score)}</div>
-                        <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-bold ${getTrendClasses(student)}`}>
-                          {getTrendLabel(student) === "Up" && <TrendingUp className="w-3 h-3" />}
-                          {getTrendLabel(student) === "Down" && <TrendingDown className="w-3 h-3" />}
-                          {getTrendLabel(student)}
-                        </span>
-                      </div>
-                    )}
+                  <div><p className="text-xs text-slate-500">Last active</p><p className="text-sm font-semibold text-slate-800">{student.last_active ? new Date(student.last_active).toLocaleDateString() : "—"}</p></div>
+                  <div><p className="text-xs text-slate-500">Sessions</p><p className="text-lg font-bold text-slate-900">{student.statistics?.total_sessions || 0}</p></div>
+                  <div><p className="text-xs text-slate-500">Average</p><p className="text-lg font-bold text-slate-900">{formatScore(student.statistics?.average_score)}</p></div>
+                  <div><p className="text-xs text-slate-500">Best</p><p className="text-lg font-bold text-emerald-700">{formatScore(student.statistics?.best_score)}</p></div>
+                  <div className={`justify-self-start rounded-full px-2.5 py-1 text-xs font-bold md:justify-self-end ${student.last_active && new Date(student.last_active) >= new Date(Date.now() - 30 * 86400000) ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>
+                    {student.last_active && new Date(student.last_active) >= new Date(Date.now() - 30 * 86400000) ? "Active" : "Inactive"}
                   </div>
-                </div>
-                {student.statistics && (
-                  <>
-                    {student.statistics.improvement_trend && student.statistics.improvement_trend.length > 0 && (
-                      <div className="mt-3 pt-3 border-t border-gray-200">
-                        <p className="text-xs font-medium text-gray-700 mb-2">Improvement Trend (Last 10 Sessions):</p>
-                        <div className="flex items-end gap-1 h-12">
-                          {student.statistics.improvement_trend.slice(-10).map((improvement, idx) => (
-                            <div
-                              key={idx}
-                              className="flex-1 bg-green-100 rounded-t flex items-end justify-center"
-                              style={{
-                                height: `${Math.max(10, Math.abs(improvement) * 2)}%`,
-                                backgroundColor: improvement > 0 ? '#dcfce7' : improvement < 0 ? '#fee2e2' : '#f3f4f6'
-                              }}
-                              title={`${improvement > 0 ? '+' : ''}${improvement.toFixed(1)}%`}
-                            >
-                              <div className="w-full h-full rounded-t" />
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    {student.statistics.weakest_verses.length > 0 && (
-                      <div className="mt-3 pt-3 border-t border-gray-200">
-                        <p className="text-xs font-medium text-gray-700 mb-1">Weakest Verses:</p>
-                        <div className="flex flex-wrap gap-2">
-                          {student.statistics.weakest_verses.slice(0, 3).map((verse, idx) => (
-                            <span
-                              key={idx}
-                              className="text-xs bg-amber-100 text-amber-800 px-2 py-1 rounded"
-                              title={verse.text}
-                            >
-                              {verse.text.length > 30 ? `${verse.text.substring(0, 30)}...` : verse.text}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </>
-                )}
                   </div>
                 ))}
-                {filteredStudents.length > 5 && (
-                  <button
-                    type="button"
-                    onClick={() => setShowAllStudents(!showAllStudents)}
-                    className="w-full rounded-xl border border-slate-200 py-3 text-sm font-bold text-slate-700 transition hover:bg-slate-50"
-                  >
-                    {showAllStudents ? "Show Less" : `Show More (${filteredStudents.length - 5} more)`}
-                  </button>
-                )}
+                <div className="flex items-center justify-between border-t border-slate-100 pt-4">
+                  <p className="text-sm text-slate-500">{studentCount} students · Page {studentPage} of {studentPages}</p>
+                  <div className="flex gap-2"><button type="button" disabled={studentPage <= 1} onClick={() => loadStudents(studentPage - 1)} className="rounded-lg border border-slate-200 p-2 disabled:opacity-40" aria-label="Previous page"><ChevronLeft size={18}/></button><button type="button" disabled={studentPage >= studentPages} onClick={() => loadStudents(studentPage + 1)} className="rounded-lg border border-slate-200 p-2 disabled:opacity-40" aria-label="Next page"><ChevronRight size={18}/></button></div>
+                </div>
               </div>
             );
           })()}
@@ -1051,6 +1018,8 @@ const QariDashboard: React.FC = () => {
               <h2 className="text-2xl font-bold text-gray-800">
                 {studentDetails ? (
                   `${studentDetails.student.full_name || studentDetails.student.email}'s Coaching Profile`
+                ) : selectedStudentPreview ? (
+                  `${selectedStudentPreview.student_name || selectedStudentPreview.student_email}'s Coaching Profile`
                 ) : (
                   "Student Coaching Profile"
                 )}
@@ -1066,8 +1035,19 @@ const QariDashboard: React.FC = () => {
             {/* Modal Content */}
             <div className="flex-1 overflow-y-auto p-6">
               {loadingDetails ? (
-                <div className="flex items-center justify-center py-16">
-                  <div className="w-8 h-8 border-4 border-green-500 border-t-transparent rounded-full animate-spin" />
+                <div className="space-y-5">
+                  {selectedStudentPreview && <div className="rounded-xl border border-emerald-100 bg-emerald-50/60 p-5">
+                    <p className="font-semibold text-slate-900">{selectedStudentPreview.student_email}</p>
+                    <div className="mt-4 grid grid-cols-3 gap-3">
+                      <div><p className="text-xs text-slate-500">Sessions</p><p className="text-2xl font-bold">{selectedStudentPreview.statistics?.total_sessions || 0}</p></div>
+                      <div><p className="text-xs text-slate-500">Average</p><p className="text-2xl font-bold">{formatScore(selectedStudentPreview.statistics?.average_score)}</p></div>
+                      <div><p className="text-xs text-slate-500">Best</p><p className="text-2xl font-bold text-emerald-700">{formatScore(selectedStudentPreview.statistics?.best_score)}</p></div>
+                    </div>
+                  </div>}
+                  <div className="flex items-center justify-center gap-3 py-8 text-sm font-medium text-slate-600">
+                    <div className="h-6 w-6 animate-spin rounded-full border-4 border-green-500 border-t-transparent" />
+                    Loading recent coaching details…
+                  </div>
                 </div>
               ) : studentDetails ? (
                 <div className="space-y-6">

@@ -6,6 +6,24 @@ import { getAuthHeader } from "./authService";
 const API_URL =
   import.meta.env.VITE_API_URL || "http://localhost:8000";
 
+const requestCache = new Map<string, { expiresAt: number; promise: Promise<any> }>();
+const cachedJson = <T,>(key: string, loader: () => Promise<T>, ttlMs = 30_000): Promise<T> => {
+  const authKey = JSON.stringify(getAuthHeader());
+  const cacheKey = `${authKey}:${key}`;
+  const cached = requestCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return cached.promise as Promise<T>;
+  const promise = loader().catch((error) => { requestCache.delete(cacheKey); throw error; });
+  requestCache.set(cacheKey, { expiresAt: Date.now() + ttlMs, promise });
+  return promise;
+};
+const clearCachedJson = (keyPrefix: string) => {
+  const authKey = JSON.stringify(getAuthHeader());
+  const prefix = `${authKey}:${keyPrefix}`;
+  for (const key of requestCache.keys()) {
+    if (key.startsWith(prefix)) requestCache.delete(key);
+  }
+};
+
 export interface QariContent {
   id: string;
   reference_id: string;
@@ -181,7 +199,9 @@ export const addQariContent = async (content: {
     throw new Error(error.detail || "Failed to add content");
   }
 
-  return response.json();
+  const result = await response.json();
+  clearCachedJson("qari-content");
+  return result;
 };
 
 /**
@@ -191,17 +211,11 @@ export const getQariContent = async (): Promise<{
   content: QariContent[];
   count: number;
 }> => {
-  const response = await fetch(`${API_URL}/api/platform/qari/content`, {
-    headers: {
-      ...getAuthHeader(),
-    },
+  return cachedJson("qari-content", async () => {
+    const response = await fetch(`${API_URL}/api/platform/qari/content`, { headers: { ...getAuthHeader() } });
+    if (!response.ok) throw new Error("Failed to get Qari content");
+    return response.json();
   });
-
-  if (!response.ok) {
-    throw new Error("Failed to get Qari content");
-  }
-
-  return response.json();
 };
 
 /**
@@ -262,7 +276,9 @@ export const updateQariContent = async (
     throw new Error(error.detail || "Failed to update content");
   }
 
-  return response.json();
+  const result = await response.json();
+  clearCachedJson("qari-content");
+  return result;
 };
 
 /**
@@ -316,7 +332,9 @@ export const deleteQariContent = async (
     throw new Error(error.detail || "Failed to delete Qari content");
   }
 
-  return response.json();
+  const result = await response.json();
+  clearCachedJson("qari-content");
+  return result;
 };
 
 /**
@@ -344,21 +362,37 @@ export const deleteAdminQariContent = async (
 /**
  * Qari: Get my students (Dashboard)
  */
-export const getQariStudents = async (): Promise<{
+export const getQariStudents = async (options: {
+  page?: number;
+  pageSize?: number;
+  search?: string;
+  status?: "all" | "active" | "inactive";
+  sort?: "last_active" | "name" | "sessions" | "best_score";
+} = {}): Promise<{
   students: StudentInfo[];
   count: number;
+  page: number;
+  page_size: number;
+  pages: number;
+  summary: {
+    total_students: number;
+    total_sessions: number;
+    average_score: number;
+    best_score: number;
+  };
 }> => {
-  const response = await fetch(`${API_URL}/api/platform/qari/students`, {
-    headers: {
-      ...getAuthHeader(),
-    },
+  const params = new URLSearchParams({
+    page: String(options.page || 1),
+    page_size: String(options.pageSize || 20),
+    search: options.search || "",
+    status: options.status || "all",
+    sort: options.sort || "last_active",
   });
-
-  if (!response.ok) {
-    throw new Error("Failed to get Qari students");
-  }
-
-  return response.json();
+  return cachedJson(`qari-students:${params}`, async () => {
+    const response = await fetch(`${API_URL}/api/platform/qari/students?${params}`, { headers: { ...getAuthHeader() } });
+    if (!response.ok) throw new Error("Failed to get Qari students");
+    return response.json();
+  });
 };
 
 /**

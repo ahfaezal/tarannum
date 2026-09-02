@@ -1,11 +1,11 @@
 """
 Platform endpoints for Qari, Student, and Admin functionality.
 """
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Request
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Request, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_, or_, case, desc
 from pydantic import BaseModel
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional, List
 from uuid import UUID
 from database import (
@@ -511,48 +511,82 @@ def list_student_training_challenges(
 
 
 @router.get("/qari/students")
-async def get_qari_students(
+def get_qari_students(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    search: str = Query("", max_length=120),
+    status: str = Query("all", pattern="^(all|active|inactive)$"),
+    sort: str = Query("last_active", pattern="^(last_active|name|sessions|best_score)$"),
     current_user: User = Depends(get_current_qari_user),
     db: Session = Depends(get_db)
 ):
     """Get all students for a Qari (Qari Dashboard)."""
     try:
-        relationship_rows = db.query(StudentQariRelationship, User).join(
+        base_query = db.query(StudentQariRelationship, User).join(
             User, User.id == StudentQariRelationship.student_id,
         ).filter(
             StudentQariRelationship.qari_id == current_user.id,
             StudentQariRelationship.is_active == True,
-        ).all()
-        student_ids = [relationship.student_id for relationship, _ in relationship_rows]
-        progress_rows = []
-        if student_ids:
-            progress_rows = db.query(StudentProgress).filter(
-                StudentProgress.student_id.in_(student_ids),
-            ).order_by(StudentProgress.student_id, desc(StudentProgress.created_at)).all()
+        )
+        cleaned_search = search.strip()
+        if cleaned_search:
+            pattern = f"%{cleaned_search}%"
+            base_query = base_query.filter(or_(User.full_name.ilike(pattern), User.email.ilike(pattern)))
+        activity_cutoff = datetime.utcnow() - timedelta(days=30)
+        if status == "active":
+            base_query = base_query.filter(StudentQariRelationship.last_active >= activity_cutoff)
+        elif status == "inactive":
+            base_query = base_query.filter(StudentQariRelationship.last_active < activity_cutoff)
 
-        progress_by_student = {}
-        for progress in progress_rows:
-            progress_by_student.setdefault(progress.student_id, []).append(progress)
+        total = base_query.count()
+        all_student_ids = [row[0] for row in db.query(StudentQariRelationship.student_id).filter(
+            StudentQariRelationship.qari_id == current_user.id,
+            StudentQariRelationship.is_active == True,
+        ).all()]
+        overall = (0, 0, 0)
+        if all_student_ids:
+            overall = db.query(
+                func.count(StudentProgress.id),
+                func.avg(StudentProgress.overall_score),
+                func.max(StudentProgress.overall_score),
+            ).filter(StudentProgress.student_id.in_(all_student_ids)).one()
+        if sort == "name":
+            base_query = base_query.order_by(User.full_name.asc().nullslast(), User.email.asc())
+        else:
+            base_query = base_query.order_by(StudentQariRelationship.last_active.desc().nullslast())
+        relationship_rows = base_query.offset((page - 1) * page_size).limit(page_size).all()
+        student_ids = [relationship.student_id for relationship, _ in relationship_rows]
+        stats_by_student = {}
+        latest_by_student = {}
+        if student_ids:
+            stats_rows = db.query(
+                StudentProgress.student_id,
+                func.count(StudentProgress.id),
+                func.avg(StudentProgress.overall_score),
+                func.max(StudentProgress.overall_score),
+            ).filter(
+                StudentProgress.student_id.in_(student_ids),
+            ).group_by(StudentProgress.student_id).all()
+            stats_by_student = {
+                row[0]: {"total_sessions": row[1], "average_score": float(row[2] or 0), "best_score": float(row[3] or 0)}
+                for row in stats_rows
+            }
+            latest_rows = db.query(StudentProgress).filter(
+                StudentProgress.student_id.in_(student_ids)
+            ).order_by(StudentProgress.student_id, desc(StudentProgress.created_at)).distinct(StudentProgress.student_id).all()
+            latest_by_student = {row.student_id: row for row in latest_rows}
 
         students = []
         for relationship, student in relationship_rows:
-            records = progress_by_student.get(relationship.student_id, [])
-            scores = [record.overall_score for record in records]
-            improvements = [record.improvement for record in records if record.improvement is not None]
-            verse_counts = {}
-            for record in records:
-                for verse in record.weakest_verses or []:
-                    verse_text = verse.get("text", "")
-                    if verse_text:
-                        verse_counts[verse_text] = verse_counts.get(verse_text, 0) + 1
-            top_weakest = sorted(verse_counts.items(), key=lambda item: item[1], reverse=True)[:5]
+            aggregate = stats_by_student.get(relationship.student_id, {})
+            latest = latest_by_student.get(relationship.student_id)
             statistics = {
-                "total_sessions": len(records),
-                "average_score": sum(scores) / len(scores) if scores else 0,
-                "best_score": max(scores) if scores else 0,
-                "latest_score": scores[0] if scores else 0,
-                "improvement_trend": improvements[-10:] if improvements else [],
-                "weakest_verses": [{"text": text, "frequency": count} for text, count in top_weakest],
+                "total_sessions": aggregate.get("total_sessions", 0),
+                "average_score": aggregate.get("average_score", 0),
+                "best_score": aggregate.get("best_score", 0),
+                "latest_score": float(latest.overall_score) if latest else 0,
+                "improvement_trend": [],
+                "weakest_verses": [],
             }
             students.append({
                 "student_id": str(relationship.student_id),
@@ -560,19 +594,30 @@ async def get_qari_students(
                 "student_name": student.full_name,
                 "joined_at": relationship.joined_at.isoformat() if relationship.joined_at else None,
                 "last_active": relationship.last_active.isoformat() if relationship.last_active else None,
-                "latest_score": statistics["latest_score"] if records else None,
-                "improvement": records[0].improvement if records else None,
+                "latest_score": statistics["latest_score"] if latest else None,
+                "improvement": latest.improvement if latest else None,
                 "statistics": statistics,
             })
 
-        return {"students": students, "count": len(students)}
+        if sort == "sessions":
+            students.sort(key=lambda item: item["statistics"]["total_sessions"], reverse=True)
+        elif sort == "best_score":
+            students.sort(key=lambda item: item["statistics"]["best_score"], reverse=True)
+        return {
+            "students": students, "count": total, "page": page, "page_size": page_size,
+            "pages": max(1, (total + page_size - 1) // page_size),
+            "summary": {
+                "total_students": len(all_student_ids), "total_sessions": int(overall[0] or 0),
+                "average_score": float(overall[1] or 0), "best_score": float(overall[2] or 0),
+            },
+        }
     except Exception as e:
         logger.error(f"Error getting Qari students: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/qari/students/{student_id}")
-async def get_student_details(
+def get_student_details(
     student_id: str,
     current_user: User = Depends(get_current_qari_user),
     db: Session = Depends(get_db)
@@ -600,46 +645,44 @@ async def get_student_details(
         if not student_user:
             raise HTTPException(status_code=404, detail="Student not found")
         
-        # Get all progress records
-        all_progress = progress_service.get_student_progress(student_id, limit=100, db=db)
+        # Keep the initial coaching profile deliberately small. Detailed
+        # analysis is fetched only when a Qari opens an individual recording.
+        progress_rows = db.query(StudentProgress).filter(
+            StudentProgress.student_id == student_uuid
+        ).order_by(desc(StudentProgress.created_at)).limit(10).all()
+        reference_ids = {row.reference_id for row in progress_rows if row.reference_id}
+        references = db.query(Reference).filter(Reference.id.in_(reference_ids)).all() if reference_ids else []
+        references_by_id = {row.id: row for row in references}
+        all_progress = [{
+            "id": str(row.id), "session_id": str(row.session_id), "overall_score": row.overall_score,
+            "previous_score": row.previous_score, "improvement": row.improvement,
+            "reference_id": row.reference_id,
+            "reference_title": references_by_id.get(row.reference_id).title if references_by_id.get(row.reference_id) else None,
+            "reference_filename": references_by_id.get(row.reference_id).filename if references_by_id.get(row.reference_id) else None,
+            "created_at": row.created_at.isoformat() if row.created_at else None,
+        } for row in progress_rows]
         
         # Get all sessions with recordings
         sessions = db.query(UserSession).filter(
             UserSession.user_id == student_uuid
-        ).order_by(desc(UserSession.created_at)).all()
+        ).order_by(desc(UserSession.created_at)).limit(10).all()
         
+        session_ids = [row.id for row in sessions]
+        session_reference_ids = {row.reference_id for row in sessions if row.reference_id}
+        session_refs = db.query(Reference).filter(Reference.id.in_(session_reference_ids)).all() if session_reference_ids else []
+        session_refs_by_id = {row.id: row for row in session_refs}
+        analyses = db.query(AnalysisResult).filter(AnalysisResult.user_session_id.in_(session_ids)).all() if session_ids else []
+        analyses_by_session = {row.user_session_id: row for row in analyses}
+        session_progress = db.query(StudentProgress).filter(StudentProgress.session_id.in_(session_ids)).all() if session_ids else []
+        progress_by_session = {row.session_id: row for row in session_progress}
+
         detailed_sessions = []
         for session in sessions:
-            # Get analysis result
-            analysis = db.query(AnalysisResult).filter(
-                AnalysisResult.user_session_id == session.id
-            ).first()
-            
-            # Get reference info
-            reference = None
-            if session.reference_id:
-                ref = db.query(Reference).filter(Reference.id == session.reference_id).first()
-                if ref:
-                    reference = {
-                        "id": ref.id,
-                        "title": ref.title,
-                        "maqam": ref.maqam,
-                        "filename": ref.filename
-                    }
-            
-            # Get progress record for this session
-            progress_record = None
-            if session.id:
-                progress = db.query(StudentProgress).filter(
-                    StudentProgress.session_id == session.id
-                ).first()
-                if progress:
-                    progress_record = {
-                        "overall_score": progress.overall_score,
-                        "improvement": progress.improvement,
-                        "verse_scores": progress.verse_scores,
-                        "weakest_verses": progress.weakest_verses
-                    }
+            analysis = analyses_by_session.get(session.id)
+            ref = session_refs_by_id.get(session.reference_id)
+            progress = progress_by_session.get(session.id)
+            reference = {"id": ref.id, "title": ref.title, "maqam": ref.maqam, "filename": ref.filename} if ref else None
+            progress_record = {"overall_score": progress.overall_score, "improvement": progress.improvement} if progress else None
             
             detailed_sessions.append({
                 "session_id": str(session.id),
@@ -649,21 +692,20 @@ async def get_student_details(
                 "file_size": session.file_size,
                 "created_at": session.created_at.isoformat() if session.created_at else None,
                 "score": analysis.score if analysis else None,
-                "analysis": {
-                    "score": analysis.score if analysis else None,
-                    "segments": analysis.segments if analysis else None,
-                    "pitch_data": analysis.pitch_data if analysis else None,
-                    "regions": analysis.regions if analysis else None,
-                    "ayat_timing": analysis.ayat_timing if analysis else None,
-                    "feedback": analysis.feedback if analysis else None,
-                    "score_breakdown": analysis.score_breakdown if analysis else None,
-                    "pronunciation_alerts": analysis.pronunciation_alerts if analysis else None
-                } if analysis else None,
+                "analysis": {"score": analysis.score} if analysis else None,
                 "progress": progress_record
             })
         
-        # Get comprehensive statistics
-        stats = progress_service.get_student_statistics(student_id, db=db)
+        aggregate = db.query(
+            func.count(StudentProgress.id), func.avg(StudentProgress.overall_score), func.max(StudentProgress.overall_score)
+        ).filter(StudentProgress.student_id == student_uuid).one()
+        latest = progress_rows[0] if progress_rows else None
+        stats = {
+            "total_sessions": aggregate[0] or 0, "average_score": float(aggregate[1] or 0),
+            "best_score": float(aggregate[2] or 0), "latest_score": float(latest.overall_score) if latest else 0,
+            "improvement_trend": [row.improvement for row in reversed(progress_rows) if row.improvement is not None],
+            "weakest_verses": [],
+        }
         
         return {
             "student": {
@@ -676,8 +718,8 @@ async def get_student_details(
             "statistics": stats,
             "progress": all_progress,
             "recordings": detailed_sessions,
-            "total_recordings": len(detailed_sessions),
-            "total_progress_records": len(all_progress)
+            "total_recordings": db.query(func.count(UserSession.id)).filter(UserSession.user_id == student_uuid).scalar() or 0,
+            "total_progress_records": stats["total_sessions"]
         }
     except HTTPException:
         raise
@@ -687,7 +729,7 @@ async def get_student_details(
 
 
 @router.get("/qari/students/{student_id}/selected-recordings")
-async def get_qari_student_selected_recordings(
+def get_qari_student_selected_recordings(
     student_id: str,
     reference_id: Optional[str] = None,
     current_user: User = Depends(get_current_qari_user),
@@ -759,7 +801,7 @@ async def rebuild_qari_student_selected_recordings(
 
 
 @router.get("/qari/students/{student_id}/activity-summary")
-async def get_qari_student_activity_summary(
+def get_qari_student_activity_summary(
     student_id: str,
     current_user: User = Depends(get_current_qari_user),
     db: Session = Depends(get_db)
