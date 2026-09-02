@@ -1,8 +1,9 @@
-import React from "react";
+import React, { useState } from "react";
 import LivePitchGraph from "./LivePitchGraph";
 import Waveform from "./Waveform";
 import { PitchPoint } from "../services/pitchExtractor";
 import { AyahTiming, PitchData, PitchMarker } from "../types";
+import StudentLearningAnnotations, { GraphViewport } from "./StudentLearningAnnotations";
 
 interface CombinedWaveformPitchProps {
   // Pitch graph props (for LivePitchGraph)
@@ -27,6 +28,7 @@ interface CombinedWaveformPitchProps {
   isFullScreen?: boolean;
   zoomLevel?: number; // External zoom level control (optional)
   onZoomChange?: (zoom: number) => void; // Callback when zoom changes externally
+  learningAnnotationReferenceId?: string | null;
 }
 
 /**
@@ -54,7 +56,9 @@ const CombinedWaveformPitch: React.FC<CombinedWaveformPitchProps> = ({
   isFullScreen = false,
   zoomLevel,
   onZoomChange,
+  learningAnnotationReferenceId,
 }) => {
+  const [graphViewport, setGraphViewport] = useState<GraphViewport | null>(null);
   const pitchHeight = Math.max(280, Math.min(400, Math.floor(height * 0.55)));
   const waveformHeight = Math.max(100, height - pitchHeight);
 
@@ -113,6 +117,11 @@ const CombinedWaveformPitch: React.FC<CombinedWaveformPitchProps> = ({
           maxFreq={graphMaxFreq}
           zoomLevel={zoomLevel}
           onZoomChange={onZoomChange}
+          onViewportChange={learningAnnotationReferenceId ? setGraphViewport : undefined}
+        />
+        <StudentLearningAnnotations
+          referenceId={learningAnnotationReferenceId}
+          viewport={graphViewport}
         />
       </div>
 

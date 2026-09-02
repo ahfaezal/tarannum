@@ -27,6 +27,16 @@ interface LivePitchGraphProps {
   maxFreq?: number; // Maximum frequency for fixed Y-axis (default: 600 Hz)
   zoomLevel?: number; // External zoom level control (optional)
   onZoomChange?: (zoom: number) => void; // Callback when zoom changes externally
+  onViewportChange?: (viewport: {
+    startTime: number;
+    endTime: number;
+    plotLeft: number;
+    plotRight: number;
+    plotTop: number;
+    plotBottom: number;
+    width: number;
+    height: number;
+  }) => void;
 }
 
 const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
@@ -46,6 +56,7 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
   maxFreq = 600, // Locked to 600 Hz maximum for better visibility on tablets/iPads
   zoomLevel, // External zoom control (optional)
   onZoomChange, // External zoom change callback (optional)
+  onViewportChange,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -72,6 +83,7 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
   const lastTapTimeRef = useRef(0);
   const lastTapPositionRef = useRef<{ x: number; y: number } | null>(null);
   const zoomCenterRef = useRef(0.5); // Zoom center point (0-1)
+  const lastViewportRef = useRef("");
 
   // Auto-follow state
   const [autoFollow, setAutoFollow] = useState(true); // Auto-follow enabled by default
@@ -948,6 +960,24 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
 
       // Store for scrollbar (using canvas as storage)
       (canvas as any).__minVisibleTime = minVisibleTime;
+      if (onViewportChange) {
+        const nextViewport = {
+          startTime: minVisibleTime,
+          endTime: maxVisibleTime,
+          plotLeft: padding,
+          plotRight: displayWidth - padding,
+          plotTop: padding,
+          plotBottom: displayHeight - padding,
+          width: displayWidth,
+          height: displayHeight,
+        };
+        const viewportKey = [minVisibleTime, maxVisibleTime, padding, displayWidth, displayHeight]
+          .map((value) => Number(value).toFixed(3)).join(":");
+        if (lastViewportRef.current !== viewportKey) {
+          lastViewportRef.current = viewportKey;
+          onViewportChange(nextViewport);
+        }
+      }
       (canvas as any).__maxVisibleTime = maxVisibleTime;
 
       // Get frequency range
@@ -1490,6 +1520,7 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
     isFullScreen, // Add isFullScreen to trigger redraw when entering fullscreen
     markers, // Include markers to trigger redraw when they change
     ayahMarkers,
+    onViewportChange,
     // Don't include .length - it changes too frequently and causes blinking
     // The array reference changes are enough to trigger updates
   ]);

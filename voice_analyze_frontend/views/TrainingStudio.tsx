@@ -5072,6 +5072,7 @@ const TrainingStudio: React.FC = () => {
         studentBlob={studentBlob}
         zoomLevel={fullScreenZoomLevel}
         onZoomChange={setFullScreenZoomLevel}
+        learningAnnotationReferenceId={selectedRef?.id}
       />
 
       {/* Recording Full-Screen Mode (from bottom/comparison graph) */}
@@ -5146,6 +5147,7 @@ const TrainingStudio: React.FC = () => {
         studentBlob={studentBlob}
         zoomLevel={fullScreenZoomLevel}
         onZoomChange={setFullScreenZoomLevel}
+        learningAnnotationReferenceId={selectedRef?.id}
       />
 
       {/* Countdown Overlay - Shows before practice mode starts */}

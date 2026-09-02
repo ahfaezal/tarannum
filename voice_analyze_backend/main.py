@@ -56,6 +56,7 @@ from selected_recording_service import selected_recording_service
 from auth import get_current_user_optional, require_registered_user, get_current_admin_user, get_password_hash
 from auth_endpoints import router as auth_router, debug_router as auth_debug_router, log_email_config_startup
 from platform_endpoints import router as platform_router
+from learning_annotation_endpoints import router as learning_annotation_router
 import librosa
 import logging
 from observability import initialize_observability
@@ -389,6 +390,9 @@ app = FastAPI(
     version="3.0.0",
     lifespan=lifespan
 )
+
+# Qari dashboard learning-annotation API
+app.include_router(learning_annotation_router)
 
 # Include routers for authentication and platform features
 try:

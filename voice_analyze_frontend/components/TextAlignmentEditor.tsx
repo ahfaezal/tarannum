@@ -5,6 +5,7 @@ import Waveform from './Waveform';
 import LivePitchGraph from './LivePitchGraph';
 import { PitchData } from '../types';
 import AlertModal from './AlertModal';
+import QariAnnotationEditor from './QariAnnotationEditor';
 
 interface TextAlignmentEditorProps {
   audioUrl: string;
@@ -16,6 +17,7 @@ interface TextAlignmentEditorProps {
   surahName?: string;
   onTrimAudio?: (trimStart: number, trimEnd: number) => Promise<void>;
   isTrimmingAudio?: boolean;
+  referenceId?: string;
 }
 
 const QURAN_TEXT_TEMPLATES: Record<number, { segments: string[] }> = {
@@ -60,6 +62,7 @@ const TextAlignmentEditor: React.FC<TextAlignmentEditorProps> = ({
   surahName,
   onTrimAudio,
   isTrimmingAudio = false,
+  referenceId,
 }) => {
   // Initialize segments and sort by start time (ascending - smallest first)
   const [segments, setSegments] = useState<TextSegment[]>(() => {
@@ -719,7 +722,7 @@ const TextAlignmentEditor: React.FC<TextAlignmentEditorProps> = ({
         </div>
 
         {/* Pitch Contour */}
-        {editorMode === 'text' && referencePitch.length > 0 && (
+        {editorMode === 'text' && referencePitch.length > 0 && !referenceId && (
           <div className="mb-4" style={{ height: '200px' }}>
             <LivePitchGraph
               referencePitch={referencePitch}
@@ -731,6 +734,28 @@ const TextAlignmentEditor: React.FC<TextAlignmentEditorProps> = ({
               height={200}
             />
           </div>
+        )}
+
+        {editorMode === 'text' && referencePitch.length > 0 && referenceId && (
+          <QariAnnotationEditor
+            referenceId={referenceId}
+            duration={duration}
+            currentTime={currentTime}
+            ayat={segments}
+          >
+            {(onViewportChange) => <div style={{ height: '360px' }}>
+              <LivePitchGraph
+                referencePitch={referencePitch}
+                studentPitch={[]}
+                isRecording={false}
+                isPlaying={isPlaying}
+                currentTime={currentTime}
+                referenceDuration={duration}
+                height={360}
+                onViewportChange={onViewportChange}
+              />
+            </div>}
+          </QariAnnotationEditor>
         )}
 
         {/* Marking Controls */}

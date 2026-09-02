@@ -88,6 +88,7 @@ interface FullScreenTrainingModeProps {
   referenceUrl?: string | null;
   studentBlob?: Blob | null;
   fullscreenContext?: "practice" | "recording";
+  learningAnnotationReferenceId?: string | null;
 }
 
 const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
@@ -146,6 +147,7 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
   referenceUrl,
   studentBlob,
   fullscreenContext = "recording",
+  learningAnnotationReferenceId,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [showPracticeStats, setShowPracticeStats] = useState(false);
@@ -951,6 +953,7 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
                     : zoomLevel
                 }
                 onZoomChange={onZoomChange}
+                learningAnnotationReferenceId={learningAnnotationReferenceId}
               />
             </div>
 

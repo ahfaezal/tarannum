@@ -232,6 +232,30 @@ class Reference(Base):
     text_segments = relationship("TextSegment", back_populates="reference", cascade="all, delete-orphan")
     pitch_cache = relationship("PitchCache", back_populates="reference", uselist=False, cascade="all, delete-orphan")
     analysis_results = relationship("AnalysisResult", back_populates="reference", cascade="all, delete-orphan")
+    learning_annotations = relationship("LearningAnnotation", back_populates="reference", cascade="all, delete-orphan")
+
+
+class LearningAnnotation(Base):
+    """Timestamped teaching cues authored by a Qari for a reference recording."""
+    __tablename__ = "learning_annotations"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    reference_id = Column(String, ForeignKey("references.id", ondelete="CASCADE"), nullable=False, index=True)
+    qari_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    annotation_type = Column(String, nullable=False, index=True)
+    label = Column(String, nullable=False)
+    arabic_text = Column(Text, nullable=True)
+    note = Column(Text, nullable=True)
+    start_time = Column(Float, nullable=False)
+    end_time = Column(Float, nullable=True)
+    vertical_position = Column(Float, nullable=True)
+    status = Column(String, nullable=False, default="published", index=True)
+    is_active = Column(Boolean, nullable=False, default=True, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    reference = relationship("Reference", back_populates="learning_annotations")
+    qari = relationship("User", foreign_keys=[qari_id])
 
 
 class TextSegment(Base):
