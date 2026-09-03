@@ -34,6 +34,19 @@ export default function AdminPromotionRegistrations() {
   const [updated, setUpdated] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("all");
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const recordDirectPayment = async (row: Registration) => {
+    if (!window.confirm(`Sahkan bayaran terus RM100 untuk ${row.full_name}?`)) return;
+    setUpdatingId(row.id); setError("");
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:8000"}/api/promotions/kursus-muazzin-hijjaz-2026/admin/registrations/${encodeURIComponent(row.id)}/direct-payment`, {
+        method: "POST", headers: getAuthHeader(),
+      });
+      if (!response.ok) { const payload = await response.json().catch(() => ({})); throw new Error(payload.detail || "Bayaran terus tidak dapat direkodkan."); }
+      setRefresh(n => n + 1);
+    } catch (e) { setError(e instanceof Error ? e.message : "Bayaran terus tidak dapat direkodkan."); }
+    finally { setUpdatingId(null); }
+  };
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true); setError(""); setData(null);
@@ -86,7 +99,7 @@ export default function AdminPromotionRegistrations() {
           <tbody>{rows.map(row => <tr key={row.id} className="border-t border-slate-100 align-top">
             <td className="p-4"><p className="font-bold">{row.full_name}</p><p className="mt-1">{row.phone}</p><p className="break-all">{row.email}</p></td>
             <td className="p-4">{row.district}, {row.state}<p className="mt-1 text-slate-500">{row.organization || "—"}</p></td>
-            <td className="p-4"><span className={`inline-block rounded-lg px-2 py-1 font-semibold ${paidStatuses.has(row.status) ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-900"}`}>{labels[row.status] || row.status}</span>{row.payment_method === "direct" && <p className="mt-2 font-bold text-emerald-800">Nota: Bayaran secara terus</p>}<p className="mt-2 text-slate-600">{row.account_linked ? "Akaun dipautkan" : "Akaun belum dipautkan"}</p></td>
+            <td className="p-4"><span className={`inline-block rounded-lg px-2 py-1 font-semibold ${paidStatuses.has(row.status) ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-900"}`}>{labels[row.status] || row.status}</span>{row.payment_method === "direct" && <p className="mt-2 font-bold text-emerald-800">Nota: Bayaran secara terus</p>}<p className="mt-2 text-slate-600">{row.account_linked ? "Akaun dipautkan" : "Akaun belum dipautkan"}</p>{!paidStatuses.has(row.status) && row.status !== "payment_test" && <button type="button" onClick={() => void recordDirectPayment(row)} disabled={updatingId === row.id} className="mt-3 rounded-lg border border-emerald-700 px-3 py-2 font-semibold text-emerald-800 disabled:opacity-50">{updatingId === row.id ? "Merekod…" : "Rekod bayaran terus"}</button>}</td>
             <td className="p-4"><p>Daftar: {date(row.created_at)}</p><p className="mt-2">Bayar: {date(row.paid_at)}</p></td>
             <td className="p-4"><p>{row.preferred_month || "Tiada pilihan bulan"}</p><p className="mt-2 text-slate-600">Persetujuan promosi: {row.marketing_consent ? "Ya" : "Tidak"}</p></td>
           </tr>)}</tbody>
