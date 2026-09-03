@@ -353,6 +353,7 @@ def admin_registrations(
                 "district": row.district,
                 "organization": row.organization,
                 "status": row.status,
+                "payment_method": "direct" if row.status in {"paid", "account_linked", "attended"} and not row.toyyibpay_bill_code else ("toyyibpay" if row.toyyibpay_bill_code else None),
                 "marketing_consent": row.marketing_consent,
                 "preferred_month": row.preferred_month,
                 "paid_at": row.paid_at.isoformat() if row.paid_at else None,
@@ -362,3 +363,32 @@ def admin_registrations(
             for row in rows
         ],
     }
+
+
+@router.post("/{slug}/admin/registrations/{registration_id}/direct-payment")
+def record_direct_payment(
+    slug: str,
+    registration_id: UUID,
+    db: Session = Depends(get_db),
+    _admin: User = Depends(get_current_admin_user),
+):
+    """Record an offline/direct payment without fabricating a ToyyibPay transaction."""
+    campaign = _campaign(db, slug, lock=True)
+    registration = db.query(PromotionRegistration).filter(
+        PromotionRegistration.id == registration_id,
+        PromotionRegistration.campaign_id == campaign.id,
+    ).with_for_update().first()
+    if not registration:
+        raise HTTPException(404, "Pendaftaran tidak ditemui")
+    if registration.status not in {"paid", "account_linked", "attended"}:
+        paid, _reserved = _seat_counts(db, campaign.id)
+        if paid >= campaign.capacity:
+            raise HTTPException(409, "Tempat kursus telah penuh")
+        registration.status = "paid"
+        registration.paid_at = datetime.utcnow()
+        registration.payment_amount = campaign.price_cents / 100
+        registration.reservation_expires_at = None
+        registration.toyyibpay_bill_code = None
+        registration.toyyibpay_reference_no = None
+        db.commit()
+    return {"id": str(registration.id), "status": registration.status, "payment_method": "direct", "note": "Bayaran secara terus"}

@@ -6,7 +6,7 @@ interface Registration {
   id: string; full_name: string; phone: string; email: string;
   state: string; district: string; organization: string | null;
   status: string; marketing_consent: boolean; preferred_month: string | null;
-  paid_at: string | null; account_linked: boolean; created_at: string;
+  paid_at: string | null; account_linked: boolean; created_at: string; payment_method: "direct" | "toyyibpay" | null;
 }
 interface Report {
   campaign: { title: string; capacity: number; paid_count: number; reserved_count: number; available_count: number };
@@ -86,7 +86,7 @@ export default function AdminPromotionRegistrations() {
           <tbody>{rows.map(row => <tr key={row.id} className="border-t border-slate-100 align-top">
             <td className="p-4"><p className="font-bold">{row.full_name}</p><p className="mt-1">{row.phone}</p><p className="break-all">{row.email}</p></td>
             <td className="p-4">{row.district}, {row.state}<p className="mt-1 text-slate-500">{row.organization || "—"}</p></td>
-            <td className="p-4"><span className={`inline-block rounded-lg px-2 py-1 font-semibold ${paidStatuses.has(row.status) ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-900"}`}>{labels[row.status] || row.status}</span><p className="mt-2 text-slate-600">{row.account_linked ? "Akaun dipautkan" : "Akaun belum dipautkan"}</p></td>
+            <td className="p-4"><span className={`inline-block rounded-lg px-2 py-1 font-semibold ${paidStatuses.has(row.status) ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-900"}`}>{labels[row.status] || row.status}</span>{row.payment_method === "direct" && <p className="mt-2 font-bold text-emerald-800">Nota: Bayaran secara terus</p>}<p className="mt-2 text-slate-600">{row.account_linked ? "Akaun dipautkan" : "Akaun belum dipautkan"}</p></td>
             <td className="p-4"><p>Daftar: {date(row.created_at)}</p><p className="mt-2">Bayar: {date(row.paid_at)}</p></td>
             <td className="p-4"><p>{row.preferred_month || "Tiada pilihan bulan"}</p><p className="mt-2 text-slate-600">Persetujuan promosi: {row.marketing_consent ? "Ya" : "Tidak"}</p></td>
           </tr>)}</tbody>
