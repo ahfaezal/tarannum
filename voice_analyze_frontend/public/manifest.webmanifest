@@ -9,8 +9,8 @@
   "theme_color": "#0f172a",
   "icons": [
     {
-      "src": "/images/logo.png",
-      "sizes": "1024x1024",
+      "src": "/images/tarannum-app-icon-v2.png",
+      "sizes": "1254x1254",
       "type": "image/png",
       "purpose": "any maskable"
     }
