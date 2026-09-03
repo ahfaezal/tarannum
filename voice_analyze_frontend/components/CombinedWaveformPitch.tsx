@@ -79,7 +79,7 @@ const CombinedWaveformPitch: React.FC<CombinedWaveformPitchProps> = ({
 
   // Full screen vs regular mode styling
   const containerClass = isFullScreen
-    ? "w-full flex flex-col overflow-hidden bg-transparent"
+    ? "w-full h-full flex flex-col overflow-hidden bg-transparent"
     : "w-full flex flex-col border border-slate-200 rounded-lg overflow-hidden bg-white";
 
   // Calculate progress for waveform sync (0-1)
@@ -91,7 +91,7 @@ const CombinedWaveformPitch: React.FC<CombinedWaveformPitchProps> = ({
   const graphMaxFreq = 600;
 
   return (
-    <div className={`${containerClass} mb-4`} style={{ position: 'relative' }}>
+    <div className={`${containerClass} ${isFullScreen ? "mb-0" : "mb-4"}`} style={{ position: 'relative' }}>
       {/* Pitch Contour Section */}
       <div
         className='w-full overflow-hidden relative'

@@ -290,7 +290,9 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
   const clamp = (value: number, min: number, max: number) =>
     Math.max(min, Math.min(max, value));
 
-  // Calculate graph height for full-screen with responsive mobile/tablet behavior.
+  // Provide a safe initial height until the graph area is measured. The live
+  // value is driven by ResizeObserver so every viewport uses its available
+  // space instead of device-specific height caps.
   const getGraphHeight = () => {
     if (typeof window === "undefined") {
       return 420;
@@ -333,22 +335,55 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
   };
 
   const [graphHeight, setGraphHeight] = React.useState(getGraphHeight());
+  const graphAreaRef = React.useRef<HTMLDivElement>(null);
 
-  // Update graph height on window resize
+  // Fit the graph to the actual space left by the header, ayah panel and
+  // controls. This works for desktop, iPad and Android, including rotation,
+  // browser fullscreen and installed PWA mode.
   useEffect(() => {
     if (!isOpen) return;
+
+    const graphArea = graphAreaRef.current;
+    if (!graphArea) return;
+
+    let animationFrame: number | null = null;
+    const measureGraphArea = () => {
+      if (animationFrame !== null) {
+        cancelAnimationFrame(animationFrame);
+      }
+      animationFrame = requestAnimationFrame(() => {
+        const measuredHeight = Math.floor(graphArea.getBoundingClientRect().height);
+        if (measuredHeight > 0) {
+          setGraphHeight((current) =>
+            current === measuredHeight ? current : measuredHeight
+          );
+        }
+      });
+    };
 
     const handleResize = () => {
       setViewport({
         width: window.innerWidth,
         height: window.innerHeight,
       });
-      setGraphHeight(getGraphHeight());
+      measureGraphArea();
     };
 
+    const resizeObserver = new ResizeObserver(measureGraphArea);
+    resizeObserver.observe(graphArea);
     window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, [isOpen]);
+    window.visualViewport?.addEventListener("resize", handleResize);
+    measureGraphArea();
+
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener("resize", handleResize);
+      window.visualViewport?.removeEventListener("resize", handleResize);
+      if (animationFrame !== null) {
+        cancelAnimationFrame(animationFrame);
+      }
+    };
+  }, [isOpen, viewport.width, viewport.height]);
 
   // Force graph resize when fullscreen opens
   useEffect(() => {
@@ -545,11 +580,6 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
     }
     return null;
   })();
-  const landscapeGraphHeight = clamp(viewport.height - 112, 170, 340);
-  const displayGraphHeight = isFocusedMobileLandscape
-    ? landscapeGraphHeight
-    : graphHeight;
-
   if (!isOpen) return null;
 
   return (
@@ -734,11 +764,8 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
           <div className="flex min-h-0 flex-1 gap-2 overflow-hidden">
             <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
               <div
-                className="w-full flex flex-1 items-center justify-center"
-                style={{
-                  minHeight: `${displayGraphHeight}px`,
-                  height: `${displayGraphHeight}px`,
-                }}
+                ref={graphAreaRef}
+                className="flex min-h-0 w-full flex-1 items-center justify-center"
                 data-graph-area
               >
                 <CombinedWaveformPitch
@@ -760,7 +787,7 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
                       onSeekToTime(progress * referenceDuration);
                     }
                   }}
-                  height={displayGraphHeight}
+                  height={graphHeight}
                   isFullScreen={true}
                   markers={markers}
                   ayahMarkers={ayatTiming}
@@ -915,8 +942,8 @@ const FullScreenTrainingMode: React.FC<FullScreenTrainingModeProps> = ({
           <>
             {/* Graph Container - Full width for exact fit */}
             <div
-              className='w-full flex items-center justify-center'
-              style={{ minHeight: `${graphHeight}px`, height: `${graphHeight}px` }}
+              ref={graphAreaRef}
+              className='flex min-h-0 w-full flex-1 items-center justify-center'
               data-graph-area
             >
               <CombinedWaveformPitch
