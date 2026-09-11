@@ -264,6 +264,17 @@ const MuazzinCoursePage: React.FC = () => {
             </div>
             <label className="mt-6 flex items-start gap-3 text-sm leading-6 text-stone-600"><input type="checkbox" name="registration_consent" value="true" required className="mt-1 h-4 w-4 accent-emerald-700"/>Saya bersetuju maklumat ini digunakan untuk mengurus pendaftaran, pembayaran dan komunikasi kursus ini, serta telah membaca polisi pembatalan di bawah.</label>
             <label className="mt-3 flex items-start gap-3 text-sm leading-6 text-stone-600"><input type="checkbox" name="marketing_consent" value="true" className="mt-1 h-4 w-4 accent-emerald-700"/>Saya bersetuju menerima maklumat kursus Tarannum Technologies pada masa akan datang.</label>
+            {!campaign?.is_full && <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-5">
+              <p className="font-black text-stone-900">Cara membuat pembayaran melalui ToyyibPay</p>
+              <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm leading-6 text-stone-600">
+                <li>Tekan butang <b>Teruskan ke Pembayaran RM100</b>.</li>
+                <li>Di ToyyibPay, pilih <b>Online Banking</b> dan jenis akaun <b>Personal Banking</b>.</li>
+                <li>Pilih bank anda, kemudian tandakan persetujuan terma dan syarat.</li>
+                <li>Tekan butang untuk meneruskan ke laman bank dan lengkapkan pembayaran.</li>
+                <li>Selepas berjaya, anda akan dibawa kembali ke Tarannum.ai untuk pengesahan tempat.</li>
+              </ol>
+              <p className="mt-4 border-t border-amber-200 pt-4 text-sm leading-6 text-stone-700">Tidak biasa menggunakan perbankan dalam talian? <a href="https://wa.me/60192504000?text=Saya%20perlukan%20bantuan%20untuk%20bayaran%20Kursus%20Pemantapan%20Muazzin" target="_blank" rel="noreferrer" className="font-black text-emerald-700 underline">Hubungi kami melalui WhatsApp</a> untuk bantuan atau pilihan pembayaran terus. Tempat disahkan selepas bayaran diterima.</p>
+            </div>}
             <button disabled={submitting} className="mt-7 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-700 px-6 py-4 font-black text-white transition hover:bg-emerald-800 disabled:opacity-60">{submitting ? "Memproses…" : campaign?.is_full ? "Sertai Senarai Menunggu" : "Teruskan ke Pembayaran RM100"}<ArrowRight className="h-5 w-5" /></button>
             {message && <p role="status" className="mt-4 rounded-xl bg-stone-100 p-4 text-sm text-stone-700">{message}</p>}
             <p className="mt-4 text-center text-xs leading-5 text-stone-400">Pembayaran selamat melalui ToyyibPay. Caj transaksi ditanggung Tarannum Technologies.</p>
