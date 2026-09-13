@@ -144,7 +144,7 @@ const MuazzinCoursePage: React.FC = () => {
             <p className="mt-5 inline-flex max-w-2xl rounded-xl border border-amber-300/40 bg-amber-300/10 px-4 py-3 text-sm font-black uppercase tracking-wide text-amber-100 sm:text-base">Kursus Pemantapan Muazzin menggunakan Sistem Tarannum.ai yang pertama di Malaysia</p>
             <p className="mt-6 max-w-2xl text-base leading-8 text-emerald-50/85 sm:text-lg">Belajar bersama Qari, rakam suara anda, semak perkembangan dan teruskan latihan selama 30 hari selepas kursus.</p>
             <div className="mt-8 flex flex-wrap gap-3">
-              <a href="#daftar" className="inline-flex items-center gap-2 rounded-xl bg-amber-400 px-6 py-3.5 font-black text-emerald-950 shadow-lg shadow-black/20 transition hover:bg-amber-300">Daftar RM100 <ArrowRight className="h-5 w-5" /></a>
+              <a href="#daftar" className="inline-flex items-center gap-2 rounded-xl bg-amber-400 px-6 py-3.5 font-black text-emerald-950 shadow-lg shadow-black/20 transition hover:bg-amber-300">{campaign?.is_full ? "Sertai senarai menunggu" : "Daftar RM100"} <ArrowRight className="h-5 w-5" /></a>
               <a href="https://wa.me/60192504000" className="rounded-xl border border-white/30 px-6 py-3.5 font-bold text-white transition hover:bg-white/10">Tanya melalui WhatsApp</a>
             </div>
             <p className="mt-4 text-sm text-emerald-100/70">Harga biasa <span className="line-through">RM250</span> · Promosi untuk 20 pembayaran pertama</p>
@@ -247,8 +247,8 @@ const MuazzinCoursePage: React.FC = () => {
       <section id="daftar" className="scroll-mt-24 py-16">
         <div className="mx-auto grid max-w-7xl gap-10 px-5 sm:px-8 lg:grid-cols-[.9fr_1.1fr]">
           <div>
-            <p className="text-sm font-black uppercase tracking-[.2em] text-emerald-700">Daftar minat & pembayaran</p>
-            <h2 className="mt-3 text-3xl font-black sm:text-4xl">Dapatkan harga promosi RM100.</h2>
+            <p className="text-sm font-black uppercase tracking-[.2em] text-emerald-700">{campaign?.is_full ? "Senarai menunggu kursus seterusnya" : "Daftar minat & pembayaran"}</p>
+            <h2 className="mt-3 text-3xl font-black sm:text-4xl">{campaign?.is_full ? "20 tempat telah penuh." : "Dapatkan harga promosi RM100."}</h2>
             <p className="mt-5 leading-8 text-stone-600">{campaign?.is_full ? "Pengambilan ini telah penuh. Tinggalkan maklumat untuk mendapat keutamaan bagi kursus seterusnya." : "Isi maklumat ringkas. Tempat hanya disahkan selepas pembayaran berjaya. Akaun Tarannum.ai akan dibuka atau dihubungkan selepas pembayaran."}</p>
             <div className="mt-8 rounded-2xl bg-amber-100 p-6"><div className="flex items-center gap-3"><Users className="h-6 w-6 text-emerald-800"/><p className="font-black">{campaign?.is_full ? "Senarai menunggu dibuka" : `Terhad kepada 20 peserta berbayar${campaign ? ` · ${campaign.available_count} tempat tersedia` : ""}`}</p></div><p className="mt-2 text-sm text-stone-600">Apabila penuh, borang akan bertukar kepada senarai menunggu kursus seterusnya.</p></div>
           </div>

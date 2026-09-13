@@ -28,6 +28,9 @@ logger = logging.getLogger(__name__)
 CAMPAIGN_SLUG = "kursus-muazzin-hijjaz-2026"
 RESERVATION_MINUTES = 60
 MALAYSIA_TZ = ZoneInfo("Asia/Kuala_Lumpur")
+# The 19 September 2026 intake is closed at 20 confirmed participants.
+# Keep the public campaign published so new leads can still join the waitlist.
+CAMPAIGN_REGISTRATION_CLOSED = True
 
 
 class RegistrationCreate(BaseModel):
@@ -85,7 +88,8 @@ def _seat_counts(db: Session, campaign_id: UUID) -> tuple[int, int]:
 
 
 def _public_payload(campaign: PromotionCampaign, paid: int, reserved: int) -> dict:
-    available = max(0, campaign.capacity - paid - reserved)
+    registration_closed = campaign.slug == CAMPAIGN_SLUG and CAMPAIGN_REGISTRATION_CLOSED
+    available = 0 if registration_closed else max(0, campaign.capacity - paid - reserved)
     return {
         "slug": campaign.slug,
         "title": campaign.title,
@@ -189,6 +193,8 @@ def create_registration(slug: str, payload: RegistrationCreate, db: Session = De
     if not payload.registration_consent:
         raise HTTPException(400, "Persetujuan pendaftaran diperlukan")
     campaign = _campaign(db, slug, lock=True)
+    if campaign.slug == CAMPAIGN_SLUG and CAMPAIGN_REGISTRATION_CLOSED:
+        raise HTTPException(409, "Tempat telah penuh. Sila sertai senarai menunggu.")
     paid, reserved = _seat_counts(db, campaign.id)
     email = payload.email.strip().lower()
     registration = db.query(PromotionRegistration).filter(
