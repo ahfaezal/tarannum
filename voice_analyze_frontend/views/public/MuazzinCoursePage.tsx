@@ -277,7 +277,7 @@ const MuazzinCoursePage: React.FC = () => {
             </div>}
             <button disabled={submitting} className="mt-7 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-700 px-6 py-4 font-black text-white transition hover:bg-emerald-800 disabled:opacity-60">{submitting ? "Memproses…" : campaign?.is_full ? "Sertai Senarai Menunggu" : "Teruskan ke Pembayaran RM100"}<ArrowRight className="h-5 w-5" /></button>
             {message && <p role="status" className="mt-4 rounded-xl bg-stone-100 p-4 text-sm text-stone-700">{message}</p>}
-            <p className="mt-4 text-center text-xs leading-5 text-stone-400">Pembayaran selamat melalui ToyyibPay. Caj transaksi ditanggung Tarannum Technologies.</p>
+            {!campaign?.is_full && <p className="mt-4 text-center text-xs leading-5 text-stone-400">Pembayaran selamat melalui ToyyibPay. Caj transaksi ditanggung Tarannum Technologies.</p>}
           </form>
         </div>
       </section>
