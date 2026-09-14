@@ -132,28 +132,28 @@ const ProfessionalAzanCoursePage: React.FC = () => {
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_82%_18%,rgba(212,168,73,.24),transparent_30%),linear-gradient(135deg,transparent_0%,rgba(255,255,255,.04)_55%,transparent_100%)]" />
         <div className="relative mx-auto grid max-w-7xl gap-12 px-5 py-12 sm:px-8 lg:grid-cols-[1.08fr_.92fr] lg:items-center lg:py-20">
           <div>
-            <div className="mb-8 flex flex-wrap items-center gap-4">
-              <img src="/images/logo.png" alt="Logo Tarannum Technologies" className="h-16 w-16 rounded-full object-cover ring-2 ring-amber-300/50" />
-              <span className="text-2xl font-light text-amber-200">×</span>
-              <div className="rounded-xl bg-white px-3 py-2 shadow-sm">
-                <img src="/images/logo-surau-al-amin.png" alt="Logo Surau Jumaat Al-Amin" className="h-16 w-auto object-contain" />
-              </div>
+            <div className="mb-8 flex flex-wrap items-center gap-5">
+              <img src="/images/logo.png" alt="Logo Tarannum Technologies" className="h-24 w-24 rounded-full object-cover" />
+              <img src="/images/logo-surau-al-amin.png" alt="Logo Surau Jumaat Al-Amin" className="h-24 w-auto max-w-[13rem] object-contain" />
             </div>
             <p className="mb-5 text-sm font-bold uppercase tracking-[.16em] text-emerald-100/80">Anjuran bersama Tarannum Technologies dan Surau Jumaat Al-Amin</p>
             <p className="mb-5 inline-flex items-center gap-2 rounded-full border border-amber-300/40 bg-amber-200/10 px-4 py-2 text-sm font-semibold text-amber-100"><Sparkles className="h-4 w-4" /> Tempat adalah terhad</p>
             <h1 className="max-w-3xl text-4xl font-black tracking-tight sm:text-6xl">Kursus Profesional Azan</h1>
             <p className="mt-4 max-w-2xl text-xl font-semibold text-amber-200 sm:text-2xl">Azan dalam Maqam Hijjaz, diperkukuh dengan latihan Tarannum.ai</p>
-            <p className="mt-5 inline-flex max-w-2xl rounded-xl border border-amber-300/40 bg-amber-300/10 px-4 py-3 text-sm font-black uppercase tracking-wide text-amber-100 sm:text-base">Bimbingan profesional Maqam Hijjaz diperkukuh dengan Sistem Tarannum.ai</p>
+            <p className="mt-5 inline-flex max-w-2xl rounded-xl border border-amber-300/40 bg-amber-300/10 px-4 py-3 text-sm font-black uppercase tracking-wide text-amber-100 sm:text-base">Bimbingan Qari → Latihan Praktikal Guna AI → Analisis Hasil Azan</p>
             <p className="mt-6 max-w-2xl text-base leading-8 text-emerald-50/85 sm:text-lg">Belajar bersama Qari, rakam suara anda, semak perkembangan dan teruskan latihan selama 30 hari selepas kursus.</p>
             <div className="mt-8 flex flex-wrap gap-3">
               <a href="#daftar" className="inline-flex items-center gap-2 rounded-xl bg-amber-400 px-6 py-3.5 font-black text-emerald-950 shadow-lg shadow-black/20 transition hover:bg-amber-300">{campaign?.is_full ? "Sertai senarai menunggu" : "Daftar RM200"} <ArrowRight className="h-5 w-5" /></a>
               <a href="https://wa.me/60192504000" className="rounded-xl border border-white/30 px-6 py-3.5 font-bold text-white transition hover:bg-white/10">Tanya melalui WhatsApp</a>
             </div>
-            <p className="mt-4 text-sm text-emerald-100/70">Yuran penyertaan RM200 seorang · iPad dan headset disediakan untuk sesi latihan</p>
+            <div className="mt-5 max-w-2xl rounded-2xl border border-amber-200/30 bg-emerald-950/45 px-5 py-4">
+              <p className="font-black text-amber-200">RM200 bukan untuk satu hari sahaja.</p>
+              <p className="mt-1 text-sm leading-6 text-emerald-50/80">Yuran merangkumi kursus fizikal bersama Qari dan akses latihan Tarannum.ai selama 30 hari. iPad serta headset disediakan semasa sesi kursus.</p>
+            </div>
           </div>
           <div className="relative">
             <div className="absolute -inset-5 rounded-[2rem] bg-amber-300/10 blur-2xl" />
-            <img src="/images/ustaz-ahmad-tarmizi.jpg" alt="Ustaz Ahmad Tarmizi bin Abdul Rahman" width={496} height={744} className="relative aspect-[2/3] w-full rounded-[2rem] object-cover object-top shadow-2xl ring-1 ring-white/15" />
+            <img src="/images/ustaz-ahmad-tarmizi-hero.webp" alt="Ustaz Ahmad Tarmizi bin Abdul Rahman menadah tangan" width={971} height={1620} className="relative aspect-[2/3] w-full rounded-[2rem] object-cover object-top shadow-2xl ring-1 ring-white/15" />
             <div className="absolute bottom-5 left-5 right-5 rounded-2xl border border-white/20 bg-emerald-950/85 p-5 backdrop-blur">
               <p className="text-sm font-semibold text-amber-200">PENCERAMAH & QARI</p>
               <p className="mt-1 text-xl font-black">Ustaz Ahmad Tarmizi bin Abdul Rahman</p>
@@ -203,7 +203,7 @@ const ProfessionalAzanCoursePage: React.FC = () => {
             <p className="mt-4 text-sm leading-6 text-stone-500">Video hanya dimainkan apabila anda menekan butang main. Gunakan fon kepala untuk pengalaman audio yang lebih jelas.</p>
           </div>
           <figure className="overflow-hidden rounded-3xl border border-stone-200 bg-emerald-950 shadow-xl">
-            <video controls playsInline preload="metadata" poster="/images/ustaz-ahmad-tarmizi.jpg" aria-label="Video contoh pengalaman latihan azan menggunakan Tarannum.ai" aria-describedby="ustaz-tarmizi-video-description" className="mx-auto max-h-[75vh] w-full bg-black">
+            <video controls playsInline preload="metadata" poster="/images/ustaz-ahmad-tarmizi-azan.webp" aria-label="Video contoh pengalaman latihan azan menggunakan Tarannum.ai" aria-describedby="ustaz-tarmizi-video-description" className="mx-auto max-h-[75vh] w-full bg-black">
               <source src="/images/azan-ustaz-ahmad-tarmizi-web.mp4" type="video/mp4" />
               Pelayar anda tidak menyokong video ini. <a href="/images/azan-ustaz-ahmad-tarmizi-web.mp4">Buka video azan Ustaz Ahmad Tarmizi</a>.
             </video>
