@@ -135,7 +135,9 @@ const ProfessionalAzanCoursePage: React.FC = () => {
             <div className="mb-8 flex flex-wrap items-center gap-4">
               <img src="/images/logo.png" alt="Logo Tarannum Technologies" className="h-16 w-16 rounded-full object-cover ring-2 ring-amber-300/50" />
               <span className="text-2xl font-light text-amber-200">×</span>
-              <div className="rounded-xl border border-amber-300/40 bg-white/10 px-4 py-3 text-sm font-black text-white">SURAU JUMAAT AL-AMIN</div>
+              <div className="rounded-xl bg-white px-3 py-2 shadow-sm">
+                <img src="/images/logo-surau-al-amin.png" alt="Logo Surau Jumaat Al-Amin" className="h-16 w-auto object-contain" />
+              </div>
             </div>
             <p className="mb-5 text-sm font-bold uppercase tracking-[.16em] text-emerald-100/80">Anjuran bersama Tarannum Technologies dan Surau Jumaat Al-Amin</p>
             <p className="mb-5 inline-flex items-center gap-2 rounded-full border border-amber-300/40 bg-amber-200/10 px-4 py-2 text-sm font-semibold text-amber-100"><Sparkles className="h-4 w-4" /> Tempat adalah terhad</p>
@@ -194,34 +196,18 @@ const ProfessionalAzanCoursePage: React.FC = () => {
       <section aria-labelledby="ustaz-tarmizi-video-title" className="bg-white py-16">
         <div className="mx-auto grid max-w-7xl gap-10 px-5 sm:px-8 lg:grid-cols-[.75fr_1.25fr] lg:items-center">
           <div>
-            <p className="text-sm font-black uppercase tracking-[.2em] text-emerald-700">Kenali pengajar</p>
-            <h2 id="ustaz-tarmizi-video-title" className="mt-3 text-3xl font-black sm:text-4xl">Hayati contoh azan Ustaz Ahmad Tarmizi.</h2>
-            <p id="ustaz-tarmizi-video-description" className="mt-5 leading-8 text-stone-600">Dengarkan sendiri ketelitian sebutan, kawalan suara dan keindahan alunan beliau. Dalam kursus ini, peserta akan dibimbing memahami serta mempraktikkan struktur Azan Maqam Hijjaz dengan pendekatan bersemuka dan latihan digital Tarannum.ai.</p>
+            <p className="text-sm font-black uppercase tracking-[.2em] text-emerald-700">Pengalaman latihan Tarannum.ai</p>
+            <h2 id="ustaz-tarmizi-video-title" className="mt-3 text-3xl font-black sm:text-4xl">Bukan sekadar dengar dan ikut—lihat, rakam dan perbaiki.</h2>
+            <p id="ustaz-tarmizi-video-description" className="mt-5 leading-8 text-stone-600">Video ini menunjukkan pengalaman latihan azan menggunakan Tarannum.ai dengan bacaan Ustaz Ahmad Tarmizi sebagai panduan. Peserta dapat melihat pergerakan nada secara visual, membandingkan rakaman sendiri dengan bacaan rujukan dan mengulang latihan berdasarkan maklum balas yang tersusun.</p>
+            <p className="mt-4 leading-8 text-stone-600">Berbanding latihan tradisional yang bergantung pada pendengaran dan ingatan semata-mata, Tarannum.ai membantu peserta melihat bahagian yang perlu diperbaiki. Teknologi ini melengkapi—bukan menggantikan—bimbingan qari.</p>
             <p className="mt-4 text-sm leading-6 text-stone-500">Video hanya dimainkan apabila anda menekan butang main. Gunakan fon kepala untuk pengalaman audio yang lebih jelas.</p>
           </div>
           <figure className="overflow-hidden rounded-3xl border border-stone-200 bg-emerald-950 shadow-xl">
-            <video controls playsInline preload="metadata" poster="/images/ustaz-ahmad-tarmizi.jpg" aria-label="Contoh azan oleh Ustaz Ahmad Tarmizi" aria-describedby="ustaz-tarmizi-video-description" className="mx-auto max-h-[75vh] w-full bg-black">
+            <video controls playsInline preload="metadata" poster="/images/ustaz-ahmad-tarmizi.jpg" aria-label="Video contoh pengalaman latihan azan menggunakan Tarannum.ai" aria-describedby="ustaz-tarmizi-video-description" className="mx-auto max-h-[75vh] w-full bg-black">
               <source src="/images/azan-ustaz-ahmad-tarmizi-web.mp4" type="video/mp4" />
               Pelayar anda tidak menyokong video ini. <a href="/images/azan-ustaz-ahmad-tarmizi-web.mp4">Buka video azan Ustaz Ahmad Tarmizi</a>.
             </video>
-            <figcaption className="px-5 py-4 text-sm leading-6 text-emerald-50/80">Contoh bacaan azan oleh Ustaz Ahmad Tarmizi bin Abdul Rahman. <a href="/images/azan-ustaz-ahmad-tarmizi-web.mp4" target="_blank" rel="noreferrer" className="font-bold text-amber-300 underline">Buka video dalam tab baharu</a>.</figcaption>
-          </figure>
-        </div>
-      </section>
-
-      <section aria-labelledby="training-preview-title" className="bg-white py-16">
-        <div className="mx-auto max-w-7xl px-5 sm:px-8">
-          <div className="max-w-3xl">
-            <p className="text-sm font-black uppercase tracking-[.2em] text-emerald-700">Contoh pengalaman latihan</p>
-            <h2 id="training-preview-title" className="mt-3 text-3xl font-black sm:text-4xl">Lihat paparan latihan azan dalam Tarannum.ai.</h2>
-            <p id="training-preview-description" className="mt-5 leading-8 text-stone-600">Tonton rakaman skrin contoh latihan azan untuk mengenali ruang latihan yang akan digunakan. Latihan digital melengkapi demonstrasi dan bimbingan Ustaz Ahmad Tarmizi, serta membantu peserta meneruskan latihan secara tersusun selepas sesi bersemuka.</p>
-          </div>
-          <figure className="mt-8 overflow-hidden rounded-3xl border border-stone-200 bg-stone-50">
-            <video controls playsInline preload="none" aria-label="Video contoh paparan latihan azan Tarannum.ai" aria-describedby="training-preview-description" className="mx-auto max-h-[70vh] w-full bg-black">
-              <source src="/images/muazzin-training-screen.mp4" type="video/mp4" />
-              Pelayar anda tidak menyokong video ini. <a href="/images/muazzin-training-screen.mp4">Buka video latihan azan</a>.
-            </video>
-            <figcaption className="px-5 py-4 text-sm leading-6 text-stone-600">Contoh paparan latihan azan. Tekan butang main untuk menonton; video tidak dimainkan secara automatik. <a href="/images/muazzin-training-screen.mp4" target="_blank" rel="noreferrer" className="font-bold text-emerald-700 underline">Buka video dalam tab baharu</a>.</figcaption>
+            <figcaption className="px-5 py-4 text-sm leading-6 text-emerald-50/80">Demonstrasi latihan Tarannum.ai menggunakan bacaan Ustaz Ahmad Tarmizi bin Abdul Rahman sebagai rujukan. <a href="/images/azan-ustaz-ahmad-tarmizi-web.mp4" target="_blank" rel="noreferrer" className="font-bold text-amber-300 underline">Buka video dalam tab baharu</a>.</figcaption>
           </figure>
         </div>
       </section>
