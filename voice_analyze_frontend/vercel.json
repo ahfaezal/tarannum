@@ -1,6 +1,10 @@
 {
   "rewrites": [
     {
+      "source": "/kursus-profesional-azan(.*)",
+      "destination": "/professional-azan-promotion.html"
+    },
+    {
       "source": "/kursus-pemantapan-muazzin(.*)",
       "destination": "/promotion.html"
     },

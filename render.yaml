@@ -68,8 +68,12 @@ services:
         sync: false
       - key: TOYYIBPAY_CATEGORY_CODE
         value: 7d359q4h
+      - key: TOYYIBPAY_PROFESSIONAL_AZAN_CATEGORY_CODE
+        value: o29hsoks
       - key: PROMOTION_FRONTEND_URL
         value: https://tarannum.ai/kursus-pemantapan-muazzin
+      - key: PROFESSIONAL_AZAN_FRONTEND_URL
+        value: https://tarannum.ai/kursus-profesional-azan
       - key: API_URL
         value: https://tarannum-backend.onrender.com
 

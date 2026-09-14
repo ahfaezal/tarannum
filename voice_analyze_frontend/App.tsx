@@ -14,6 +14,7 @@ const DemoPage = lazy(() => import("./views/public/DemoPage"));
 const DemoInteractivePage = lazy(() => import("./views/public/DemoInteractivePage"));
 const ContactPage = lazy(() => import("./views/public/ContactPage"));
 const MuazzinCoursePage = lazy(() => import("./views/public/MuazzinCoursePage"));
+const ProfessionalAzanCoursePage = lazy(() => import("./views/public/ProfessionalAzanCoursePage"));
 const VerifyCertificatePage = lazy(() => import("./views/public/VerifyCertificatePage"));
 const Login = lazy(() => import("./components/Login"));
 const Register = lazy(() => import("./components/Register"));
@@ -74,6 +75,7 @@ const App: React.FC = () => {
           <Route path="/demo/interactive" element={<DemoInteractivePage />} />
           <Route path="/contact" element={<ContactPage />} />
           <Route path="/kursus-pemantapan-muazzin/*" element={<MuazzinCoursePage />} />
+          <Route path="/kursus-profesional-azan/*" element={<ProfessionalAzanCoursePage />} />
           <Route path="/verify/:token" element={<VerifyCertificatePage />} />
           <Route path="/login" element={isAuthenticated ? <Navigate to="/training" replace /> : <Login onSwitchToRegister={() => navigate("/register")} onSuccess={() => navigate(new URLSearchParams(location.search).get("next") || "/training")} />} />
           <Route path="/register" element={isAuthenticated ? <Navigate to="/training" replace /> : <Register onSwitchToLogin={() => navigate("/login")} onSuccess={(email) => navigate(`/verify-email?email=${encodeURIComponent(email || "")}`)} />} />
@@ -100,6 +102,7 @@ const App: React.FC = () => {
             </Route>
             <Route element={<ProtectedRoute roles={["admin"]} />}>
               <Route path="/admin/pendaftaran-kursus" element={<AdminPromotionRegistrations />} />
+              <Route path="/admin/pendaftaran-kursus/:campaignSlug" element={<AdminPromotionRegistrations />} />
               <Route path="/admin" element={<AdminDashboard />} />
               <Route path="/admin/qari/:qariId/content" element={<AdminQariContentManager />} />
               <Route path="/admin/qari/:qariId/content/edit/:contentId" element={<QariContentEditor />} />

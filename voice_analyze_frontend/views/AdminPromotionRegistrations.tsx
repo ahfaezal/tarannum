@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { getAuthHeader } from "../services/authService";
 
 interface Registration {
@@ -9,7 +9,7 @@ interface Registration {
   paid_at: string | null; account_linked: boolean; created_at: string; payment_method: "direct" | "toyyibpay" | null;
 }
 interface Report {
-  campaign: { title: string; capacity: number; paid_count: number; reserved_count: number; available_count: number };
+  campaign: { title: string; capacity: number; paid_count: number; reserved_count: number; available_count: number; price: number };
   status_counts: Record<string, number>;
   registrations: Registration[];
 }
@@ -27,6 +27,8 @@ const date = (value: string | null) => {
 };
 
 export default function AdminPromotionRegistrations() {
+  const { campaignSlug = "kursus-muazzin-hijjaz-2026" } = useParams();
+  const isProfessionalAzan = campaignSlug === "kursus-profesional-azan-hijjaz-oktober-2026";
   const [data, setData] = useState<Report | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -36,10 +38,10 @@ export default function AdminPromotionRegistrations() {
   const [status, setStatus] = useState("all");
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const recordDirectPayment = async (row: Registration) => {
-    if (!window.confirm(`Sahkan bayaran terus RM100 untuk ${row.full_name}?`)) return;
+    if (!window.confirm(`Sahkan bayaran terus RM${data?.campaign.price || (isProfessionalAzan ? 200 : 100)} untuk ${row.full_name}?`)) return;
     setUpdatingId(row.id); setError("");
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:8000"}/api/promotions/kursus-muazzin-hijjaz-2026/admin/registrations/${encodeURIComponent(row.id)}/direct-payment`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:8000"}/api/promotions/${encodeURIComponent(campaignSlug)}/admin/registrations/${encodeURIComponent(row.id)}/direct-payment`, {
         method: "POST", headers: getAuthHeader(),
       });
       if (!response.ok) { const payload = await response.json().catch(() => ({})); throw new Error(payload.detail || "Bayaran terus tidak dapat direkodkan."); }
@@ -52,7 +54,7 @@ export default function AdminPromotionRegistrations() {
     setLoading(true); setError(""); setData(null);
     async function load() {
       try {
-        const response = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:8000"}/api/promotions/kursus-muazzin-hijjaz-2026/admin/registrations`, {
+        const response = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:8000"}/api/promotions/${encodeURIComponent(campaignSlug)}/admin/registrations`, {
           headers: getAuthHeader(), signal: controller.signal, cache: "no-store",
         });
         if (!response.ok) throw new Error(response.status === 401 ? "Sesi tamat. Sila log masuk semula." : response.status === 403 ? "Akses terhad kepada admin sahaja." : "Data pendaftaran tidak dapat dimuatkan. Sila cuba lagi.");
@@ -64,7 +66,7 @@ export default function AdminPromotionRegistrations() {
     }
     void load();
     return () => controller.abort();
-  }, [refresh]);
+  }, [campaignSlug, refresh]);
   const rows = useMemo(() => (data?.registrations || []).filter(row => {
     const matchesStatus = status === "all" || (status === "paid_group" ? paidStatuses.has(row.status) : row.status === status);
     return matchesStatus && [row.full_name, row.phone, row.email, row.state, row.district, row.organization || ""].join(" ").toLowerCase().includes(query.trim().toLowerCase());
@@ -73,9 +75,13 @@ export default function AdminPromotionRegistrations() {
     <Link to="/admin" className="text-sm font-semibold text-emerald-700">← Dashboard admin</Link>
     <header className="rounded-2xl bg-emerald-950 p-6 text-white">
       <p className="text-sm text-emerald-200">Admin sahaja · Maklumat sulit peserta</p>
-      <h1 className="mt-2 text-2xl font-bold">Pendaftaran Kursus Pemantapan Muazzin</h1>
-      <p className="mt-2">19 September 2026 · Masjid Bandar Seri Putra, Bangi</p>
+      <h1 className="mt-2 text-2xl font-bold">{isProfessionalAzan ? "Pendaftaran Kursus Profesional Azan" : "Pendaftaran Kursus Pemantapan Muazzin"}</h1>
+      <p className="mt-2">{isProfessionalAzan ? "24 Oktober 2026 · Surau Jumaat Al-Amin, Kuala Lumpur" : "19 September 2026 · Masjid Bandar Seri Putra, Bangi"}</p>
     </header>
+    <nav className="flex flex-wrap gap-2" aria-label="Pilih kempen kursus">
+      <Link to="/admin/pendaftaran-kursus" className={`rounded-lg px-4 py-2 text-sm font-semibold ${!isProfessionalAzan ? "bg-emerald-700 text-white" : "border border-emerald-700 text-emerald-800"}`}>19 Sep · Pemantapan Muazzin</Link>
+      <Link to="/admin/pendaftaran-kursus/kursus-profesional-azan-hijjaz-oktober-2026" className={`rounded-lg px-4 py-2 text-sm font-semibold ${isProfessionalAzan ? "bg-emerald-700 text-white" : "border border-emerald-700 text-emerald-800"}`}>24 Okt · Profesional Azan</Link>
+    </nav>
     <div className="flex flex-wrap items-center justify-between gap-3">
       <p className="text-sm text-slate-600">{updated && !loading && !error ? `Dikemas kini: ${date(updated)} (waktu Malaysia)` : "Semakan pendaftaran dan bayaran"}</p>
       <button type="button" onClick={() => setRefresh(n => n + 1)} disabled={loading} className="rounded-lg bg-emerald-700 px-5 py-3 font-semibold text-white disabled:opacity-50">{loading ? "Memuatkan…" : "Muat semula"}</button>

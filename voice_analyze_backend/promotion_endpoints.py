@@ -26,6 +26,7 @@ from auth import get_current_admin_user
 router = APIRouter(prefix="/api/promotions", tags=["promotions"])
 logger = logging.getLogger(__name__)
 CAMPAIGN_SLUG = "kursus-muazzin-hijjaz-2026"
+PROFESSIONAL_AZAN_SLUG = "kursus-profesional-azan-hijjaz-oktober-2026"
 RESERVATION_MINUTES = 60
 MALAYSIA_TZ = ZoneInfo("Asia/Kuala_Lumpur")
 # The 19 September 2026 intake is closed at 20 confirmed participants.
@@ -58,7 +59,7 @@ class WaitlistCreate(RegistrationCreate):
     @field_validator("preferred_month")
     @classmethod
     def validate_month(cls, value: str) -> str:
-        if value not in {"Oktober 2026", "November 2026", "Disember 2026"}:
+        if value not in {"Oktober 2026", "November 2026", "Disember 2026", "Januari 2027"}:
             raise ValueError("Pilihan bulan tidak sah")
         return value
 
@@ -107,13 +108,54 @@ def _frontend_url() -> str:
     return os.getenv("PROMOTION_FRONTEND_URL", "http://localhost:3000/kursus-pemantapan-muazzin").rstrip("/")
 
 
+def _campaign_payment_settings(campaign: PromotionCampaign) -> dict[str, str]:
+    if campaign.slug == PROFESSIONAL_AZAN_SLUG:
+        return {
+            "category_code": os.getenv("TOYYIBPAY_PROFESSIONAL_AZAN_CATEGORY_CODE", "o29hsoks").strip(),
+            "frontend_url": os.getenv(
+                "PROFESSIONAL_AZAN_FRONTEND_URL",
+                "http://localhost:3000/kursus-profesional-azan",
+            ).rstrip("/"),
+            "bill_name": "Kursus Profesional Azan",
+            "bill_description": "Kursus Profesional Azan Maqam Hijjaz 24 Oktober 2026",
+            "confirmation": (
+                "Terima kasih. Pembayaran RM200 anda telah berjaya dan tempat anda disahkan "
+                "untuk Kursus Profesional Azan - Maqam Hijjaz.\n\n"
+                "Tarikh: 24 Oktober 2026\n"
+                "Masa: 8:30 pagi - 4:00 petang\n"
+                "Lokasi: Surau Jumaat Al-Amin, Bandar Tun Razak, Kuala Lumpur\n"
+                "Makanan dan minuman disediakan.\n\n"
+                "Sila buka akaun pelajar di https://tarannum.ai sebelum kursus bermula.\n\n"
+                "Maklumat lanjut akan dihantar melalui WhatsApp atau e-mel.\n"
+                "Pertanyaan: 019-250 4000\n\nDaripada team,\nTarannum Technologies"
+            ),
+        }
+    return {
+        "category_code": os.getenv("TOYYIBPAY_CATEGORY_CODE", "7d359q4h").strip(),
+        "frontend_url": _frontend_url(),
+        "bill_name": "Kursus Pemantapan Muazzin",
+        "bill_description": "Kursus Muazzin Maqam Hijjaz 19 September 2026",
+        "confirmation": (
+            "Terima kasih. Pembayaran RM100 anda telah berjaya dan tempat anda disahkan "
+            "untuk Kursus Pemantapan Muazzin - Azan Maqam Hijjaz.\n\n"
+            "Tarikh: 19 September 2026\nMasa: 8:30 pagi - 4:30 petang\n"
+            "Lokasi: Masjid Bandar Seri Putra, Bangi\nMakanan dan minuman disediakan.\n\n"
+            "Sila buka akaun pelajar di https://tarannum.ai sebelum kursus bermula "
+            "bagi melancarkan perjalanan kursus.\n\n"
+            "Maklumat lanjut akan dihantar melalui WhatsApp atau e-mel.\n"
+            "Pertanyaan: 019-250 4000\n\nDaripada team,\nTarannum Technologies"
+        ),
+    }
+
+
 def _api_url() -> str:
     return os.getenv("API_URL", "http://localhost:8000").rstrip("/")
 
 
 def _create_toyyibpay_bill(campaign: PromotionCampaign, registration: PromotionRegistration) -> str:
     secret_key = os.getenv("TOYYIBPAY_SECRET_KEY", "").strip()
-    category_code = os.getenv("TOYYIBPAY_CATEGORY_CODE", "7d359q4h").strip()
+    settings = _campaign_payment_settings(campaign)
+    category_code = settings["category_code"]
     if not secret_key or not category_code:
         raise HTTPException(503, "Pembayaran sedang disediakan. Pendaftaran minat anda telah disimpan.")
 
@@ -122,12 +164,12 @@ def _create_toyyibpay_bill(campaign: PromotionCampaign, registration: PromotionR
     data = {
         "userSecretKey": secret_key,
         "categoryCode": category_code,
-        "billName": "Kursus Pemantapan Muazzin",
-        "billDescription": "Kursus Muazzin Maqam Hijjaz 19 September 2026",
+        "billName": settings["bill_name"],
+        "billDescription": settings["bill_description"],
         "billPriceSetting": "1",
         "billPayorInfo": "1",
         "billAmount": str(campaign.price_cents),
-        "billReturnUrl": f"{_frontend_url()}/pembayaran?registration={registration.public_token}",
+        "billReturnUrl": f"{settings['frontend_url']}/pembayaran?registration={registration.public_token}",
         "billCallbackUrl": f"{_api_url()}/api/promotions/toyyibpay/callback",
         "billExternalReferenceNo": str(registration.id),
         "billTo": registration.full_name,
@@ -135,20 +177,7 @@ def _create_toyyibpay_bill(campaign: PromotionCampaign, registration: PromotionR
         "billPhone": registration.phone,
         "billSplitPayment": "0",
         "billPaymentChannel": "0",
-        "billContentEmail": (
-            "Terima kasih. Pembayaran RM100 anda telah berjaya dan tempat anda disahkan "
-            "untuk Kursus Pemantapan Muazzin - Azan Maqam Hijjaz.\n\n"
-            "Tarikh: 19 September 2026\n"
-            "Masa: 8:30 pagi - 4:30 petang\n"
-            "Lokasi: Masjid Bandar Seri Putra, Bangi\n"
-            "Makanan dan minuman disediakan.\n\n"
-            "Sila buka akaun pelajar di https://tarannum.ai sebelum kursus bermula "
-            "bagi melancarkan perjalanan kursus.\n\n"
-            "Maklumat lanjut akan dihantar melalui WhatsApp atau e-mel.\n"
-            "Pertanyaan: 019-250 4000\n\n"
-            "Daripada team,\n"
-            "Tarannum Technologies"
-        ),
+        "billContentEmail": settings["confirmation"],
         "billChargeToCustomer": "",
         "billChargeToPrepaid": "0",
         "billExpiryDate": expiry.strftime("%d-%m-%Y %H:%M:%S"),

@@ -19,6 +19,7 @@ export default defineConfig(({ mode }) => {
           input: {
             main: path.resolve(projectDir, 'index.html'),
             promotion: path.resolve(projectDir, 'promotion.html'),
+            professionalAzanPromotion: path.resolve(projectDir, 'professional-azan-promotion.html'),
           },
         },
       },

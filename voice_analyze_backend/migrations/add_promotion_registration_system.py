@@ -36,6 +36,20 @@ def migrate() -> None:
                 status="published",
             ))
             db.commit()
+        professional_slug = "kursus-profesional-azan-hijjaz-oktober-2026"
+        professional_campaign = db.query(PromotionCampaign).filter(
+            PromotionCampaign.slug == professional_slug
+        ).first()
+        if not professional_campaign:
+            db.add(PromotionCampaign(
+                slug=professional_slug,
+                title="Kursus Profesional Azan Maqam Hijjaz",
+                starts_at=datetime(2026, 10, 24, 8, 30),
+                capacity=100,
+                price_cents=20000,
+                status="published",
+            ))
+            db.commit()
     finally:
         db.close()
 
