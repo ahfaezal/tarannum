@@ -919,13 +919,14 @@ const QariDashboard: React.FC = () => {
                 className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition-colors relative group"
               >
                 {/* Action Buttons */}
-                <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="absolute top-2 right-2 flex items-center gap-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 [@media(pointer:coarse)]:opacity-100">
                   <button
                     onClick={() => {
                       navigate(`/qari/content/edit/${item.id}`);
                     }}
-                    className="p-2 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
+                    className="rounded-lg p-2 text-emerald-600 transition-colors hover:bg-emerald-50"
                     title="Edit surah/ayah settings"
+                    aria-label={`Edit ${getContentDisplayName(item)}`}
                   >
                     <Edit className="w-4 h-4" />
                   </button>
@@ -937,8 +938,9 @@ const QariDashboard: React.FC = () => {
                         filename: getContentDisplayName(item),
                       });
                     }}
-                    className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                    className="rounded-lg p-2 text-red-500 transition-colors hover:bg-red-50"
                     title="Delete from library"
+                    aria-label={`Delete ${getContentDisplayName(item)}`}
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
