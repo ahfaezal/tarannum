@@ -1108,14 +1108,16 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
       // Draw reference pitch (green) - full length, static
       // Reference pitch persists after playback stops (same as student pitch after practice stops)
       // Enhanced: Apply smoothing for smoother melodic flow (tarannum training)
-      if (referencePitch.length > 0) {
-        // Apply multi-pass smoothing to reference pitch for very smooth, curvilinear contour
-        // Enhanced for tarannum training (0.8 tension, 2 passes for smoother melodic flow)
-        const smoothedReferencePitch = smoothReferencePitch(
+      // Reuse this curve for both the green line and the playhead intersection marker.
+      const smoothedReferencePitch = referencePitch.length > 0
+        ? smoothReferencePitch(
           referencePitch,
           0.8,
           2
-        );
+        )
+        : [];
+
+      if (smoothedReferencePitch.length > 0) {
 
         ctx.strokeStyle = "#10b981"; // Green
         ctx.lineWidth = isMobileFullscreenGraph ? 3 : 2; // Slightly thinner so red line overwrites it more clearly
@@ -1188,6 +1190,7 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
 
       // Shared render clock for both red filtering and blue cursor.
       let renderCursorTime = currentTime || 0;
+      let studentCursorY: number | null = null;
 
       // Draw student pitch (red) - live, all points up to current time
       if (studentPitch.length > 0) {
@@ -1327,6 +1330,13 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
           hadUnvoicedGap = false;
         }
         ctx.stroke();
+        if (
+          lastValidPoint &&
+          lastVoicedTime !== null &&
+          Math.abs(lastVoicedTime - renderCursorTime) <= 0.5
+        ) {
+          studentCursorY = lastValidPoint.y;
+        }
       }
 
       // Draw current time cursor (blue vertical line) - shows during recording and playback.
@@ -1355,6 +1365,73 @@ const LivePitchGraph: React.FC<LivePitchGraphProps> = ({
           ctx.beginPath();
           ctx.arc(cursorX, padding, 4, 0, 2 * Math.PI);
           ctx.fill();
+
+          // Mark the exact intersection between the timeline and Qari pitch.
+          // Binary search keeps this lightweight even for long recordings.
+          const validReferencePitch = smoothedReferencePitch.filter(
+            (point) => point.f_hz !== null && point.f_hz !== undefined
+          );
+          if (validReferencePitch.length > 0) {
+            let low = 0;
+            let high = validReferencePitch.length - 1;
+            while (low < high) {
+              const mid = Math.floor((low + high) / 2);
+              if (validReferencePitch[mid].time < effectiveCursorTime) low = mid + 1;
+              else high = mid;
+            }
+
+            const after = validReferencePitch[low];
+            const before = validReferencePitch[Math.max(0, low - 1)];
+            const nearestDistance = Math.min(
+              Math.abs(before.time - effectiveCursorTime),
+              Math.abs(after.time - effectiveCursorTime)
+            );
+
+            if (nearestDistance <= 0.5) {
+              const span = after.time - before.time;
+              const ratio = span > 0
+                ? Math.max(0, Math.min(1, (effectiveCursorTime - before.time) / span))
+                : 0;
+              const referenceHz = before.f_hz! + (after.f_hz! - before.f_hz!) * ratio;
+              const intersectionY =
+                displayHeight - padding -
+                ((referenceHz - finalMinFreq) / freqRange) * graphHeight;
+
+              if (intersectionY >= padding && intersectionY <= displayHeight - padding) {
+                ctx.save();
+                ctx.shadowColor = "rgba(8, 145, 178, 0.35)";
+                ctx.shadowBlur = 8;
+                ctx.fillStyle = "#06b6d4";
+                ctx.strokeStyle = "#ffffff";
+                ctx.lineWidth = 2.5;
+                ctx.beginPath();
+                ctx.arc(cursorX, intersectionY, isMobileFullscreenGraph ? 8 : 7, 0, 2 * Math.PI);
+                ctx.fill();
+                ctx.stroke();
+                ctx.restore();
+              }
+            }
+          }
+
+          // Student ball is drawn last so it remains visible. It is slightly
+          // smaller than the Qari ball, leaving a cyan rim when both match.
+          if (
+            studentCursorY !== null &&
+            studentCursorY >= padding &&
+            studentCursorY <= displayHeight - padding
+          ) {
+            ctx.save();
+            ctx.shadowColor = "rgba(239, 68, 68, 0.4)";
+            ctx.shadowBlur = 8;
+            ctx.fillStyle = "#ef4444";
+            ctx.strokeStyle = "#ffffff";
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(cursorX, studentCursorY, isMobileFullscreenGraph ? 6.5 : 5.5, 0, 2 * Math.PI);
+            ctx.fill();
+            ctx.stroke();
+            ctx.restore();
+          }
         }
       }
 

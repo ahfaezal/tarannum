@@ -84,7 +84,7 @@ const StudentLearningAnnotations: React.FC<Props> = ({ referenceId, viewport }) 
             className="pointer-events-none absolute z-10 rounded-md"
             style={{
               left: `${clampedLeft}px`,
-              top: `${viewport.plotTop}px`,
+              top: `${viewport.plotTop + 55}px`,
               width: `${highlightWidth}px`,
               height: `${viewport.plotBottom - viewport.plotTop}px`,
               transform: ranged ? undefined : "translateX(-50%)",
