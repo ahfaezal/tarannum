@@ -2252,6 +2252,62 @@ def extract_pitch(audio: np.ndarray, sr: int, fmin: float = 60.0, fmax: float = 
         for i, p in enumerate(f0_smooth):
             if not np.isnan(p) and p > 0:
                 midi_track[i] = 69.0 + 12.0 * np.log2(float(p) / 440.0)
+
+        # pYIN can occasionally lock onto the second harmonic and report a
+        # sustained passage one octave too high.  Unlike a one-frame spike,
+        # these plateaus survive ordinary median smoothing.  Correct only
+        # bounded passages whose entry/exit jumps are octave-sized and whose
+        # octave-lowered contour joins both neighbouring passages smoothly.
+        # This deliberately avoids a hard frequency ceiling so genuine high
+        # notes and gradual rises remain untouched.
+        valid_indices = np.flatnonzero(~np.isnan(midi_track))
+        if valid_indices.size >= 3:
+            valid_midi = midi_track[valid_indices].copy()
+            jumps = np.diff(valid_midi)
+            octave_up = np.flatnonzero((jumps >= 8.0) & (jumps <= 16.0))
+            corrected_octave_frames = 0
+            max_plateau_frames = max(1, int(round(20.0 * sr / 512.0)))
+
+            for up_pos in octave_up:
+                # Find the first octave-sized return within 20 seconds.
+                possible_down = np.flatnonzero(
+                    (jumps[up_pos + 1:] <= -8.0) &
+                    (jumps[up_pos + 1:] >= -16.0)
+                )
+                if possible_down.size == 0:
+                    continue
+                down_pos = int(up_pos + 1 + possible_down[0])
+                start_pos = int(up_pos + 1)
+                end_pos = int(down_pos + 1)  # exclusive in valid_midi
+                if end_pos <= start_pos or end_pos - start_pos > max_plateau_frames:
+                    continue
+
+                # Do not infer an octave error across a long unvoiced pause;
+                # a singer may intentionally begin the next phrase higher.
+                max_boundary_gap_frames = max(1, int(round(0.25 * sr / 512.0)))
+                entry_gap = int(valid_indices[start_pos] - valid_indices[up_pos])
+                exit_gap = int(valid_indices[end_pos] - valid_indices[end_pos - 1])
+                if entry_gap > max_boundary_gap_frames or exit_gap > max_boundary_gap_frames:
+                    continue
+
+                before = float(valid_midi[up_pos])
+                after = float(valid_midi[end_pos])
+                lowered_start = float(valid_midi[start_pos] - 12.0)
+                lowered_end = float(valid_midi[end_pos - 1] - 12.0)
+
+                # Both corrected boundaries must agree with the surrounding
+                # contour.  Requiring both sides protects intentional octave
+                # changes and genuinely high sustained notes.
+                if abs(lowered_start - before) <= 3.5 and abs(lowered_end - after) <= 3.5:
+                    valid_midi[start_pos:end_pos] -= 12.0
+                    corrected_octave_frames += end_pos - start_pos
+
+            if corrected_octave_frames:
+                midi_track[valid_indices] = valid_midi
+                logger.info(
+                    "Corrected %d sustained octave-doubling pitch frames",
+                    corrected_octave_frames,
+                )
         for i in range(1, len(midi_track) - 1):
             if np.isnan(midi_track[i]):
                 continue
