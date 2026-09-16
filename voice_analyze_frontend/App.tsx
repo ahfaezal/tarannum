@@ -16,6 +16,7 @@ const ContactPage = lazy(() => import("./views/public/ContactPage"));
 const MuazzinCoursePage = lazy(() => import("./views/public/MuazzinCoursePage"));
 const ProfessionalAzanCoursePage = lazy(() => import("./views/public/ProfessionalAzanCoursePage"));
 const VerifyCertificatePage = lazy(() => import("./views/public/VerifyCertificatePage"));
+const AssetPage = lazy(() => import("./views/public/AssetPage"));
 const Login = lazy(() => import("./components/Login"));
 const Register = lazy(() => import("./components/Register"));
 const VerifyEmail = lazy(() => import("./components/VerifyEmail"));
@@ -56,7 +57,7 @@ const App: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { isAuthenticated } = useSelector((state: RootState) => state.auth);
-  const isLightweightPublicPage = ["/", "/about", "/how-to-use", "/demo", "/demo/interactive", "/contact"].includes(location.pathname) || location.pathname.startsWith("/verify/");
+  const isLightweightPublicPage = ["/", "/about", "/how-to-use", "/demo", "/demo/interactive", "/contact"].includes(location.pathname) || location.pathname.startsWith("/verify/") || /^\/TAR-/i.test(location.pathname);
 
   useEffect(() => {
     if (!isLightweightPublicPage && !isAuthenticated && localStorage.getItem("tarannum_auth_token")) {
@@ -77,6 +78,7 @@ const App: React.FC = () => {
           <Route path="/kursus-pemantapan-muazzin/*" element={<MuazzinCoursePage />} />
           <Route path="/kursus-profesional-azan/*" element={<ProfessionalAzanCoursePage />} />
           <Route path="/verify/:token" element={<VerifyCertificatePage />} />
+          <Route path="/:deviceId" element={<AssetPage />} />
           <Route path="/login" element={isAuthenticated ? <Navigate to="/training" replace /> : <Login onSwitchToRegister={() => navigate("/register")} onSuccess={() => navigate(new URLSearchParams(location.search).get("next") || "/training")} />} />
           <Route path="/register" element={isAuthenticated ? <Navigate to="/training" replace /> : <Register onSwitchToLogin={() => navigate("/login")} onSuccess={(email) => navigate(`/verify-email?email=${encodeURIComponent(email || "")}`)} />} />
           <Route path="/verify-email" element={isAuthenticated ? <Navigate to="/training" replace /> : <VerifyEmail />} />
