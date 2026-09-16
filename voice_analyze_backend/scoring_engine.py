@@ -801,9 +801,32 @@ def downsample_pitch(pitch_data: List[Dict],
         # no voiced frames -> all None
         return [{'time': float(t), 'f_hz': None, 'midi': None, 'confidence': 0.0} for t in target_times]
 
-    # Perform interpolation; left/right extrapolate as NaN
+    # Perform interpolation; left/right extrapolate as NaN. np.interp connects
+    # every finite point, so long source silence runs must be restored below;
+    # otherwise a chart receives an artificial line across the pause.
     f_interp = np.interp(target_times, src_times[valid_mask], src_f[valid_mask], left=np.nan, right=np.nan)
     conf_interp = np.interp(target_times, src_times, src_conf, left=0.0, right=0.0)
+
+    # Preserve long unvoiced runs from the source before considering short-gap
+    # interpolation. This is essential for azan phrases separated by silence:
+    # the graph and scorer must not invent a melodic contour inside a pause.
+    source_unvoiced = ~valid_mask
+    if np.any(source_unvoiced):
+        unvoiced_idx = np.flatnonzero(source_unvoiced)
+        unvoiced_groups = np.split(
+            unvoiced_idx,
+            np.where(np.diff(unvoiced_idx) != 1)[0] + 1,
+        )
+        gap_fill_seconds = gap_fill_ms / 1000.0
+        for group in unvoiced_groups:
+            if group.size == 0:
+                continue
+            gap_start = float(src_times[int(group[0])])
+            gap_end = float(src_times[int(group[-1])])
+            if gap_end - gap_start > gap_fill_seconds:
+                target_gap = (target_times >= gap_start) & (target_times <= gap_end)
+                f_interp[target_gap] = np.nan
+                conf_interp[target_gap] = 0.0
 
     # Identify NaN runs and fill only short internal gaps
     is_nan = np.isnan(f_interp)
@@ -2246,6 +2269,53 @@ def extract_pitch(audio: np.ndarray, sr: int, fmin: float = 60.0, fmax: float = 
         confidence_threshold = 0.22
         low_conf_mask = np.asarray(voiced_probs) < confidence_threshold
         f0_smooth[low_conf_mask] = np.nan
+
+        # pYIN may return a confident pitch for digital silence, room tone or
+        # an encoder transient. Gate pitch with frame energy as well as pYIN
+        # confidence so silent pauses cannot become reference/scoring points.
+        frame_rms = librosa.feature.rms(
+            y=np.asarray(audio, dtype=float),
+            frame_length=2048,
+            hop_length=512,
+            center=True,
+        )[0]
+        if frame_rms.size < f0_smooth.size:
+            frame_rms = np.pad(
+                frame_rms,
+                (0, f0_smooth.size - frame_rms.size),
+                mode="edge",
+            )
+        elif frame_rms.size > f0_smooth.size:
+            frame_rms = frame_rms[:f0_smooth.size]
+
+        peak_rms = float(np.max(frame_rms)) if frame_rms.size else 0.0
+        positive_rms = frame_rms[frame_rms > 1e-10]
+        noise_rms = float(np.percentile(positive_rms, 10)) if positive_rms.size else 0.0
+        relative_floor = peak_rms * (10.0 ** (-45.0 / 20.0))
+        energy_threshold = max(1e-5, relative_floor, noise_rms * 2.5)
+        if peak_rms > 0:
+            # Never let an unusually noisy recording raise the gate enough to
+            # remove genuine quiet vocal passages.
+            energy_threshold = min(energy_threshold, peak_rms * 0.03)
+
+        energy_voiced = frame_rms >= energy_threshold
+        # Retain two frames around a genuine voiced region to protect soft
+        # consonant onsets/tails, while multi-second pauses remain unvoiced.
+        if energy_voiced.size >= 3:
+            energy_voiced = np.convolve(
+                energy_voiced.astype(np.int8),
+                np.ones(5, dtype=np.int8),
+                mode="same",
+            ) > 0
+        silence_mask = ~energy_voiced
+        f0_smooth[silence_mask] = np.nan
+        voiced_flag = np.asarray(voiced_flag, dtype=bool) & energy_voiced
+        logger.info(
+            "Pitch energy gate: threshold=%.8f, silent_frames=%d/%d",
+            energy_threshold,
+            int(np.sum(silence_mask)),
+            len(silence_mask),
+        )
 
         # Spike suppression in MIDI domain: replace isolated large jumps with neighbor median
         midi_track = np.full(len(f0_smooth), np.nan, dtype=float)
