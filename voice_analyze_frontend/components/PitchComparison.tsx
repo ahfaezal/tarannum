@@ -94,47 +94,52 @@ const PitchComparison: React.FC<PitchComparisonProps> = ({
     points: Array<{ time: number; pitch: number | null }>,
     tension: number = 0.8,
     passes: number = 2 // Multiple passes for smoother curves
-  ): Array<{ x: number; y: number }> => {
-    if (points.length < 2) {
-      return points
-        .filter((p) => p.pitch !== null)
-        .map((p) => ({ x: p.time, y: p.pitch! }));
-    }
+  ): Array<{ x: number; y: number; sourceIndex: number; breakBefore: boolean }> => {
+    type WorkingPoint = { time: number; pitch: number; sourceIndex: number };
+    const voicedRuns: WorkingPoint[][] = [];
+    let currentRun: WorkingPoint[] = [];
+    const maxContinuousGapSeconds = 0.2;
 
-    // Filter valid points first
-    let currentPoints = points.filter((p) => p.pitch !== null && p.pitch > 0);
-    if (currentPoints.length < 2) {
-      return currentPoints.map((p) => ({ x: p.time, y: p.pitch! }));
-    }
+    const flushRun = () => {
+      if (currentRun.length > 0) voicedRuns.push(currentRun);
+      currentRun = [];
+    };
 
-    // Apply multiple passes of smoothing for smoother, more curvilinear result
-    for (let pass = 0; pass < passes; pass++) {
-      const smoothed: Array<{ x: number; y: number }> = [];
-
-      for (let i = 0; i < currentPoints.length; i++) {
-        const p = currentPoints[i];
-
-        // Keep first and last points unchanged
-        if (i === 0 || i === currentPoints.length - 1) {
-          smoothed.push({ x: p.time, y: p.pitch! });
-        } else {
-          const prev = currentPoints[i - 1];
-          const next = currentPoints[i + 1];
-
-          // Enhanced smoothing: average with neighbors using tension
-          // Higher tension (0.8) = more weight on neighbor average = smoother curves
-          const smoothedY =
-            p.pitch! * (1 - tension) +
-            ((prev.pitch! + next.pitch!) / 2) * tension;
-          smoothed.push({ x: p.time, y: smoothedY });
-        }
+    points.forEach((point, sourceIndex) => {
+      if (point.pitch === null || point.pitch <= 0) {
+        flushRun();
+        return;
       }
+      const previous = currentRun[currentRun.length - 1];
+      if (previous && point.time - previous.time > maxContinuousGapSeconds) {
+        flushRun();
+      }
+      currentRun.push({ time: point.time, pitch: point.pitch, sourceIndex });
+    });
+    flushRun();
 
-      // Update current points for next pass
-      currentPoints = smoothed.map((p) => ({ time: p.x, pitch: p.y }));
-    }
-
-    return currentPoints.map((p) => ({ x: p.time, y: p.pitch! }));
+    return voicedRuns.flatMap((run) => {
+      let smoothedRun = run;
+      for (let pass = 0; pass < passes && smoothedRun.length >= 3; pass++) {
+        smoothedRun = smoothedRun.map((point, index, activeRun) => {
+          if (index === 0 || index === activeRun.length - 1) return point;
+          const previous = activeRun[index - 1];
+          const next = activeRun[index + 1];
+          return {
+            ...point,
+            pitch:
+              point.pitch * (1 - tension) +
+              ((previous.pitch + next.pitch) / 2) * tension,
+          };
+        });
+      }
+      return smoothedRun.map((point, index) => ({
+        x: point.time,
+        y: point.pitch,
+        sourceIndex: point.sourceIndex,
+        breakBefore: index === 0,
+      }));
+    });
   };
 
   // Resize canvas to match container
@@ -399,8 +404,9 @@ const PitchComparison: React.FC<PitchComparisonProps> = ({
       ctx.beginPath();
 
       let firstPoint = true;
-      smoothedRef.forEach((point, idx) => {
-        const originalPoint = refPitch[idx];
+      smoothedRef.forEach((point) => {
+        if (point.breakBefore) firstPoint = true;
+        const originalPoint = refPitch[point.sourceIndex];
         const confidence = originalPoint?.confidence ?? 1.0;
 
         if (point.y > 0 && confidence > 0.5) {
@@ -410,7 +416,7 @@ const PitchComparison: React.FC<PitchComparisonProps> = ({
             graphHeight -
             ((point.y - minPitch) / pitchRange) * graphHeight;
 
-          if (firstPoint) {
+          if (firstPoint || point.breakBefore) {
             ctx.moveTo(x, y);
             firstPoint = false;
           } else {
@@ -428,8 +434,9 @@ const PitchComparison: React.FC<PitchComparisonProps> = ({
       ctx.beginPath();
 
       firstPoint = true;
-      smoothedRef.forEach((point, idx) => {
-        const originalPoint = refPitch[idx];
+      smoothedRef.forEach((point) => {
+        if (point.breakBefore) firstPoint = true;
+        const originalPoint = refPitch[point.sourceIndex];
         const confidence = originalPoint?.confidence ?? 1.0;
 
         if (point.y > 0 && confidence <= 0.5 && confidence > 0) {
@@ -439,7 +446,7 @@ const PitchComparison: React.FC<PitchComparisonProps> = ({
             graphHeight -
             ((point.y - minPitch) / pitchRange) * graphHeight;
 
-          if (firstPoint) {
+          if (firstPoint || point.breakBefore) {
             ctx.moveTo(x, y);
             firstPoint = false;
           } else {
@@ -470,8 +477,9 @@ const PitchComparison: React.FC<PitchComparisonProps> = ({
       ctx.beginPath();
 
       let firstPoint = true;
-      smoothedStudent.forEach((point, idx) => {
-        const originalPoint = studentPitch[idx];
+      smoothedStudent.forEach((point) => {
+        if (point.breakBefore) firstPoint = true;
+        const originalPoint = studentPitch[point.sourceIndex];
         const confidence = originalPoint?.confidence ?? 1.0;
 
         if (point.y > 0 && confidence > 0.5) {
@@ -481,7 +489,7 @@ const PitchComparison: React.FC<PitchComparisonProps> = ({
             graphHeight -
             ((point.y - minPitch) / pitchRange) * graphHeight;
 
-          if (firstPoint) {
+          if (firstPoint || point.breakBefore) {
             ctx.moveTo(x, y);
             firstPoint = false;
           } else {
@@ -499,8 +507,9 @@ const PitchComparison: React.FC<PitchComparisonProps> = ({
       ctx.beginPath();
 
       firstPoint = true;
-      smoothedStudent.forEach((point, idx) => {
-        const originalPoint = studentPitch[idx];
+      smoothedStudent.forEach((point) => {
+        if (point.breakBefore) firstPoint = true;
+        const originalPoint = studentPitch[point.sourceIndex];
         const confidence = originalPoint?.confidence ?? 1.0;
 
         if (point.y > 0 && confidence <= 0.5 && confidence > 0) {
@@ -510,7 +519,7 @@ const PitchComparison: React.FC<PitchComparisonProps> = ({
             graphHeight -
             ((point.y - minPitch) / pitchRange) * graphHeight;
 
-          if (firstPoint) {
+          if (firstPoint || point.breakBefore) {
             ctx.moveTo(x, y);
             firstPoint = false;
           } else {

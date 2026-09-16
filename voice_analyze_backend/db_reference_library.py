@@ -27,6 +27,11 @@ REFERENCES_DIR.mkdir(parents=True, exist_ok=True)
 PITCH_CACHE_DIR = Path(__file__).parent / "uploads" / "pitch_cache"
 PITCH_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
+# Increment whenever pitch extraction/downsampling semantics change. Cached
+# points created by an older algorithm must never be served as if they were
+# current; doing so made silence-spike fixes appear ineffective after deploy.
+PITCH_CACHE_ALGORITHM_VERSION = "2026-09-16-silence-gap-v1"
+
 
 class DBReferenceLibrary:
     """Manages reference audio library storage and retrieval using PostgreSQL."""
@@ -948,18 +953,22 @@ class DBReferenceLibrary:
         """
         db_session = db or SessionLocal()
         try:
+            versioned_pitch_data = [dict(point) for point in pitch_data]
+            if versioned_pitch_data:
+                versioned_pitch_data[0]["_cache_version"] = PITCH_CACHE_ALGORITHM_VERSION
+
             # Check if cache already exists
             existing_cache = db_session.query(PitchCache).filter(PitchCache.reference_id == ref_id).first()
             
             if existing_cache:
                 # Update existing cache
-                existing_cache.pitch_data = pitch_data
+                existing_cache.pitch_data = versioned_pitch_data
                 existing_cache.updated_at = datetime.utcnow()
             else:
                 # Create new cache
                 new_cache = PitchCache(
                     reference_id=ref_id,
-                    pitch_data=pitch_data
+                    pitch_data=versioned_pitch_data
                 )
                 db_session.add(new_cache)
             
@@ -978,7 +987,7 @@ class DBReferenceLibrary:
                     
                     # Save pitch data to temp file
                     with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as tmp_file:
-                        json.dump(pitch_data, tmp_file, indent=2)
+                        json.dump(versioned_pitch_data, tmp_file, indent=2)
                         tmp_path = Path(tmp_file.name)
                     
                     try:
@@ -1028,6 +1037,20 @@ class DBReferenceLibrary:
         try:
             cache = db_session.query(PitchCache).filter(PitchCache.reference_id == ref_id).first()
             if cache:
+                cached_points = cache.pitch_data or []
+                cache_version = (
+                    cached_points[0].get("_cache_version")
+                    if cached_points and isinstance(cached_points[0], dict)
+                    else None
+                )
+                if cache_version != PITCH_CACHE_ALGORITHM_VERSION:
+                    logger.info(
+                        "Ignoring stale pitch cache for %s: version=%s expected=%s",
+                        ref_id,
+                        cache_version,
+                        PITCH_CACHE_ALGORITHM_VERSION,
+                    )
+                    return None
                 logger.info(f"Loaded cached pitch data for {ref_id} ({len(cache.pitch_data)} points)")
                 return cache.pitch_data
             return None
