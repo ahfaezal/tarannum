@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { ArrowLeft, CheckCircle, KeyRound, Mail } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { requestPasswordReset, resetPassword } from "../services/authService";
+import PasswordInput from "./PasswordInput";
 
 const ForgotPassword: React.FC = () => {
   const navigate = useNavigate();
@@ -80,8 +81,8 @@ const ForgotPassword: React.FC = () => {
         {step === "reset" && (
           <form onSubmit={submitReset} className="mt-6 space-y-4">
             <input aria-label="Six-digit reset code" inputMode="numeric" maxLength={6} required value={otpCode} onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ""))} placeholder="6-digit reset code" className="w-full rounded-lg border border-slate-300 px-3 py-2.5 tracking-[0.35em]" />
-            <input aria-label="New password" type="password" autoComplete="new-password" required value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="New password" className="w-full rounded-lg border border-slate-300 px-3 py-2.5" />
-            <input aria-label="Confirm new password" type="password" autoComplete="new-password" required value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="Confirm new password" className="w-full rounded-lg border border-slate-300 px-3 py-2.5" />
+            <PasswordInput aria-label="New password" autoComplete="new-password" required value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="New password" className="w-full rounded-lg border border-slate-300 px-3 py-2.5" />
+            <PasswordInput aria-label="Confirm new password" autoComplete="new-password" required value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="Confirm new password" className="w-full rounded-lg border border-slate-300 px-3 py-2.5" />
             <p className="text-xs leading-5 text-slate-500">Use at least 8 characters with uppercase, lowercase, number and special character.</p>
             <button disabled={loading || otpCode.length !== 6} className="w-full rounded-lg bg-emerald-600 px-4 py-2.5 font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">
               {loading ? "Updating..." : "Reset password"}

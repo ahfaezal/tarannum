@@ -7,6 +7,7 @@ import { loginUser } from "../store/slices/authSlice";
 import { RootState } from "../store";
 import { LogIn, Mail, Lock, AlertCircle, CheckCircle } from "lucide-react";
 import { Link } from "react-router-dom";
+import PasswordInput from "./PasswordInput";
 
 interface LoginProps {
   onSwitchToRegister: () => void;
@@ -93,13 +94,12 @@ const Login: React.FC<LoginProps> = ({ onSwitchToRegister, onSuccess, onClose })
             </label>
             <div className="relative">
               <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-              <input
+              <PasswordInput
                 autoComplete="current-password"
-                type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                className="w-full border border-gray-300 rounded-lg py-2 pl-10 focus:ring-2 focus:ring-green-500 focus:border-transparent"
                 placeholder="••••••••"
               />
             </div>

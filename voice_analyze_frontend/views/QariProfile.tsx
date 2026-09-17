@@ -23,6 +23,7 @@ import {
   uploadQariAvatar,
 } from "../services/authService";
 import { fetchCurrentUser } from "../store/slices/authSlice";
+import PasswordInput from "../components/PasswordInput";
 
 const MAX_AVATAR_SIZE = 3 * 1024 * 1024;
 const ALLOWED_AVATAR_TYPES = ["image/jpeg", "image/png", "image/webp"];
@@ -521,16 +522,16 @@ const QariProfileView: React.FC = () => {
               </div>
             </div>
             <form onSubmit={handlePasswordSubmit} className="space-y-4">
-              <input
-                type="password"
+              <PasswordInput
+                autoComplete="current-password"
                 value={passwordForm.current_password}
                 onChange={(event) => setPasswordForm({ ...passwordForm, current_password: event.target.value })}
                 className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
                 placeholder="Current password"
                 required
               />
-              <input
-                type="password"
+              <PasswordInput
+                autoComplete="new-password"
                 value={passwordForm.new_password}
                 onChange={(event) => setPasswordForm({ ...passwordForm, new_password: event.target.value })}
                 className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
@@ -538,8 +539,8 @@ const QariProfileView: React.FC = () => {
                 minLength={8}
                 required
               />
-              <input
-                type="password"
+              <PasswordInput
+                autoComplete="new-password"
                 value={passwordForm.confirm_password}
                 onChange={(event) => setPasswordForm({ ...passwordForm, confirm_password: event.target.value })}
                 className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100"

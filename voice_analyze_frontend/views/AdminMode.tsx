@@ -11,6 +11,7 @@ import PresetEditor from '../components/PresetEditor';
 import ConfirmModal from '../components/ConfirmModal';
 import AlertModal from '../components/AlertModal';
 import { getScoringCapacity, ScoringCapacity } from '../services/apiService';
+import PasswordInput from '../components/PasswordInput';
 
 type TabType = 'presets' | 'users' | 'monitoring';
 
@@ -571,8 +572,8 @@ const AdminMode: React.FC<AdminModeProps> = ({ view = 'presets' }) => {
                   <label className="block text-sm font-medium text-slate-700 mb-1">
                     Password {editingUser && '(leave empty to keep current)'}
                   </label>
-                  <input
-                    type="password"
+                  <PasswordInput
+                    autoComplete="new-password"
                     value={userFormData.password}
                     onChange={(e) => setUserFormData({ ...userFormData, password: e.target.value })}
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
