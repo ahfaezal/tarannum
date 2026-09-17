@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 
-from database import StudentActivityEvent, StudentQariRelationship, User
+from database import Reference, StudentActivityEvent, StudentQariRelationship, User
 
 
 EVENT_TYPES = {
@@ -33,7 +33,44 @@ def _event_date(event: StudentActivityEvent) -> date:
     return _event_timestamp(event).date()
 
 
-def _sum_practice_seconds(events: List[StudentActivityEvent]) -> float:
+MAX_PRACTICE_SESSION_SECONDS = 4 * 60 * 60
+PRACTICE_DURATION_BUFFER = 1.2
+
+
+def _practice_duration_cap(
+    event: StudentActivityEvent,
+    reference_durations: Optional[Dict[str, float]] = None,
+) -> float:
+    """Return a defensive upper bound for one practice attempt.
+
+    iPad/Safari can suspend a page while Date.now() continues advancing.  A
+    stopped event may therefore contain many hours for a short reference.  Use
+    the canonical reference duration (plus a small buffer) when available and
+    retain a conservative hard ceiling for legacy/custom references.
+    """
+    reference_duration = None
+    if reference_durations and event.reference_id:
+        reference_duration = reference_durations.get(str(event.reference_id))
+    if reference_duration is None and isinstance(event.metadata_json, dict):
+        reference_duration = event.metadata_json.get("reference_duration")
+
+    if reference_duration is not None:
+        try:
+            parsed_duration = float(reference_duration)
+            if parsed_duration > 0:
+                return min(
+                    parsed_duration * PRACTICE_DURATION_BUFFER,
+                    MAX_PRACTICE_SESSION_SECONDS,
+                )
+        except (TypeError, ValueError):
+            pass
+    return float(MAX_PRACTICE_SESSION_SECONDS)
+
+
+def sum_practice_seconds(
+    events: List[StudentActivityEvent],
+    reference_durations: Optional[Dict[str, float]] = None,
+) -> float:
     """
     Sum practice duration from practice_stopped events.
 
@@ -52,15 +89,16 @@ def _sum_practice_seconds(events: List[StudentActivityEvent]) -> float:
         if event.event_type != "practice_stopped":
             continue
 
+        duration_cap = _practice_duration_cap(event, reference_durations)
         if event.duration_seconds is not None:
-            total_seconds += max(float(event.duration_seconds), 0.0)
+            total_seconds += min(max(float(event.duration_seconds), 0.0), duration_cap)
             active_start = None
             continue
 
         if active_start:
             delta_seconds = (_event_timestamp(event) - active_start).total_seconds()
             if delta_seconds > 0:
-                total_seconds += delta_seconds
+                total_seconds += min(delta_seconds, duration_cap)
             active_start = None
 
     return total_seconds
@@ -105,12 +143,13 @@ class StudentActivityAnalyticsService:
         events: List[StudentActivityEvent],
         recent_events: List[StudentActivityEvent],
         qari_context: Optional[Dict[str, str]] = None,
+        reference_durations: Optional[Dict[str, float]] = None,
     ) -> Dict[str, Any]:
         counts = {
             event_type: sum(1 for event in events if event.event_type == event_type)
             for event_type in EVENT_TYPES
         }
-        total_practice_seconds = _sum_practice_seconds(events)
+        total_practice_seconds = sum_practice_seconds(events, reference_durations)
         today = datetime.utcnow().date()
         last_7_dates = [today - timedelta(days=offset) for offset in range(6, -1, -1)]
         events_by_date: Dict[date, List[StudentActivityEvent]] = defaultdict(list)
@@ -128,7 +167,10 @@ class StudentActivityAnalyticsService:
                     "practice_sessions": sum(
                         1 for event in day_events if event.event_type == "practice_started"
                     ),
-                    "practice_minutes": round(_sum_practice_seconds(day_events) / 60, 2),
+                    "practice_minutes": round(
+                        sum_practice_seconds(day_events, reference_durations) / 60,
+                        2,
+                    ),
                     "recordings": sum(
                         1 for event in day_events if event.event_type == "recording_submitted"
                     ),
@@ -193,7 +235,17 @@ class StudentActivityAnalyticsService:
                     "qari_name": qari.full_name or qari.email,
                 }
 
-        return StudentActivityAnalyticsService._build_summary(student, events, recent_events, qari_context)
+        reference_ids = {event.reference_id for event in events if event.reference_id}
+        references = db.query(Reference).filter(Reference.id.in_(reference_ids)).all() if reference_ids else []
+        reference_durations = {str(reference.id): reference.duration for reference in references}
+
+        return StudentActivityAnalyticsService._build_summary(
+            student,
+            events,
+            recent_events,
+            qari_context,
+            reference_durations,
+        )
 
     @staticmethod
     def get_qari_student_activity_summary(student: User, qari: User, db: Session) -> Dict[str, Any]:
@@ -226,7 +278,16 @@ class StudentActivityAnalyticsService:
             "qari_id": str(qari.id),
             "qari_name": qari.full_name or qari.email,
         }
-        summary = StudentActivityAnalyticsService._build_summary(student, events, recent_events, qari_context)
+        reference_ids = {event.reference_id for event in events if event.reference_id}
+        references = db.query(Reference).filter(Reference.id.in_(reference_ids)).all() if reference_ids else []
+        reference_durations = {str(reference.id): reference.duration for reference in references}
+        summary = StudentActivityAnalyticsService._build_summary(
+            student,
+            events,
+            recent_events,
+            qari_context,
+            reference_durations,
+        )
         practice_sessions = summary["total_practice_sessions"]
         recordings_submitted = summary["total_recordings_submitted"]
 

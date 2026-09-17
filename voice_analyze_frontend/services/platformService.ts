@@ -76,6 +76,9 @@ export interface StudentInfo {
 
 export interface StudentStatistics {
   total_sessions: number;
+  practice_attempts?: number;
+  practice_minutes?: number;
+  last_practice_at?: string | null;
   average_score: number;
   best_score: number;
   latest_score: number;

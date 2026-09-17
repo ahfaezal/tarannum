@@ -11,7 +11,7 @@ from uuid import UUID
 from database import (
     AnalysisResult, QariContent, Reference, StudentQariRelationship,
     TrainingChallenge, TrainingChallengeParticipant, User, UserRole,
-    UserSession, StudentProgress, get_db,
+    UserSession, StudentActivityEvent, StudentProgress, get_db,
 )
 from auth import (
     get_current_user, get_current_admin_user, get_current_qari_user,
@@ -558,6 +558,7 @@ def get_qari_students(
         student_ids = [relationship.student_id for relationship, _ in relationship_rows]
         stats_by_student = {}
         latest_by_student = {}
+        practice_by_student = {}
         if student_ids:
             stats_rows = db.query(
                 StudentProgress.student_id,
@@ -576,12 +577,48 @@ def get_qari_students(
             ).order_by(StudentProgress.student_id, desc(StudentProgress.created_at)).distinct(StudentProgress.student_id).all()
             latest_by_student = {row.student_id: row for row in latest_rows}
 
+            practice_events = db.query(StudentActivityEvent).filter(
+                StudentActivityEvent.student_id.in_(student_ids),
+                StudentActivityEvent.event_type.in_(("practice_started", "practice_stopped")),
+                or_(
+                    StudentActivityEvent.qari_id == current_user.id,
+                    StudentActivityEvent.qari_id.is_(None),
+                ),
+            ).order_by(
+                StudentActivityEvent.student_id,
+                StudentActivityEvent.occurred_at,
+                StudentActivityEvent.created_at,
+            ).all()
+            reference_ids = {event.reference_id for event in practice_events if event.reference_id}
+            practice_references = db.query(Reference).filter(Reference.id.in_(reference_ids)).all() if reference_ids else []
+            reference_durations = {str(reference.id): reference.duration for reference in practice_references}
+            events_by_student = {}
+            for event in practice_events:
+                events_by_student.setdefault(event.student_id, []).append(event)
+
+            from student_activity_analytics_service import sum_practice_seconds
+            for student_id, events in events_by_student.items():
+                starts = [event for event in events if event.event_type == "practice_started"]
+                practice_by_student[student_id] = {
+                    "practice_attempts": len(starts),
+                    "practice_minutes": round(sum_practice_seconds(events, reference_durations) / 60, 2),
+                    "last_practice_at": max(
+                        (event.occurred_at or event.created_at for event in starts),
+                        default=None,
+                    ),
+                }
+
         students = []
         for relationship, student in relationship_rows:
             aggregate = stats_by_student.get(relationship.student_id, {})
+            practice = practice_by_student.get(relationship.student_id, {})
             latest = latest_by_student.get(relationship.student_id)
             statistics = {
                 "total_sessions": aggregate.get("total_sessions", 0),
+                "practice_attempts": practice.get("practice_attempts", 0),
+                "practice_minutes": practice.get("practice_minutes", 0),
+                "last_practice_at": practice.get("last_practice_at").isoformat()
+                if practice.get("last_practice_at") else None,
                 "average_score": aggregate.get("average_score", 0),
                 "best_score": aggregate.get("best_score", 0),
                 "latest_score": float(latest.overall_score) if latest else 0,

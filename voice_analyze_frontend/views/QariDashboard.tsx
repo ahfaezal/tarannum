@@ -177,7 +177,8 @@ const QariDashboard: React.FC = () => {
         last_active: student.last_active,
       },
       statistics: student.statistics || {
-        total_sessions: 0, average_score: 0, best_score: 0, latest_score: 0,
+        total_sessions: 0, practice_attempts: 0, practice_minutes: 0,
+        last_practice_at: null, average_score: 0, best_score: 0, latest_score: 0,
         improvement_trend: [], weakest_verses: [],
       },
       progress: [], recordings: [],
@@ -749,7 +750,7 @@ const QariDashboard: React.FC = () => {
               <select value={studentSort} onChange={(event) => { const value = event.target.value as typeof studentSort; setStudentSort(value); loadStudents(1, studentSearch, studentFilter, value); }} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-700">
                 <option value="last_active">Latest activity</option>
                 <option value="name">Name</option>
-                <option value="sessions">Most sessions</option>
+                <option value="sessions">Most scored recordings</option>
                 <option value="best_score">Best score</option>
               </select>
               {/* Filter Dropdown */}
@@ -866,21 +867,30 @@ const QariDashboard: React.FC = () => {
                   <div
                     key={student.student_id}
                     onClick={() => handleStudentClick(student)}
-                    className="grid cursor-pointer gap-4 rounded-xl border border-slate-200 bg-white p-4 transition hover:border-emerald-300 hover:shadow-md md:grid-cols-[minmax(0,1fr)_repeat(4,minmax(90px,auto))] md:items-center"
+                    className="grid cursor-pointer gap-4 rounded-xl border border-slate-200 bg-white p-4 transition hover:border-emerald-300 hover:shadow-md lg:grid-cols-[minmax(0,1.5fr)_repeat(6,minmax(72px,auto))] lg:items-center"
                   >
                   <div className="min-w-0">
-                    <h3 className="font-semibold text-gray-800">
-                      {student.student_name || student.student_email}
-                    </h3>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="font-semibold text-gray-800">
+                        {student.student_name || student.student_email}
+                      </h3>
+                      <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${student.last_active && new Date(student.last_active) >= new Date(Date.now() - 30 * 86400000) ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>
+                        {student.last_active && new Date(student.last_active) >= new Date(Date.now() - 30 * 86400000) ? "Active" : "Inactive"}
+                      </span>
+                    </div>
                     <p className="truncate text-sm text-gray-600">{student.student_email}</p>
+                    {(student.statistics?.practice_attempts || 0) > 0 && (student.statistics?.total_sessions || 0) === 0 && (
+                      <p className="mt-1 text-xs font-medium text-blue-700">
+                        {student.statistics?.practice_attempts} practice attempt{student.statistics?.practice_attempts === 1 ? "" : "s"} · no scored recording yet
+                      </p>
+                    )}
                   </div>
-                  <div><p className="text-xs text-slate-500">Last active</p><p className="text-sm font-semibold text-slate-800">{student.last_active ? new Date(student.last_active).toLocaleDateString() : "—"}</p></div>
-                  <div><p className="text-xs text-slate-500">Sessions</p><p className="text-lg font-bold text-slate-900">{student.statistics?.total_sessions || 0}</p></div>
+                  <div><p className="text-xs text-slate-500">Last practice</p><p className="text-sm font-semibold text-slate-800">{student.statistics?.last_practice_at ? new Date(student.statistics.last_practice_at).toLocaleDateString() : "—"}</p></div>
+                  <div><p className="text-xs text-slate-500">Practice attempts</p><p className="text-lg font-bold text-blue-700">{student.statistics?.practice_attempts || 0}</p></div>
+                  <div><p className="text-xs text-slate-500">Practice time</p><p className="text-lg font-bold text-slate-900">{formatPracticeMinutes(student.statistics?.practice_minutes || 0)}</p></div>
+                  <div><p className="text-xs text-slate-500">Scored recordings</p><p className="text-lg font-bold text-slate-900">{student.statistics?.total_sessions || 0}</p></div>
                   <div><p className="text-xs text-slate-500">Average</p><p className="text-lg font-bold text-slate-900">{formatScore(student.statistics?.average_score)}</p></div>
                   <div><p className="text-xs text-slate-500">Best</p><p className="text-lg font-bold text-emerald-700">{formatScore(student.statistics?.best_score)}</p></div>
-                  <div className={`justify-self-start rounded-full px-2.5 py-1 text-xs font-bold md:justify-self-end ${student.last_active && new Date(student.last_active) >= new Date(Date.now() - 30 * 86400000) ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>
-                    {student.last_active && new Date(student.last_active) >= new Date(Date.now() - 30 * 86400000) ? "Active" : "Inactive"}
-                  </div>
                   </div>
                 ))}
                 <div className="flex items-center justify-between border-t border-slate-100 pt-4">
@@ -1041,7 +1051,7 @@ const QariDashboard: React.FC = () => {
                   {selectedStudentPreview && <div className="rounded-xl border border-emerald-100 bg-emerald-50/60 p-5">
                     <p className="font-semibold text-slate-900">{selectedStudentPreview.student_email}</p>
                     <div className="mt-4 grid grid-cols-3 gap-3">
-                      <div><p className="text-xs text-slate-500">Sessions</p><p className="text-2xl font-bold">{selectedStudentPreview.statistics?.total_sessions || 0}</p></div>
+                      <div><p className="text-xs text-slate-500">Scored Recordings</p><p className="text-2xl font-bold">{selectedStudentPreview.statistics?.total_sessions || 0}</p></div>
                       <div><p className="text-xs text-slate-500">Average</p><p className="text-2xl font-bold">{formatScore(selectedStudentPreview.statistics?.average_score)}</p></div>
                       <div><p className="text-xs text-slate-500">Best</p><p className="text-2xl font-bold text-emerald-700">{formatScore(selectedStudentPreview.statistics?.best_score)}</p></div>
                     </div>
@@ -1091,7 +1101,7 @@ const QariDashboard: React.FC = () => {
                     <h3 className="font-semibold text-gray-800 mb-3">Statistics</h3>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                       <div>
-                        <p className="text-sm text-gray-600">Total Sessions</p>
+                        <p className="text-sm text-gray-600">Scored Recordings</p>
                         <p className="text-2xl font-bold text-gray-800">
                           {studentDetails.statistics.total_sessions}
                         </p>

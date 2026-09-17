@@ -1163,6 +1163,22 @@ const TrainingStudio: React.FC = () => {
     });
   };
 
+  const getSafePracticeDurationSeconds = (): number | undefined => {
+    if (practiceStartTimeRef.current === null) return undefined;
+
+    const elapsedSeconds = Math.max(
+      0,
+      (Date.now() - practiceStartTimeRef.current) / 1000
+    );
+    const canonicalDuration = referenceDurationRef.current;
+    const maximumSeconds =
+      Number.isFinite(canonicalDuration) && canonicalDuration > 0
+        ? canonicalDuration * 1.2
+        : 4 * 60 * 60;
+
+    return Math.min(elapsedSeconds, maximumSeconds);
+  };
+
   // Handle real-time student pitch updates for practice mode
   const handlePracticePitchUpdate = (pitch: PitchPoint) => {
     // Use refs to check if practice mode is active (avoid stale closures)
@@ -1195,9 +1211,12 @@ const TrainingStudio: React.FC = () => {
       practicePitchExtractorRef.current.stop();
       practicePitchExtractorRef.current = null;
       trackStudentActivity("practice_stopped", {
-        duration_seconds: elapsedTime,
+        duration_seconds: getSafePracticeDurationSeconds(),
         playback_position: durationProbe,
-        metadata: { source: "auto_duration_limit" },
+        metadata: {
+          source: "auto_duration_limit",
+          reference_duration: Number.isFinite(refDuration) ? refDuration : undefined,
+        },
       });
       setIsPracticeMode(false);
       isPracticeModeRef.current = false;
@@ -1627,9 +1646,7 @@ const TrainingStudio: React.FC = () => {
 
   // Stop practice mode (stops but keeps graph data)
   const handlePracticeStop = () => {
-    const practiceDurationSeconds = practiceStartTimeRef.current
-      ? Math.max(0, (Date.now() - practiceStartTimeRef.current) / 1000)
-      : undefined;
+    const practiceDurationSeconds = getSafePracticeDurationSeconds();
     const currentReferenceTime = refWaveSurfer.current
       ? refWaveSurfer.current.getCurrentTime()
       : playbackTime;
@@ -1696,6 +1713,9 @@ const TrainingStudio: React.FC = () => {
     trackStudentActivity("practice_stopped", {
       duration_seconds: practiceDurationSeconds,
       playback_position: currentReferenceTime,
+      metadata: {
+        reference_duration: referenceDurationRef.current || undefined,
+      },
     });
 
     console.log("Practice mode stopped (graph data preserved)");
