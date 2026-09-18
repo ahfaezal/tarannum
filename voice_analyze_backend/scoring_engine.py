@@ -24,6 +24,7 @@ import os
 import time
 from typing import Tuple, List, Dict, Union
 from collections import Counter, OrderedDict
+from scoring_diagnostics import NearestPitchTime
 
 # Suppress librosa warnings about audioread fallback (it still works)
 warnings.filterwarnings("ignore", category=UserWarning, module="librosa")
@@ -3995,6 +3996,7 @@ def calculate_similarity_score(reference_path: str, user_path: str, return_segme
     timing_started = time.perf_counter()
     timing_checkpoint = timing_started
     timing_stages = {}
+    reference_cache_hit = False
 
     def mark_timing(stage: str) -> None:
         """Record pipeline timings without affecting assessment calculations."""
@@ -4172,9 +4174,11 @@ def calculate_similarity_score(reference_path: str, user_path: str, return_segme
                     )
                 )
                 logger.info(f"Reference pitch extracted: {len(ref_pitch)} points")
+                mark_timing("reference_analysis_ms")
 
                 user_pitch = extract_pitch(user_audio_processed, user_sr)
                 logger.info(f"Student pitch extracted: {len(user_pitch)} points")
+                mark_timing("student_pitch_ms")
 
                 # If both pitch arrays are empty: log and continue (frontend will show 'Pitch Data Unavailable')
                 if (not ref_pitch or len(ref_pitch) == 0) and (not user_pitch or len(user_pitch) == 0):
@@ -4189,6 +4193,8 @@ def calculate_similarity_score(reference_path: str, user_path: str, return_segme
                         user_dict = {p['time']: p for p in user_pitch if p.get('f_hz') is not None and p.get('f_hz') > 0}
 
                         if ref_dict and user_dict:
+                            ref_time_index = NearestPitchTime(ref_dict)
+                            user_time_index = NearestPitchTime(user_dict)
                             # Combine times and check deviations
                             all_times = sorted(set(list(ref_dict.keys()) + list(user_dict.keys())))
                             time_tolerance = 0.1  # 100ms tolerance
@@ -4202,8 +4208,8 @@ def calculate_similarity_score(reference_path: str, user_path: str, return_segme
                             for time_point in all_times:
                                 try:
                                     # Find nearest times in each dict
-                                    ref_time = min(ref_dict.keys(), key=lambda t: abs(t - time_point)) if ref_dict else None
-                                    user_time = min(user_dict.keys(), key=lambda t: abs(t - time_point)) if user_dict else None
+                                    ref_time = ref_time_index.nearest(time_point)
+                                    user_time = user_time_index.nearest(time_point)
 
                                     if ref_time is not None and user_time is not None and abs(ref_time - time_point) < time_tolerance and abs(user_time - time_point) < time_tolerance:
                                         ref_p = ref_dict[ref_time].get('f_hz')
@@ -4240,7 +4246,7 @@ def calculate_similarity_score(reference_path: str, user_path: str, return_segme
                     'student': [],
                     'errorPoints': []
                 }
-        mark_timing("pitch_pipeline_ms")
+        mark_timing("pitch_comparison_and_grid_ms")
 
         # No-voice check using pitch: if user has very little voiced content vs reference, treat as silence (client: Recording 3 "No Voice (Mic Active)" was 21% - should be close to 0%)
         if isinstance(pitch_data, dict):
@@ -4937,6 +4943,11 @@ def calculate_similarity_score(reference_path: str, user_path: str, return_segme
         # Add score breakdown to training feedback for frontend display
         # Breakdown: base_score (pronunciation/timing) and pitch_shape_score (pitch accuracy)
         if isinstance(training_feedback, dict):
+            training_feedback['processingDiagnostics'] = {
+                'engineTotalMs': round((time.perf_counter() - timing_started) * 1000.0, 1),
+                'stagesMs': dict(timing_stages),
+                'referenceCacheHit': reference_cache_hit,
+            }
             training_feedback['scoreBreakdown'] = {
                 'scoring_version': scoring_version,
                 'base_score': round(base_score, 2),
