@@ -74,6 +74,7 @@ class User(Base):
     bio = Column(Text, nullable=True)
     maqam_specialization = Column(String, nullable=True)
     email_verified = Column(Boolean, default=False, nullable=False)
+    admin_provisioned = Column(Boolean, default=False, nullable=False)
     email_verified_at = Column(DateTime, nullable=True)
     otp_code_hash = Column(String, nullable=True)
     otp_expires_at = Column(DateTime, nullable=True)
@@ -824,6 +825,7 @@ def ensure_email_otp_columns():
     columns = {
         "email_verified": "BOOLEAN DEFAULT TRUE NOT NULL",
         "email_verified_at": "TIMESTAMP",
+        "admin_provisioned": "BOOLEAN DEFAULT FALSE NOT NULL",
         "otp_code_hash": "VARCHAR",
         "otp_expires_at": "TIMESTAMP",
         "otp_consumed_at": "TIMESTAMP",

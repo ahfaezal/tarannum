@@ -683,7 +683,9 @@ def login(credentials: UserLogin, db: Session = Depends(get_db)):
             # User exists, check password
             if existing_user.hashed_password and verify_password(credentials.password, existing_user.hashed_password):
                 role_value = _role_value(existing_user.role)
-                if role_value != UserRole.ADMIN.value and not existing_user.email_verified:
+                if (role_value != UserRole.ADMIN.value
+                        and not existing_user.email_verified
+                        and not existing_user.admin_provisioned):
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN,
                         detail="Please verify your email before logging in.",

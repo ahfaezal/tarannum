@@ -1669,7 +1669,8 @@ async def create_user(
         from auth import get_password_hash
         
         # Check if user already exists
-        existing = db.query(User).filter(User.email == user_data.email).first()
+        normalized_email = user_data.email.strip().lower()
+        existing = db.query(User).filter(func.lower(User.email) == normalized_email).first()
         if existing:
             raise HTTPException(status_code=400, detail="Email already registered")
         
@@ -1685,8 +1686,10 @@ async def create_user(
         
         # Create user
         new_user = User(
-            email=user_data.email,
+            email=normalized_email,
             hashed_password=hashed_password,
+            admin_provisioned=True,
+            email_verified=False,
             full_name=_normalize_full_name(user_data.full_name),
             role=user_data.role,
             is_active=user_data.is_active,
