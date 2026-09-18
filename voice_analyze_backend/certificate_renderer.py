@@ -11,8 +11,9 @@ from reportlab.lib.colors import Color, HexColor
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.pdfgen import canvas
+from reportlab.lib.utils import ImageReader
 
-from database import Certificate, QariSignature
+from database import Certificate, QariSignature, CEOSignature
 
 
 EMERALD = HexColor("#07543D")
@@ -83,7 +84,9 @@ def _draw_qr(c: canvas.Canvas, url: str):
 
 
 def _draw_signature(c: canvas.Canvas, x: float, y: float, name: str, title_lines: list[str], image_path=None):
-    if image_path and Path(image_path).exists():
+    if isinstance(image_path, ImageReader):
+        c.drawImage(image_path, x - 65, y + 12, 130, 45, preserveAspectRatio=True, mask='auto')
+    elif image_path and Path(image_path).exists():
         c.drawImage(str(image_path), x - 65, y + 12, 130, 45, preserveAspectRatio=True, mask="auto")
     c.setStrokeColor(GOLD)
     c.setLineWidth(1)
@@ -149,6 +152,9 @@ def render_certificate_pdf(db, certificate: Certificate) -> Path:
     c.drawString(52, 69, f"Tarikh Dikeluarkan: {certificate.issued_at.strftime('%d/%m/%Y')}")
 
     ceo_signature = os.getenv("CERTIFICATE_CEO_SIGNATURE_PATH")
+    uploaded_ceo_signature = db.get(CEOSignature, 1)
+    if uploaded_ceo_signature:
+        ceo_signature = ImageReader(io.BytesIO(uploaded_ceo_signature.image_data))
     if is_attendance:
         _draw_signature(c, width / 2, 86, snapshot.get("ceo_name", ""), [snapshot.get("ceo_title", ""), snapshot.get("ceo_organization", "")], ceo_signature)
     else:

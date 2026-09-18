@@ -10,7 +10,7 @@ from typing import List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from PIL import Image
@@ -38,6 +38,7 @@ from database import (
     UserSession,
     get_db,
     QariContent, StudentQariRelationship,
+    CEOSignature, AuditLog,
 )
 
 
@@ -383,6 +384,43 @@ def qari_decision(application_id: UUID, payload: QariDecision, qari: User = Depe
     except ValueError as exc:
         db.rollback()
         raise HTTPException(400, str(exc))
+
+
+@router.get('/admin/ceo-signature')
+def ceo_signature_status(admin: User = Depends(get_current_admin_user), db: Session = Depends(get_db)):
+    signature = db.get(CEOSignature, 1)
+    return {'uploaded': signature is not None,
+        'checksum': signature.checksum if signature else None,
+        'updated_at': signature.updated_at.isoformat() + 'Z' if signature else None}
+
+
+@router.get('/admin/ceo-signature/preview')
+def ceo_signature_preview(admin: User = Depends(get_current_admin_user), db: Session = Depends(get_db)):
+    signature = db.get(CEOSignature, 1)
+    if not signature: raise HTTPException(404, 'Tandatangan CEO belum dimuat naik')
+    return Response(bytes(signature.image_data), media_type='image/png',
+        headers={'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff'})
+
+
+@router.post('/admin/ceo-signature')
+async def upload_ceo_signature(file: UploadFile = File(...),
+        admin: User = Depends(get_current_admin_user), db: Session = Depends(get_db)):
+    from ceo_signature_service import normalize_signature, MAX_SIGNATURE_BYTES
+    from sqlalchemy.dialects.postgresql import insert
+    content = await file.read(MAX_SIGNATURE_BYTES + 1)
+    try: image_data = normalize_signature(content, file.content_type)
+    except ValueError as exc: raise HTTPException(400, str(exc))
+    checksum = hashlib.sha256(image_data).hexdigest()
+    now = datetime.utcnow()
+    values = dict(id=1, image_data=image_data, checksum=checksum, mime_type='image/png',
+        uploaded_by=admin.id, updated_at=now)
+    stmt = insert(CEOSignature).values(**values)
+    db.execute(stmt.on_conflict_do_update(index_elements=['id'],
+        set_={key: value for key, value in values.items() if key != 'id'}))
+    db.add(AuditLog(action='upload_ceo_signature', entity_type='ceo_signature', entity_id='1',
+        user_id=admin.id, new_values={'checksum': checksum}))
+    db.commit()
+    return {'uploaded': True, 'checksum': checksum, 'updated_at': now.isoformat() + 'Z'}
 
 
 @router.post("/qari/signature")

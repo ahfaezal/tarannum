@@ -15,6 +15,20 @@ const request = async <T>(path: string, options: RequestInit = {}): Promise<T> =
 };
 export const managedCertificationRequest = request;
 
+export interface CEOSignatureStatus {uploaded: boolean; checksum: string | null; updated_at: string | null}
+export const getCEOSignatureStatus = () => request<CEOSignatureStatus>('/admin/ceo-signature');
+export const getCEOSignaturePreview = async () => {
+  const response = await fetch(`${API_URL}/api/certification/admin/ceo-signature/preview`, {headers: getAuthHeader()});
+  if (!response.ok) throw new Error('Gagal memuatkan pratonton tandatangan CEO');
+  return response.blob();
+};
+export const uploadCEOSignature = async (file: File): Promise<CEOSignatureStatus> => {
+  const body = new FormData(); body.append('file', file);
+  const response = await fetch(`${API_URL}/api/certification/admin/ceo-signature`, {method: 'POST', headers: getAuthHeader(), body});
+  if (!response.ok) throw new Error((await response.json().catch(() => ({}))).detail || 'Gagal menyimpan tandatangan CEO');
+  return response.json();
+};
+
 export interface CourseProgress {
   course_id: string;
   enrollment_id: string;

@@ -2,7 +2,7 @@
 Database connection and session management for PostgreSQL.
 """
 import os
-from sqlalchemy import create_engine, Column, String, Integer, Float, Boolean, DateTime, Text, JSON, ForeignKey, UniqueConstraint, text
+from sqlalchemy import create_engine, Column, String, Integer, Float, Boolean, DateTime, Text, JSON, ForeignKey, UniqueConstraint, LargeBinary, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship, Session
 from sqlalchemy.dialects.postgresql import UUID
@@ -559,6 +559,17 @@ class CertificateApplication(Base):
     qari_notes = Column(Text, nullable=True)
     submitted_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     decided_at = Column(DateTime, nullable=True)
+
+
+class CEOSignature(Base):
+    """Singleton protected CEO signature shared across API replicas."""
+    __tablename__ = 'ceo_signatures'
+    id = Column(Integer, primary_key=True)
+    image_data = Column(LargeBinary, nullable=False)
+    checksum = Column(String, nullable=False)
+    mime_type = Column(String, nullable=False, default='image/png')
+    uploaded_by = Column(UUID(as_uuid=True), ForeignKey('users.id', ondelete='SET NULL'), nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 
 class QariSignature(Base):

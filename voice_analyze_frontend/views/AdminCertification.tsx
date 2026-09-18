@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { CalendarDays, Check, Loader2, Plus, Users } from "lucide-react";
 import { createCertificationCourse, enrollCourseStudents, getAdminCourses, getCourseEnrollments, setEnrollmentAttendance, CertificationCourse } from "../services/certificationService";
 import { AdminUser, getAvailableContent, listAllUsers } from "../services/platformService";
+import CEOSignaturePanel from '../components/CEOSignaturePanel';
 
 const AdminCertification: React.FC = () => {
   const [courses, setCourses] = useState<CertificationCourse[]>([]);
@@ -30,6 +31,7 @@ const AdminCertification: React.FC = () => {
   if (loading) return <div className="flex min-h-[50vh] items-center justify-center"><Loader2 className="animate-spin" /></div>;
   return <div className="mx-auto max-w-7xl space-y-6 p-4 sm:p-6 lg:p-8">
     <header><p className="text-sm font-bold uppercase tracking-wider text-emerald-700">Pentadbiran</p><h1 className="text-3xl font-bold">Kursus & Persijilan</h1><p className="mt-2 text-slate-600">Jumlah rakaman dikira automatik daripada 60 minit dan tempoh audio rujukan.</p></header>
+    <CEOSignaturePanel />
     {error && <div className="rounded-xl bg-red-50 p-4 text-red-700">{error}</div>}
     <div className="grid gap-6 lg:grid-cols-[380px_1fr]">
       <form onSubmit={create} className="space-y-4 rounded-2xl border bg-white p-5 shadow-sm">
