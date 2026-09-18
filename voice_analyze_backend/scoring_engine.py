@@ -25,6 +25,7 @@ import time
 from typing import Tuple, List, Dict, Union
 from collections import Counter, OrderedDict
 from scoring_diagnostics import NearestPitchTime
+from reference_analysis_cache import ReferenceAnalysisCache
 
 # Suppress librosa warnings about audioread fallback (it still works)
 warnings.filterwarnings("ignore", category=UserWarning, module="librosa")
@@ -35,8 +36,8 @@ logger = logging.getLogger(__name__)
 # Per-worker cache for immutable Qari reference analysis. Celery worker
 # processes are long-lived, while the same reference is assessed repeatedly
 # by many students. Keep the cache deliberately small to bound memory usage.
-_REFERENCE_ANALYSIS_CACHE = OrderedDict()
 _REFERENCE_ANALYSIS_CACHE_LIMIT = 4
+_REFERENCE_ANALYSIS_CACHE = ReferenceAnalysisCache(_REFERENCE_ANALYSIS_CACHE_LIMIT)
 
 # Vosk model configuration
 VOSK_MODEL_PATH = os.getenv(
@@ -2493,20 +2494,12 @@ def get_cached_reference_analysis(
         int(sr),
         int(len(audio)),
     )
-    cached = _REFERENCE_ANALYSIS_CACHE.get(cache_key)
-    if cached is not None:
-        _REFERENCE_ANALYSIS_CACHE.move_to_end(cache_key)
-        logger.info("Reference analysis cache hit: %s", path.name)
-        return cached[0], cached[1], True
-
-    pitch = extract_pitch(audio, sr)
-    features = extract_features(audio, sr)
-    _REFERENCE_ANALYSIS_CACHE[cache_key] = (pitch, features)
-    _REFERENCE_ANALYSIS_CACHE.move_to_end(cache_key)
-    while len(_REFERENCE_ANALYSIS_CACHE) > _REFERENCE_ANALYSIS_CACHE_LIMIT:
-        _REFERENCE_ANALYSIS_CACHE.popitem(last=False)
-    logger.info("Reference analysis cached: %s", path.name)
-    return pitch, features, False
+    (pitch, features), cache_hit = _REFERENCE_ANALYSIS_CACHE.get_or_compute(
+        cache_key, lambda: (extract_pitch(audio, sr), extract_features(audio, sr))
+    )
+    logger.info("Reference analysis cache %s: %s",
+                "reused" if cache_hit else "computed", path.name)
+    return pitch, features, cache_hit
 
 def normalize_features(features: np.ndarray) -> np.ndarray:
     """
