@@ -4,7 +4,7 @@ import { QariContent } from '../services/platformService';
 import TrainingChallengePanel from './TrainingChallengePanel';
 import { courseContextPath } from '../utils/certificationRequestUtils';
 
-type Context = {qaris: {id: string; name: string}[]; references: QariContent[]; students: {id: string; name: string}[]};
+type Context = {qaris: {id: string; name: string}[]; references: QariContent[]; students: {id: string; name: string; email?: string; registered_at?: string}[]; student_total?: number; student_offset?: number; student_limit?: number};
 type Enrollment = {id: string; student_id: string; student_name: string; student_email: string; attendance_status: string; valid_recording_count: number; required_recording_count: number; eligible: boolean; competency_status: string};
 
 export default function CourseManager({admin = false, defaultExpanded = false}: {admin?: boolean; defaultExpanded?: boolean}) {
@@ -15,6 +15,9 @@ export default function CourseManager({admin = false, defaultExpanded = false}: 
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [chosen, setChosen] = useState<string[]>([]);
   const [search, setSearch] = useState('');
+  const [filters, setFilters] = useState({registered_from: '', registered_to: '', sort: 'newest'});
+  const [appliedFilters, setAppliedFilters] = useState({search: '', registered_from: '', registered_to: '', sort: 'newest'});
+  const [success, setSuccess] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [form, setForm] = useState({title: '', qari_id: '', reference_id: '', certificate_category: 'azan', starts_at: '', duration_minutes: 360, completion_window_days: 30, location: ''});
@@ -22,8 +25,8 @@ export default function CourseManager({admin = false, defaultExpanded = false}: 
   const course = courses.find(c => c.id === selected);
   const run = async (job: () => Promise<void>) => {setBusy(true); setError(''); try {await job();} catch (e: any) {setError(e.message);} finally {setBusy(false);}};
   const loadCourses = async () => setCourses(await api<CertificationCourse[]>('/managed/courses'));
-  const loadContext = async (qariId = form.qari_id, term = '') => {
-    const data = await api<Context>(courseContextPath(qariId, term));
+  const loadContext = async (qariId = form.qari_id, term = '', options = {registered_from: '', registered_to: '', sort: 'newest', offset: 0}) => {
+    const data = await api<Context>(courseContextPath(qariId, term, options));
     setContext(data);
     if (!admin && data.qaris.length) setForm(f => ({...f, qari_id: data.qaris[0].id}));
   };
@@ -31,9 +34,14 @@ export default function CourseManager({admin = false, defaultExpanded = false}: 
   const selectCourse = async (id: string) => {
     const token = ++version.current;
     setSelected(id); setEnrollments([]); setChosen([]);
+    setAppliedFilters({search, ...filters});
     await run(async () => {
       const rows = await api<Enrollment[]>(`/managed/courses/${id}/enrollments`);
-      if (version.current === token) setEnrollments(rows);
+      if (version.current === token) {
+        setEnrollments(rows);
+        const selectedCourse = courses.find(c => c.id === id);
+        if (selectedCourse) await loadContext(selectedCourse.qari_id, search, {...filters, offset: 0});
+      }
     });
   };
   const refresh = async () => {if (selected) setEnrollments(await api<Enrollment[]>(`/managed/courses/${selected}/enrollments`));};
@@ -43,9 +51,10 @@ export default function CourseManager({admin = false, defaultExpanded = false}: 
     {opened && <div className="mt-4 space-y-5">
       <p className="text-sm text-slate-600">Satu senarai peserta untuk kursus dan Live Scoring. Sijil Kehadiran memerlukan hadir + 60 minit latihan; Sijil Kompetensi turut memerlukan skor ≥75 dan kelulusan qari.</p>
       {error && <p role="alert" className="text-red-700">{error}</p>}
+      {success && <p role="status" aria-live="polite" className="rounded-lg bg-emerald-50 p-3 font-semibold text-emerald-800">{success}</p>}
       <label className="block font-semibold">Pilih kursus<select className="ml-3 max-w-full rounded border p-2" value={selected} disabled={busy} onChange={e => {if(e.target.value) void selectCourse(e.target.value); else {setSelected('');setEnrollments([]);}}}><option value="">Pilih kursus untuk pemantauan</option>{courses.map(c => <option key={c.id} value={c.id}>{c.title} · {new Date(c.starts_at).toLocaleDateString('ms-MY')}</option>)}</select></label>
       <details className="rounded-xl border p-4"><summary className="cursor-pointer font-bold text-emerald-800">Cipta Kursus Baharu</summary>
-      <form className="mt-4 grid gap-3 md:grid-cols-2" onSubmit={e => {e.preventDefault(); void run(async () => {await api('/managed/courses', post({...form, starts_at: new Date(form.starts_at).toISOString()})); await loadCourses(); setForm(f => ({...f, title: ''}));});}}>
+      <form className="mt-4 grid gap-3 md:grid-cols-2" onSubmit={e => {e.preventDefault(); setSuccess(''); void run(async () => {await api('/managed/courses', post({...form, starts_at: new Date(form.starts_at).toISOString()})); setSuccess('Kursus Telah Berjaya Dicipta'); setForm(f => ({...f, title: ''})); await loadCourses();});}}>
         <label>Nama kursus<input required minLength={3} className="block w-full rounded border p-2" value={form.title} onChange={e => setForm({...form, title: e.target.value})} /></label>
         <label>Qari<select required className="block w-full rounded border p-2" value={form.qari_id} disabled={!admin || busy} onChange={e => {const id=e.target.value; setForm({...form,qari_id:id,reference_id:''}); void run(() => loadContext(id));}}><option value="">Pilih qari</option>{context.qaris.map(q => <option key={q.id} value={q.id}>{q.name}</option>)}</select></label>
         <label>Rujukan<select required className="block w-full rounded border p-2" value={form.reference_id} onChange={e => setForm({...form,reference_id:e.target.value})}><option value="">Pilih rujukan pustaka qari</option>{context.references.map(r => <option key={r.id} value={r.reference_id}>{r.reference_title || r.title}</option>)}</select></label>
@@ -59,9 +68,18 @@ export default function CourseManager({admin = false, defaultExpanded = false}: 
       </details>
       {course && <div className="space-y-4">
         <h3 className="font-bold">{course.title} · {course.reference_title} · {course.required_recording_count} rakaman sah untuk 60 minit</h3>
-        <form onSubmit={e => {e.preventDefault(); void run(() => loadContext(form.qari_id, search));}}><input aria-label="Cari calon peserta" className="rounded border p-2" placeholder="Cari calon peserta" value={search} onChange={e => setSearch(e.target.value)} /><button disabled={busy} className="ml-2 rounded border p-2">Cari</button></form>
-        <p className="text-sm text-slate-600">Maksimum 100 calon dipaparkan; gunakan carian. Qari boleh mendaftarkan pelajar yang dipautkan kepadanya; admin boleh mendaftarkan akaun peserta aktif.</p>
-        <div className="grid max-h-64 gap-2 overflow-y-auto md:grid-cols-3">{context.students.filter(s => !enrollments.some(r => r.student_id===s.id)).map(s => <label key={s.id} className="rounded border p-2"><input type="checkbox" checked={chosen.includes(s.id)} onChange={e => setChosen(e.target.checked ? [...chosen,s.id] : chosen.filter(id=>id!==s.id))} /> {s.name}</label>)}</div>
+        <form className="grid gap-3 md:grid-cols-4" onSubmit={e => {e.preventDefault(); setAppliedFilters({search, ...filters}); void run(() => loadContext(course.qari_id, search, {...filters, offset: 0}));}}>
+          <label>Nama atau e-mel<input className="block w-full rounded border p-2" placeholder="Cari calon peserta" value={search} onChange={e => setSearch(e.target.value)} /></label>
+          <label>Tarikh daftar dari<input type="date" className="block w-full rounded border p-2" value={filters.registered_from} onChange={e => setFilters({...filters, registered_from:e.target.value})} /></label>
+          <label>Tarikh daftar hingga<input type="date" min={filters.registered_from || undefined} className="block w-full rounded border p-2" value={filters.registered_to} onChange={e => setFilters({...filters, registered_to:e.target.value})} /></label>
+          <label>Susunan<select className="block w-full rounded border p-2" value={filters.sort} onChange={e => setFilters({...filters, sort:e.target.value})}><option value="newest">Daftar terkini</option><option value="oldest">Daftar terawal</option><option value="name">Nama A–Z</option></select></label>
+          <button disabled={busy} className="rounded border p-2">Cari / Tapis</button>
+          <button type="button" disabled={busy} className="rounded border p-2" onClick={() => {const reset={registered_from:'',registered_to:'',sort:'newest'};setSearch('');setFilters(reset);setAppliedFilters({search:'',...reset});void run(() => loadContext(course.qari_id, '', {...reset,offset:0}));}}>Set semula</button>
+        </form>
+        <p className="text-sm text-slate-600">{context.student_total ?? context.students.length} akaun sepadan. {chosen.length} dipilih (pilihan dikekalkan antara halaman). Tarikh merujuk kepada pendaftaran akaun, bukan pendaftaran kursus. Qari hanya boleh mendaftarkan pelajar yang dipautkan kepadanya.</p>
+        <div className="grid max-h-64 gap-2 overflow-y-auto md:grid-cols-3">{context.students.map(s => {const enrolled=enrollments.some(r => r.student_id===s.id);return <label key={s.id} className="rounded border p-2"><input type="checkbox" disabled={busy || enrolled} checked={enrolled || chosen.includes(s.id)} onChange={e => setChosen(e.target.checked ? [...chosen,s.id] : chosen.filter(id=>id!==s.id))} /> {s.name}<span className="block break-all text-xs text-slate-500">{s.email}{enrolled ? ' · Sudah didaftarkan' : ''}</span></label>;})}</div>
+        {!context.students.length && <p role="status">Tiada peserta sepadan dengan carian ini.</p>}
+        <div className="flex items-center gap-3"><button disabled={busy || !(context.student_offset || 0)} className="rounded border p-2" onClick={() => void run(() => loadContext(course.qari_id, appliedFilters.search, {...appliedFilters, offset:Math.max(0,(context.student_offset || 0)-(context.student_limit || 50))}))}>Sebelumnya</button><span>Halaman {Math.floor((context.student_offset || 0)/(context.student_limit || 50))+1}</span><button disabled={busy || (context.student_offset || 0)+context.students.length >= (context.student_total ?? context.students.length)} className="rounded border p-2" onClick={() => void run(() => loadContext(course.qari_id, appliedFilters.search, {...appliedFilters, offset:(context.student_offset || 0)+(context.student_limit || 50)}))}>Seterusnya</button></div>
         <button disabled={busy || !chosen.length} className="rounded bg-emerald-700 p-2 text-white disabled:opacity-50" onClick={() => void run(async () => {await api(`/managed/courses/${selected}/enroll`,post({student_ids:chosen})); await refresh();setChosen([]);})}>Daftar peserta dipilih</button>
         <button disabled={busy} className="ml-3 rounded border p-2" onClick={() => void run(refresh)}>Kemaskini kemajuan</button>
         <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead><tr><th>Peserta</th><th>Kehadiran</th><th>Latihan</th><th>Kelayakan kehadiran</th></tr></thead><tbody>{enrollments.map(r => <tr key={r.id} className="border-t"><td className="p-2">{r.student_name}</td><td><select disabled={busy} value={r.attendance_status} onChange={e => {const attendance_status=e.target.value; if (!window.confirm('Sahkan perubahan kehadiran peserta ini?')) return; void run(async () => {await api(`/managed/enrollments/${r.id}/attendance`,{method:'PATCH',body:JSON.stringify({attendance_status})});await refresh();});}}><option value="registered">Belum disahkan</option><option value="attended">Hadir</option><option value="absent">Tidak hadir</option></select></td><td>{r.valid_recording_count}/{r.required_recording_count}</td><td>{r.eligible ? 'Layak' : 'Belum lengkap'}</td></tr>)}</tbody></table></div>

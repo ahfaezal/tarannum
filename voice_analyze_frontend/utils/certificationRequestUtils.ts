@@ -1,8 +1,13 @@
-export const courseContextPath = (qariId = '', search = '') => {
+export type ParticipantFilters = {registered_from?: string; registered_to?: string; sort?: string; offset?: number};
+export const courseContextPath = (qariId = '', search = '', filters: ParticipantFilters = {}) => {
   const params = new URLSearchParams();
   // An absent UUID is valid; an empty UUID query value causes HTTP 422.
   if (qariId.trim()) params.set('qari_id', qariId.trim());
   if (search.trim()) params.set('search', search.trim());
+  if (filters.registered_from) params.set('registered_from', filters.registered_from);
+  if (filters.registered_to) params.set('registered_to', filters.registered_to);
+  if (filters.sort) params.set('sort', filters.sort);
+  if (filters.offset) params.set('offset', String(filters.offset));
   const query = params.toString();
   return `/managed/context${query ? `?${query}` : ''}`;
 };

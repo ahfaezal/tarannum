@@ -4,12 +4,12 @@ from __future__ import annotations
 import hashlib
 import io
 import os
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, Query
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -169,6 +169,9 @@ def managed_create_course(payload: CourseCreate, user: User = Depends(get_curren
 
 @router.get('/managed/context')
 def managed_course_context(qari_id: Optional[UUID] = None, search: str = '',
+        registered_from: Optional[date] = None, registered_to: Optional[date] = None,
+        sort: str = Query('name', pattern='^(name|newest|oldest)$'),
+        offset: int = Query(0, ge=0), limit: int = Query(50, ge=1, le=100),
         user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _course_manager(user)
     owner = user.id if user.role == 'qari' else qari_id
@@ -182,10 +185,24 @@ def managed_course_context(qari_id: Optional[UUID] = None, search: str = '',
         from sqlalchemy import or_
         pattern = '%' + search.strip()[:120] + '%'
         students = students.filter(or_(User.full_name.ilike(pattern), User.email.ilike(pattern)))
+    if registered_from and registered_to and registered_from > registered_to:
+        raise HTTPException(400, 'Tarikh mula mesti sebelum atau sama dengan tarikh akhir')
+    # Date inputs are Malaysian calendar dates; timestamps are stored in UTC.
+    from datetime import timezone as tz
+    malaysia = tz(timedelta(hours=8))
+    if registered_from:
+        students = students.filter(User.created_at >= datetime.combine(registered_from, datetime.min.time(), malaysia).astimezone(timezone.utc))
+    if registered_to:
+        students = students.filter(User.created_at < datetime.combine(registered_to + timedelta(days=1), datetime.min.time(), malaysia).astimezone(timezone.utc))
+    total = students.count()
+    ordering = {'name': User.full_name.asc(), 'newest': User.created_at.desc(), 'oldest': User.created_at.asc()}[sort]
     from qari_service import qari_service
     return {'qaris': [{'id': str(q.id), 'name': q.full_name or q.email} for q in qaris.all()],
         'references': qari_service.get_qari_content(str(owner), db=db) if owner else [],
-        'students': [{'id': str(s.id), 'name': s.full_name or s.email} for s in students.order_by(User.full_name).limit(100).all()]}
+        'students': [{'id': str(s.id), 'name': s.full_name or s.email, 'email': s.email,
+            'registered_at': s.created_at.isoformat() if s.created_at else None}
+            for s in students.order_by(ordering, User.id).offset(offset).limit(limit).all()],
+        'student_total': total, 'student_offset': offset, 'student_limit': limit}
 
 
 @router.post('/managed/courses/{course_id}/enroll')
