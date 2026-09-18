@@ -1,4 +1,5 @@
 import { getAuthHeader } from "./authService";
+import { certificationErrorMessage } from '../utils/certificationRequestUtils';
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
@@ -9,7 +10,7 @@ const request = async <T>(path: string, options: RequestInit = {}): Promise<T> =
   });
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: response.statusText }));
-    throw new Error(error.detail || "Certification request failed");
+    throw new Error(certificationErrorMessage(error.detail));
   }
   return response.json();
 };

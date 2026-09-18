@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { CertificationCourse, managedCertificationRequest as api } from '../services/certificationService';
 import { QariContent } from '../services/platformService';
 import TrainingChallengePanel from './TrainingChallengePanel';
+import { courseContextPath } from '../utils/certificationRequestUtils';
 
 type Context = {qaris: {id: string; name: string}[]; references: QariContent[]; students: {id: string; name: string}[]};
 type Enrollment = {id: string; student_id: string; student_name: string; student_email: string; attendance_status: string; valid_recording_count: number; required_recording_count: number; eligible: boolean; competency_status: string};
@@ -22,7 +23,7 @@ export default function CourseManager({admin = false, defaultExpanded = false}: 
   const run = async (job: () => Promise<void>) => {setBusy(true); setError(''); try {await job();} catch (e: any) {setError(e.message);} finally {setBusy(false);}};
   const loadCourses = async () => setCourses(await api<CertificationCourse[]>('/managed/courses'));
   const loadContext = async (qariId = form.qari_id, term = '') => {
-    const data = await api<Context>(`/managed/context?qari_id=${encodeURIComponent(qariId)}&search=${encodeURIComponent(term)}`);
+    const data = await api<Context>(courseContextPath(qariId, term));
     setContext(data);
     if (!admin && data.qaris.length) setForm(f => ({...f, qari_id: data.qaris[0].id}));
   };
