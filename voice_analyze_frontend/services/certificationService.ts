@@ -13,6 +13,7 @@ const request = async <T>(path: string, options: RequestInit = {}): Promise<T> =
   }
   return response.json();
 };
+export const managedCertificationRequest = request;
 
 export interface CourseProgress {
   course_id: string;
@@ -41,6 +42,7 @@ export interface CertificateSummary {
 
 export interface CertificationCourse {
   id: string;
+  qari_id?: string | null;
   title: string;
   certificate_category: "tarannum" | "azan";
   reference_id: string;

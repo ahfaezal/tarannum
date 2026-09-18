@@ -46,6 +46,7 @@ export interface QariContent {
 
 export interface TrainingChallenge {
   id: string;
+  course_id?: string | null;
   title: string;
   reference_id: string;
   reference_title?: string | null;
@@ -1198,14 +1199,23 @@ export const rebuildQariStudentSelectedRecordings = async (
   return response.json();
 };
 
+const challengeBase = (qariId?: string) => `${API_URL}/api/platform/${qariId ? `admin/qari/${encodeURIComponent(qariId)}` : 'qari'}/training-challenges`;
+
+export const getAdminLiveScoringContext = async (qariId: string, search = ''): Promise<{content: QariContent[]; students: StudentInfo[]; total: number}> => {
+  const response = await fetch(`${API_URL}/api/platform/admin/qari/${encodeURIComponent(qariId)}/live-scoring-context?search=${encodeURIComponent(search)}`, {headers: getAuthHeader()});
+  if (!response.ok) throw new Error('Gagal memuatkan rujukan dan peserta');
+  return response.json();
+};
+
 export const createTrainingChallenge = async (payload: {
   title: string;
   reference_id: string;
   student_ids: string[];
   start_at: string;
   end_at: string;
-}): Promise<TrainingChallenge> => {
-  const response = await fetch(`${API_URL}/api/platform/qari/training-challenges`, {
+  course_id?: string;
+}, qariId?: string): Promise<TrainingChallenge> => {
+  const response = await fetch(challengeBase(qariId), {
     method: "POST",
     headers: { "Content-Type": "application/json", ...getAuthHeader() },
     body: JSON.stringify(payload),
@@ -1217,11 +1227,11 @@ export const createTrainingChallenge = async (payload: {
   return response.json();
 };
 
-export const getQariTrainingChallenges = async (): Promise<{
+export const getQariTrainingChallenges = async (qariId?: string): Promise<{
   challenges: TrainingChallenge[];
   count: number;
 }> => {
-  const response = await fetch(`${API_URL}/api/platform/qari/training-challenges`, {
+  const response = await fetch(challengeBase(qariId), {
     headers: getAuthHeader(),
   });
   if (!response.ok) throw new Error("Failed to load training challenges");
@@ -1231,8 +1241,9 @@ export const getQariTrainingChallenges = async (): Promise<{
 export const updateTrainingChallengeStatus = async (
   challengeId: string,
   status: "scheduled" | "cancelled",
+  qariId?: string,
 ): Promise<TrainingChallenge> => {
-  const response = await fetch(`${API_URL}/api/platform/qari/training-challenges/${challengeId}/status`, {
+  const response = await fetch(`${challengeBase(qariId)}/${challengeId}/status`, {
     method: "PUT",
     headers: { "Content-Type": "application/json", ...getAuthHeader() },
     body: JSON.stringify({ status }),
@@ -1246,8 +1257,9 @@ export const updateTrainingChallengeStatus = async (
 
 export const getTrainingChallengeLeaderboard = async (
   challengeId: string,
+  qariId?: string,
 ): Promise<{ challenge: TrainingChallenge; leaders: TrainingChallengeLeaderboardEntry[] }> => {
-  const response = await fetch(`${API_URL}/api/platform/qari/training-challenges/${challengeId}/leaderboard`, {
+  const response = await fetch(`${challengeBase(qariId)}/${challengeId}/leaderboard`, {
     headers: getAuthHeader(),
   });
   if (!response.ok) throw new Error("Failed to load challenge leaderboard");

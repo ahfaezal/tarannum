@@ -1,6 +1,8 @@
 import React from "react";
 import { Activity, Award, BookOpenCheck, ClipboardCheck, Settings2, ShieldCheck, Users } from "lucide-react";
 import { Link } from "react-router-dom";
+import AdminLiveScoring from '../components/AdminLiveScoring';
+import CourseManager from '../components/CourseManager';
 
 const adminSections = [
   {
@@ -58,6 +60,8 @@ const AdminDashboard: React.FC = () => (
       </div>
     </div>
 
+    <AdminLiveScoring />
+    <CourseManager admin />
     <section className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4" aria-label="Admin workspaces">
       {adminSections.map(({ to, title, description, icon: Icon }) => (
         <Link

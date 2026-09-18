@@ -4,7 +4,7 @@ from __future__ import annotations
 import hashlib
 import io
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional
 from uuid import UUID
@@ -37,6 +37,7 @@ from database import (
     User,
     UserSession,
     get_db,
+    QariContent, StudentQariRelationship,
 )
 
 
@@ -51,6 +52,7 @@ class CourseCreate(BaseModel):
     duration_minutes: int = Field(default=360, ge=30, le=1440)
     location: Optional[str] = Field(default=None, max_length=240)
     completion_window_days: int = Field(default=30, ge=1, le=365)
+    qari_id: Optional[UUID] = None
 
 
 class EnrollStudents(BaseModel):
@@ -64,6 +66,7 @@ class AttendanceUpdate(BaseModel):
 class CompetencyApplicationCreate(BaseModel):
     session_id: UUID
     certificate_type: str
+    course_id: Optional[UUID] = None
 
 
 class QariDecision(BaseModel):
@@ -79,6 +82,7 @@ class RevokeCertificate(BaseModel):
 def _course_payload(course: Course, reference: Reference) -> dict:
     return {
         "id": str(course.id),
+        "qari_id": str(course.qari_id) if course.qari_id else None,
         "title": course.title,
         "certificate_category": course.certificate_category,
         "reference_id": course.reference_id,
@@ -101,22 +105,124 @@ def create_course(payload: CourseCreate, admin: User = Depends(get_current_admin
     reference = db.query(Reference).filter(Reference.id == payload.reference_id).first()
     if not reference:
         raise HTTPException(404, "Reference not found")
+    if payload.qari_id:
+        _validate_course_qari(db, payload.qari_id, payload.reference_id)
     course = Course(
         title=payload.title.strip(),
         certificate_category=payload.certificate_category,
         reference_id=payload.reference_id,
-        starts_at=payload.starts_at,
+        starts_at=payload.starts_at.astimezone(timezone.utc).replace(tzinfo=None) if payload.starts_at.tzinfo else payload.starts_at,
         duration_minutes=payload.duration_minutes,
         location=payload.location,
         completion_window_days=payload.completion_window_days,
         required_practice_seconds=3600,
         status="published",
         created_by=admin.id,
+        qari_id=payload.qari_id,
     )
     db.add(course)
     db.commit()
     db.refresh(course)
     return _course_payload(course, reference)
+
+
+def _course_manager(user):
+    if user.role not in {'admin', 'qari'} or not user.is_active:
+        raise HTTPException(403, 'Only Admin or Qari may manage courses')
+    if user.role == 'qari' and not user.is_approved:
+        raise HTTPException(403, 'Qari approval required')
+
+
+def _managed_course(db, course_id, user):
+    _course_manager(user)
+    course = db.query(Course).filter(Course.id == course_id).first()
+    if not course or (user.role != 'admin' and course.qari_id != user.id):
+        raise HTTPException(404, 'Course not found')
+    return course
+
+
+def _validate_course_qari(db, qari_id, reference_id):
+    qari = db.query(User).filter(User.id == qari_id, User.role == 'qari',
+        User.is_active == True, User.is_approved == True).first()
+    content = db.query(QariContent).filter(QariContent.qari_id == qari_id,
+        QariContent.reference_id == reference_id, QariContent.is_active == True).first()
+    if not qari or not content:
+        raise HTTPException(400, 'Select an approved active Qari and a reference in their library')
+
+
+@router.get('/managed/courses')
+def managed_courses(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _course_manager(user)
+    query = db.query(Course, Reference).join(Reference, Reference.id == Course.reference_id)
+    if user.role != 'admin': query = query.filter(Course.qari_id == user.id)
+    return [_course_payload(c, r) for c, r in query.order_by(Course.starts_at.desc()).all()]
+
+
+@router.post('/managed/courses')
+def managed_create_course(payload: CourseCreate, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _course_manager(user)
+    if user.role == 'qari': payload.qari_id = user.id
+    if not payload.qari_id: raise HTTPException(400, 'Select the course Qari')
+    return create_course(payload, user, db)
+
+
+@router.get('/managed/context')
+def managed_course_context(qari_id: Optional[UUID] = None, search: str = '',
+        user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _course_manager(user)
+    owner = user.id if user.role == 'qari' else qari_id
+    qaris = db.query(User).filter(User.role == 'qari', User.is_active == True, User.is_approved == True)
+    if user.role == 'qari': qaris = qaris.filter(User.id == user.id)
+    students = db.query(User).filter(User.role == 'student', User.is_active == True)
+    if user.role == 'qari':
+        students = students.join(StudentQariRelationship, StudentQariRelationship.student_id == User.id).filter(
+            StudentQariRelationship.qari_id == user.id, StudentQariRelationship.is_active == True)
+    if search.strip():
+        from sqlalchemy import or_
+        pattern = '%' + search.strip()[:120] + '%'
+        students = students.filter(or_(User.full_name.ilike(pattern), User.email.ilike(pattern)))
+    from qari_service import qari_service
+    return {'qaris': [{'id': str(q.id), 'name': q.full_name or q.email} for q in qaris.all()],
+        'references': qari_service.get_qari_content(str(owner), db=db) if owner else [],
+        'students': [{'id': str(s.id), 'name': s.full_name or s.email} for s in students.order_by(User.full_name).limit(100).all()]}
+
+
+@router.post('/managed/courses/{course_id}/enroll')
+def managed_enroll(course_id: UUID, payload: EnrollStudents,
+        user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _managed_course(db, course_id, user)
+    if user.role == 'qari':
+        assigned = {r[0] for r in db.query(StudentQariRelationship.student_id).filter(
+            StudentQariRelationship.qari_id == user.id, StudentQariRelationship.is_active == True,
+            StudentQariRelationship.student_id.in_(payload.student_ids)).all()}
+        if not set(payload.student_ids).issubset(assigned):
+            raise HTTPException(403, 'Only assigned students may be enrolled by this Qari')
+    return enroll_students(course_id, payload, user, db)
+
+
+@router.get('/managed/courses/{course_id}/enrollments')
+def managed_enrollments(course_id: UUID, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _managed_course(db, course_id, user)
+    rows = course_enrollments(course_id, user, db)
+    for row in rows:
+        enrollment = db.query(CourseEnrollment).filter(CourseEnrollment.id == row['id']).first()
+        progress = recalculate_enrollment(db, enrollment, actor_id=user.id)
+        row.update(valid_recording_count=enrollment.valid_recording_count,
+            required_recording_count=enrollment.required_recording_count, eligible=progress['eligible'])
+        application = db.query(CertificateApplication).filter(CertificateApplication.course_id == course_id,
+            CertificateApplication.student_id == enrollment.student_id).order_by(CertificateApplication.submitted_at.desc()).first()
+        row['competency_status'] = application.status if application else 'not_applied'
+    db.commit()
+    return rows
+
+
+@router.patch('/managed/enrollments/{enrollment_id}/attendance')
+def managed_attendance(enrollment_id: UUID, payload: AttendanceUpdate,
+        user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    enrollment = db.query(CourseEnrollment).filter(CourseEnrollment.id == enrollment_id).first()
+    if not enrollment: raise HTTPException(404, 'Enrollment not found')
+    _managed_course(db, enrollment.course_id, user)
+    return update_attendance(enrollment_id, payload, user, db)
 
 
 @router.get("/admin/courses")
@@ -211,7 +317,7 @@ def student_courses(student: User = Depends(get_current_student_user), db: Sessi
 @router.post("/student/competency-applications")
 def create_competency_application(payload: CompetencyApplicationCreate, student: User = Depends(get_current_student_user), db: Session = Depends(get_db)):
     try:
-        application = submit_competency_application(db, student, payload.session_id, payload.certificate_type)
+        application = submit_competency_application(db, student, payload.session_id, payload.certificate_type, payload.course_id)
         db.commit()
         return {"id": str(application.id), "status": application.status, "suggested_grade": application.suggested_grade}
     except ValueError as exc:

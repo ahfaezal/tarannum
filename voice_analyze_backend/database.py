@@ -393,6 +393,7 @@ class TrainingChallenge(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     qari_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    course_id = Column(UUID(as_uuid=True), ForeignKey('courses.id', ondelete='RESTRICT'), nullable=True)
     reference_id = Column(String, ForeignKey("references.id", ondelete="RESTRICT"), nullable=False, index=True)
     title = Column(String, nullable=False)
     start_at = Column(DateTime, nullable=False, index=True)
@@ -452,6 +453,7 @@ class Course(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     title = Column(String, nullable=False)
+    qari_id = Column(UUID(as_uuid=True), ForeignKey('users.id', ondelete='RESTRICT'), nullable=True)
     certificate_category = Column(String, nullable=False)  # tarannum | azan
     reference_id = Column(String, ForeignKey("references.id", ondelete="RESTRICT"), nullable=False, index=True)
     starts_at = Column(DateTime, nullable=False, index=True)
@@ -541,6 +543,7 @@ class CourseEnrollment(Base):
 class CertificateApplication(Base):
     """A competency recording submitted to its owner Qari for a final decision."""
     __tablename__ = "certificate_applications"
+    course_id = Column(UUID(as_uuid=True), ForeignKey('courses.id', ondelete='RESTRICT'), nullable=True)
     __table_args__ = (UniqueConstraint("session_id", name="uq_certificate_application_session"),)
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -797,6 +800,7 @@ def init_db():
     try:
         Base.metadata.create_all(bind=engine)
         ensure_email_otp_columns()
+        ensure_course_management_columns()
         ensure_student_selected_recordings_table()
         ensure_user_profile_columns()
         ensure_student_activity_events_table()
@@ -807,6 +811,13 @@ def init_db():
     except Exception as e:
         logger.error(f"Error creating database tables: {e}", exc_info=True)
         raise
+
+
+def ensure_course_management_columns():
+    with engine.begin() as conn:
+        conn.execute(text('ALTER TABLE courses ADD COLUMN IF NOT EXISTS qari_id UUID REFERENCES users(id) ON DELETE RESTRICT'))
+        conn.execute(text('ALTER TABLE training_challenges ADD COLUMN IF NOT EXISTS course_id UUID REFERENCES courses(id) ON DELETE RESTRICT'))
+        conn.execute(text('ALTER TABLE certificate_applications ADD COLUMN IF NOT EXISTS course_id UUID REFERENCES courses(id) ON DELETE RESTRICT'))
 
 
 def _column_exists(conn, table_name: str, column_name: str) -> bool:

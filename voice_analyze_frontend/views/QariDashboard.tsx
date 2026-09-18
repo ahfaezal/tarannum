@@ -37,6 +37,7 @@ import {
 } from "lucide-react";
 import ConfirmModal from "../components/ConfirmModal";
 import TrainingChallengePanel from "../components/TrainingChallengePanel";
+import CourseManager from '../components/CourseManager';
 
 const QariDashboard: React.FC = () => {
   const navigate = useNavigate();
@@ -734,6 +735,7 @@ const QariDashboard: React.FC = () => {
         </div>}
 
         <TrainingChallengePanel students={students} content={content} />
+        <CourseManager />
 
         {/* Students List */}
         <div className="bg-white rounded-xl shadow-md border border-slate-200 p-6 mb-8">

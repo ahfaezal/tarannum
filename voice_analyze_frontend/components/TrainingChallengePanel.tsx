@@ -14,6 +14,10 @@ import {
 interface Props {
   students: StudentInfo[];
   content: QariContent[];
+  managedQariId?: string;
+  managedQariName?: string;
+  courseId?: string;
+  courseReferenceId?: string;
 }
 
 const localDateTime = (date: Date) => {
@@ -21,7 +25,7 @@ const localDateTime = (date: Date) => {
   return new Date(date.getTime() - offset).toISOString().slice(0, 16);
 };
 
-const TrainingChallengePanel: React.FC<Props> = ({ students, content }) => {
+const TrainingChallengePanel: React.FC<Props> = ({ students, content, managedQariId, managedQariName, courseId, courseReferenceId }) => {
   const [expanded, setExpanded] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -45,8 +49,8 @@ const TrainingChallengePanel: React.FC<Props> = ({ students, content }) => {
     setLoading(true);
     setError(null);
     try {
-      const response = await getQariTrainingChallenges();
-      setChallenges(response.challenges || []);
+      const response = await getQariTrainingChallenges(managedQariId);
+      setChallenges((response.challenges || []).filter(c => !courseId || c.course_id === courseId));
       setLoaded(true);
     } catch (err: any) {
       setError(err.message || "Failed to load training challenges");
@@ -74,11 +78,12 @@ const TrainingChallengePanel: React.FC<Props> = ({ students, content }) => {
     try {
       const challenge = await createTrainingChallenge({
         title,
-        reference_id: referenceId,
+        reference_id: courseReferenceId || referenceId,
+        course_id: courseId,
         student_ids: selectedStudents,
         start_at: new Date(startAt).toISOString(),
         end_at: new Date(endAt).toISOString(),
-      });
+      }, managedQariId);
       setChallenges((current) => [challenge, ...current]);
       setTitle("");
       setReferenceId("");
@@ -95,7 +100,7 @@ const TrainingChallengePanel: React.FC<Props> = ({ students, content }) => {
     setLeaderboardLoading(challengeId);
     setError(null);
     try {
-      const response = await getTrainingChallengeLeaderboard(challengeId);
+      const response = await getTrainingChallengeLeaderboard(challengeId, managedQariId);
       setLeaders((current) => ({ ...current, [challengeId]: response.leaders || [] }));
       setLeaderboardUpdatedAt((current) => ({ ...current, [challengeId]: new Date() }));
       setBoardPulse(challengeId);
@@ -115,7 +120,8 @@ const TrainingChallengePanel: React.FC<Props> = ({ students, content }) => {
   const cancelChallenge = async (challengeId: string) => {
     setError(null);
     try {
-      const updated = await updateTrainingChallengeStatus(challengeId, "cancelled");
+      if (!window.confirm('Tamatkan papan skor ini?')) return;
+      const updated = await updateTrainingChallengeStatus(challengeId, "cancelled", managedQariId);
       setChallenges((current) => current.map((item) => item.id === challengeId ? updated : item));
     } catch (err: any) {
       setError(err.message || "Failed to cancel challenge");
@@ -235,6 +241,7 @@ const TrainingChallengePanel: React.FC<Props> = ({ students, content }) => {
         const boardLeaders = leaders[liveBoardId] || [];
         if (!challenge) return null;
         return <div className="fixed inset-0 z-[100] flex flex-col bg-slate-950 p-6 text-white md:p-10">
+          {managedQariName && <p className="mb-3 text-lg font-semibold text-emerald-300">Qari: {managedQariName} · Dikendalikan oleh Admin</p>}
           <div className="flex items-start justify-between gap-4 border-b border-white/15 pb-6">
             <div><div className="flex flex-wrap items-center gap-3"><p className="text-sm font-bold uppercase tracking-[0.25em] text-emerald-400">Live Training Leaderboard</p><span className="inline-flex items-center gap-2 rounded-full bg-red-500/15 px-3 py-1 text-xs font-black tracking-wider text-red-300"><span className="h-2 w-2 animate-pulse rounded-full bg-red-400" />LIVE</span></div><h2 className="mt-2 text-3xl font-black md:text-5xl">{challenge.title}</h2><div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1 text-sm text-slate-300"><span>Highest Experimental Score V2.3</span><span className="font-mono text-base font-bold text-white">Time remaining: {formatRemaining(challenge.end_at)}</span><span>Updated: {leaderboardUpdatedAt[liveBoardId]?.toLocaleTimeString() || "Waiting…"}</span></div></div>
             <button type="button" onClick={() => setLiveBoardId(null)} className="rounded-xl border border-white/20 p-3 hover:bg-white/10" aria-label="Close live board"><X className="h-6 w-6" /></button>

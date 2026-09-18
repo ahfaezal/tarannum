@@ -280,7 +280,7 @@ def recalculate_enrollment(db: Session, enrollment: CourseEnrollment, actor_id=N
     }
 
 
-def submit_competency_application(db: Session, student: User, session_id, certificate_type: str) -> CertificateApplication:
+def submit_competency_application(db: Session, student: User, session_id, certificate_type: str, course_id=None) -> CertificateApplication:
     if certificate_type not in {"competency_tarannum", "competency_azan"}:
         raise ValueError("Invalid competency certificate type")
     session = db.query(UserSession).filter(
@@ -292,7 +292,28 @@ def submit_competency_application(db: Session, student: User, session_id, certif
     if not analysis:
         raise ValueError("Recording has not been scored")
     suggested = grade_for_score(analysis.score)
+    # Managed-course assessments require enrollment, verified attendance and 60-minute completion.
+    courses = db.query(Course).filter(Course.reference_id == session.reference_id,
+        Course.qari_id.isnot(None), Course.starts_at <= session.created_at).order_by(Course.starts_at.desc()).all()
+    relevant = [c for c in courses if session.created_at <= c.starts_at + timedelta(days=c.completion_window_days)]
+    course = None
+    if course_id:
+        course = next((c for c in relevant if c.id == _as_uuid(course_id)), None)
+        if not course: raise ValueError('Recording does not belong to this course reference or training window')
+    elif relevant:
+        enrolled = {r[0] for r in db.query(CourseEnrollment.course_id).filter(
+            CourseEnrollment.student_id == student.id, CourseEnrollment.course_id.in_([c.id for c in relevant])).all()}
+        course = next((c for c in relevant if c.id in enrolled), None)
+        if not course: raise ValueError('Only enrolled course participants may apply for this assessment')
+    if course:
+        enrollment = db.query(CourseEnrollment).filter(CourseEnrollment.course_id == course.id,
+            CourseEnrollment.student_id == student.id).first()
+        if not enrollment or not recalculate_enrollment(db, enrollment, actor_id=student.id)['eligible']:
+            raise ValueError('Verified attendance and 60 minutes of course practice are required')
+        expected = 'competency_azan' if course.certificate_category == 'azan' else 'competency_tarannum'
+        if certificate_type != expected: raise ValueError('Certificate type does not match course category')
     qari_id = session.qari_id
+    if course: qari_id = course.qari_id
     if not qari_id:
         owner = db.query(QariContent).filter(QariContent.reference_id == session.reference_id).first()
         qari_id = owner.qari_id if owner else None
@@ -303,6 +324,7 @@ def submit_competency_application(db: Session, student: User, session_id, certif
         return existing
     application = CertificateApplication(
         certificate_type=certificate_type,
+        course_id=course.id if course else None,
         student_id=student.id,
         qari_id=qari_id,
         reference_id=session.reference_id,
@@ -331,6 +353,11 @@ def decide_application(db: Session, application: CertificateApplication, qari: U
     if decision == "approved" and grade not in VALID_GRADES:
         raise ValueError("An approved application requires a valid final grade")
     if decision == "approved":
+        if application.course_id:
+            enrollment = db.query(CourseEnrollment).filter(CourseEnrollment.course_id == application.course_id,
+                CourseEnrollment.student_id == application.student_id).first()
+            if not enrollment or not recalculate_enrollment(db, enrollment, actor_id=qari.id)['eligible']:
+                raise ValueError('Course attendance and 60 minutes of practice must remain verified')
         signature = db.query(QariSignature).filter(
             QariSignature.qari_id == qari.id,
             QariSignature.is_active.is_(True),
@@ -356,6 +383,7 @@ def decide_application(db: Session, application: CertificateApplication, qari: U
             application=application,
             qari=qari,
             final_grade=grade,
+            course=db.query(Course).filter(Course.id == application.course_id).first() if application.course_id else None,
         )
     else:
         _notify(db, application.student_id, "certificate_decision", "Keputusan semakan Qari", notes or "Rakaman belum diluluskan.", {

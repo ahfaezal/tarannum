@@ -12,6 +12,7 @@ from database import (
     AnalysisResult, QariContent, Reference, StudentQariRelationship,
     TrainingChallenge, TrainingChallengeParticipant, User, UserRole,
     UserSession, StudentActivityEvent, StudentProgress, get_db,
+    Course, CourseEnrollment,
 )
 from auth import (
     get_current_user, get_current_admin_user, get_current_qari_user,
@@ -109,6 +110,7 @@ class TrainingChallengeCreateRequest(BaseModel):
     student_ids: List[str]
     start_at: datetime
     end_at: datetime
+    course_id: Optional[UUID] = None
 
 
 class TrainingChallengeStatusRequest(BaseModel):
@@ -129,6 +131,7 @@ def _challenge_status(challenge: TrainingChallenge, now: Optional[datetime] = No
 def _challenge_payload(challenge: TrainingChallenge, participant_count: int = 0) -> dict:
     return {
         "id": str(challenge.id),
+        "course_id": str(challenge.course_id) if challenge.course_id else None,
         "title": challenge.title,
         "reference_id": challenge.reference_id,
         "reference_title": challenge.reference.title if challenge.reference else None,
@@ -338,6 +341,10 @@ def create_training_challenge(
     current_user: User = Depends(get_current_qari_user),
     db: Session = Depends(get_db),
 ):
+    return _create_training_challenge(payload, current_user, db)
+
+
+def _create_training_challenge(payload, current_user, db, admin_managed=False):
     """Create a time-bounded Training Challenge for selected assigned students."""
     title = " ".join(payload.title.strip().split())
     if not title:
@@ -370,11 +377,29 @@ def create_training_challenge(
             StudentQariRelationship.is_active == True,
         ).all()
     }
+    course_id = getattr(payload, 'course_id', None)
+    if course_id:
+        course = db.query(Course).filter(Course.id == course_id, Course.qari_id == current_user.id).first()
+        if not course or course.reference_id != payload.reference_id:
+            raise HTTPException(400, 'Course and Qari reference do not match')
+        if start_at < course.starts_at or end_at > course.starts_at + timedelta(days=course.completion_window_days):
+            raise HTTPException(400, 'Live board must be inside the course training window')
+        assigned_ids = {row[0] for row in db.query(CourseEnrollment.student_id).join(
+            User, User.id == CourseEnrollment.student_id).filter(
+            CourseEnrollment.course_id == course_id,
+            CourseEnrollment.student_id.in_(unique_student_ids),
+            User.is_active == True, User.role == 'student',
+        ).all()}
+    elif admin_managed:
+        assigned_ids = {row[0] for row in db.query(User.id).filter(
+            User.id.in_(unique_student_ids), User.role == 'student', User.is_active == True,
+        ).all()}
     if len(assigned_ids) != len(unique_student_ids):
         raise HTTPException(status_code=403, detail="Every participant must be an active student assigned to this Qari")
 
     challenge = TrainingChallenge(
         qari_id=current_user.id,
+        course_id=course_id,
         reference_id=payload.reference_id,
         title=title,
         start_at=start_at,
@@ -492,6 +517,51 @@ def get_training_challenge_leaderboard(
         "challenge": _challenge_payload(challenge, len(best_by_student)),
         "leaders": [{**leader, "rank": index + 1} for index, leader in enumerate(leaders)],
     }
+
+
+@router.get('/admin/qari/{qari_id}/live-scoring-context')
+def admin_live_scoring_context(qari_id: str, search: str = Query('', max_length=120),
+        current_user: User = Depends(get_current_admin_user), db: Session = Depends(get_db)):
+    qari = _get_admin_managed_qari(qari_id, db)
+    query = db.query(User).filter(User.role == 'student', User.is_active == True)
+    if search.strip():
+        pattern = '%' + search.strip() + '%'
+        query = query.filter(or_(User.full_name.ilike(pattern), User.email.ilike(pattern)))
+    total = query.count()
+    students = query.order_by(User.full_name, User.id).limit(100).all()
+    return {'content': qari_service.get_qari_content(str(qari.id), db=db),
+        'students': [{'student_id': str(u.id), 'student_name': u.full_name,
+            'student_email': u.email, 'joined_at': '', 'last_active': ''} for u in students],
+        'total': total}
+
+
+@router.post('/admin/qari/{qari_id}/training-challenges')
+def admin_create_training_challenge(qari_id: str, payload: TrainingChallengeCreateRequest,
+        current_user: User = Depends(get_current_admin_user), db: Session = Depends(get_db)):
+    qari = _get_admin_managed_qari(qari_id, db)
+    result = _create_training_challenge(payload, qari, db, admin_managed=True)
+    logger.info('Admin %s created live board %s for Qari %s', current_user.id, result['id'], qari.id)
+    return result
+
+
+@router.get('/admin/qari/{qari_id}/training-challenges')
+def admin_list_training_challenges(qari_id: str,
+        current_user: User = Depends(get_current_admin_user), db: Session = Depends(get_db)):
+    return list_qari_training_challenges(_get_admin_managed_qari(qari_id, db), db)
+
+
+@router.put('/admin/qari/{qari_id}/training-challenges/{challenge_id}/status')
+def admin_update_training_challenge(qari_id: str, challenge_id: UUID, payload: TrainingChallengeStatusRequest,
+        current_user: User = Depends(get_current_admin_user), db: Session = Depends(get_db)):
+    result = update_training_challenge_status(challenge_id, payload, _get_admin_managed_qari(qari_id, db), db)
+    logger.info('Admin %s set board %s to %s for Qari %s', current_user.id, challenge_id, payload.status, qari_id)
+    return result
+
+
+@router.get('/admin/qari/{qari_id}/training-challenges/{challenge_id}/leaderboard')
+def admin_training_challenge_leaderboard(qari_id: str, challenge_id: UUID,
+        current_user: User = Depends(get_current_admin_user), db: Session = Depends(get_db)):
+    return get_training_challenge_leaderboard(challenge_id, _get_admin_managed_qari(qari_id, db), db)
 
 
 @router.get("/student/training-challenges")

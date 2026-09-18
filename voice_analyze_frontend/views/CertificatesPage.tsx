@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Award, Bell, CheckCircle2, Download, Loader2 } from "lucide-react";
+import { Award, Bell, CheckCircle2, Download, Loader2, RefreshCw } from "lucide-react";
 import { CertificateSummary, CourseProgress, downloadCertificate, getCertificationNotifications, getCompetencyEligibility, getMyCertificates, getStudentCourseProgress, submitCompetencyApplication } from "../services/certificationService";
 
 const labels: Record<string, string> = {
@@ -14,15 +14,42 @@ const CertificatesPage: React.FC = () => {
   const [notifications, setNotifications] = useState<any[]>([]);
   const [eligibility, setEligibility] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
 
+  const loadStatus = async () => {
+    // Progress recalculation may issue a certificate. Read certificates and
+    // notifications only after that transaction has completed.
+    const courseData = await getStudentCourseProgress();
+    const [certificateData, notificationData, eligibilityData] = await Promise.all([
+      getMyCertificates(), getCertificationNotifications(), getCompetencyEligibility(),
+    ]);
+    return { courseData, certificateData, notificationData, eligibilityData };
+  };
+
+  const applyStatus = (data: Awaited<ReturnType<typeof loadStatus>>) => {
+    setProgress(data.courseData);
+    setCertificates(data.certificateData);
+    setNotifications(data.notificationData);
+    setEligibility(data.eligibilityData);
+  };
+
+  const refreshStatus = async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    setError("");
+    try { applyStatus(await loadStatus()); }
+    catch (err: any) { setError(err.message || "Gagal mengemaskini status sijil. Sila cuba semula."); }
+    finally { setRefreshing(false); }
+  };
+
   useEffect(() => {
-    Promise.all([getStudentCourseProgress(), getMyCertificates(), getCertificationNotifications(), getCompetencyEligibility()])
-      .then(([courseData, certificateData, notificationData, eligibilityData]) => {
-        setProgress(courseData); setCertificates(certificateData); setNotifications(notificationData); setEligibility(eligibilityData);
-      })
-      .catch((err) => setError(err.message))
-      .finally(() => setLoading(false));
+    let cancelled = false;
+    loadStatus()
+      .then((data) => { if (!cancelled) applyStatus(data); })
+      .catch((err) => { if (!cancelled) setError(err.message); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, []);
 
   if (loading) return <div className="flex min-h-[50vh] items-center justify-center"><Loader2 className="animate-spin text-emerald-700" /></div>;
@@ -32,6 +59,11 @@ const CertificatesPage: React.FC = () => {
       <p className="text-sm font-semibold uppercase tracking-wider text-emerald-200">Tarannum.ai</p>
       <h1 className="mt-1 text-3xl font-bold">Sijil Saya</h1>
       <p className="mt-2 text-emerald-100">Pantau latihan kursus dan muat turun sijil rasmi anda.</p>
+      <button type="button" disabled={refreshing} onClick={refreshStatus} className="mt-4 inline-flex items-center gap-2 rounded-xl border border-white/40 px-4 py-2 font-semibold text-white hover:bg-white/10 disabled:cursor-wait disabled:opacity-60">
+        <RefreshCw size={17} className={refreshing ? "animate-spin" : ""} />
+        {refreshing ? "Mengemaskini…" : "Kemaskini Status"}
+      </button>
+      <p className="mt-2 text-sm text-emerald-100" role="status" aria-live="polite">{refreshing ? "Sedang menyemak kemajuan dan sijil terkini." : "Sijil tersedia dalam akaun ini. Tekan Muat turun PDF untuk menyimpannya; tiada penghantaran e-mel atau WhatsApp automatik."}</p>
     </header>
     {error && <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-700">{error}</div>}
 
