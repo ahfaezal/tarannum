@@ -1,8 +1,6 @@
 import React from "react";
 import { Activity, Award, BookOpenCheck, ClipboardCheck, Settings2, ShieldCheck, Users } from "lucide-react";
 import { Link } from "react-router-dom";
-import AdminLiveScoring from '../components/AdminLiveScoring';
-import CourseManager from '../components/CourseManager';
 
 const adminSections = [
   {
@@ -13,8 +11,8 @@ const adminSections = [
   },
   {
     to: "/admin/certification",
-    title: "Kursus & Persijilan",
-    description: "Urus kursus, kehadiran, latihan 60 minit dan sijil rasmi.",
+    title: "Kursus & Sijil",
+    description: "Cipta kursus, urus peserta, Live Scoring, latihan 60 minit dan tandatangan CEO.",
     icon: Award,
   },
   {
@@ -60,8 +58,6 @@ const AdminDashboard: React.FC = () => (
       </div>
     </div>
 
-    <AdminLiveScoring />
-    <CourseManager admin />
     <section className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4" aria-label="Admin workspaces">
       {adminSections.map(({ to, title, description, icon: Icon }) => (
         <Link

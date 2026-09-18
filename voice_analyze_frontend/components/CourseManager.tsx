@@ -6,8 +6,8 @@ import TrainingChallengePanel from './TrainingChallengePanel';
 type Context = {qaris: {id: string; name: string}[]; references: QariContent[]; students: {id: string; name: string}[]};
 type Enrollment = {id: string; student_id: string; student_name: string; student_email: string; attendance_status: string; valid_recording_count: number; required_recording_count: number; eligible: boolean; competency_status: string};
 
-export default function CourseManager({admin = false}: {admin?: boolean}) {
-  const [opened, setOpened] = useState(false);
+export default function CourseManager({admin = false, defaultExpanded = false}: {admin?: boolean; defaultExpanded?: boolean}) {
+  const [opened, setOpened] = useState(defaultExpanded);
   const [courses, setCourses] = useState<CertificationCourse[]>([]);
   const [context, setContext] = useState<Context>({qaris: [], references: [], students: []});
   const [selected, setSelected] = useState('');
@@ -38,11 +38,13 @@ export default function CourseManager({admin = false}: {admin?: boolean}) {
   const refresh = async () => {if (selected) setEnrollments(await api<Enrollment[]>(`/managed/courses/${selected}/enrollments`));};
   const post = (body: unknown) => ({method: 'POST', body: JSON.stringify(body)});
   return <section className="mb-6 rounded-2xl border border-emerald-200 bg-white p-5">
-    <button className="text-xl font-bold text-emerald-800" onClick={() => setOpened(!opened)}>Urus Kursus / Create Kursus {opened ? '−' : '+'}</button>
+    <button aria-expanded={opened} className="text-xl font-bold text-emerald-800" onClick={() => setOpened(!opened)}>Urus Kursus {opened ? '−' : '+'}</button>
     {opened && <div className="mt-4 space-y-5">
       <p className="text-sm text-slate-600">Satu senarai peserta untuk kursus dan Live Scoring. Sijil Kehadiran memerlukan hadir + 60 minit latihan; Sijil Kompetensi turut memerlukan skor ≥75 dan kelulusan qari.</p>
       {error && <p role="alert" className="text-red-700">{error}</p>}
-      <form className="grid gap-3 md:grid-cols-2" onSubmit={e => {e.preventDefault(); void run(async () => {await api('/managed/courses', post({...form, starts_at: new Date(form.starts_at).toISOString()})); await loadCourses(); setForm(f => ({...f, title: ''}));});}}>
+      <label className="block font-semibold">Pilih kursus<select className="ml-3 max-w-full rounded border p-2" value={selected} disabled={busy} onChange={e => {if(e.target.value) void selectCourse(e.target.value); else {setSelected('');setEnrollments([]);}}}><option value="">Pilih kursus untuk pemantauan</option>{courses.map(c => <option key={c.id} value={c.id}>{c.title} · {new Date(c.starts_at).toLocaleDateString('ms-MY')}</option>)}</select></label>
+      <details className="rounded-xl border p-4"><summary className="cursor-pointer font-bold text-emerald-800">Cipta Kursus Baharu</summary>
+      <form className="mt-4 grid gap-3 md:grid-cols-2" onSubmit={e => {e.preventDefault(); void run(async () => {await api('/managed/courses', post({...form, starts_at: new Date(form.starts_at).toISOString()})); await loadCourses(); setForm(f => ({...f, title: ''}));});}}>
         <label>Nama kursus<input required minLength={3} className="block w-full rounded border p-2" value={form.title} onChange={e => setForm({...form, title: e.target.value})} /></label>
         <label>Qari<select required className="block w-full rounded border p-2" value={form.qari_id} disabled={!admin || busy} onChange={e => {const id=e.target.value; setForm({...form,qari_id:id,reference_id:''}); void run(() => loadContext(id));}}><option value="">Pilih qari</option>{context.qaris.map(q => <option key={q.id} value={q.id}>{q.name}</option>)}</select></label>
         <label>Rujukan<select required className="block w-full rounded border p-2" value={form.reference_id} onChange={e => setForm({...form,reference_id:e.target.value})}><option value="">Pilih rujukan pustaka qari</option>{context.references.map(r => <option key={r.id} value={r.reference_id}>{r.reference_title || r.title}</option>)}</select></label>
@@ -51,9 +53,9 @@ export default function CourseManager({admin = false}: {admin?: boolean}) {
         <label>Lokasi<input className="block w-full rounded border p-2" value={form.location} onChange={e => setForm({...form,location:e.target.value})} /></label>
         <label>Tempoh program (minit)<input type="number" min={30} max={1440} required className="block w-full rounded border p-2" value={form.duration_minutes} onChange={e => setForm({...form,duration_minutes:Number(e.target.value)})} /></label>
         <label>Tempoh latihan (hari)<input type="number" min={1} max={365} required className="block w-full rounded border p-2" value={form.completion_window_days} onChange={e => setForm({...form,completion_window_days:Number(e.target.value)})} /></label>
-        <button disabled={busy} className="rounded bg-emerald-700 p-3 font-bold text-white disabled:opacity-50">Create Kursus</button>
+        <button disabled={busy} className="rounded bg-emerald-700 p-3 font-bold text-white disabled:opacity-50">Cipta Kursus</button>
       </form>
-      <label className="block font-semibold">Pantau kursus<select className="ml-3 rounded border p-2" value={selected} disabled={busy} onChange={e => {if(e.target.value) void selectCourse(e.target.value); else {setSelected('');setEnrollments([]);}}}><option value="">Pilih kursus</option>{courses.map(c => <option key={c.id} value={c.id}>{c.title} · {new Date(c.starts_at).toLocaleDateString('ms-MY')}</option>)}</select></label>
+      </details>
       {course && <div className="space-y-4">
         <h3 className="font-bold">{course.title} · {course.reference_title} · {course.required_recording_count} rakaman sah untuk 60 minit</h3>
         <form onSubmit={e => {e.preventDefault(); void run(() => loadContext(form.qari_id, search));}}><input aria-label="Cari calon peserta" className="rounded border p-2" placeholder="Cari calon peserta" value={search} onChange={e => setSearch(e.target.value)} /><button disabled={busy} className="ml-2 rounded border p-2">Cari</button></form>
