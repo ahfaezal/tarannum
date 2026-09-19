@@ -64,6 +64,14 @@ export interface TrainingChallengeLeaderboardEntry {
   achieved_at: string;
 }
 
+export interface TrainingChallengeParticipantScore {
+  student_id: string;
+  student_name: string;
+  score: number | null;
+  achieved_at: string | null;
+  score_period: "live" | "before_session" | "none";
+}
+
 export interface StudentInfo {
   student_id: string;
   student_email: string;
@@ -1258,7 +1266,7 @@ export const updateTrainingChallengeStatus = async (
 export const getTrainingChallengeLeaderboard = async (
   challengeId: string,
   qariId?: string,
-): Promise<{ challenge: TrainingChallenge; leaders: TrainingChallengeLeaderboardEntry[] }> => {
+): Promise<{ challenge: TrainingChallenge; leaders: TrainingChallengeLeaderboardEntry[]; participant_scores: TrainingChallengeParticipantScore[] }> => {
   const response = await fetch(`${challengeBase(qariId)}/${challengeId}/leaderboard`, {
     headers: getAuthHeader(),
   });

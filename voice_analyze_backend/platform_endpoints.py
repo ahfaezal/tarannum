@@ -465,7 +465,7 @@ def get_training_challenge_leaderboard(
     current_user: User = Depends(get_current_qari_user),
     db: Session = Depends(get_db),
 ):
-    """Return only the Top 3 highest completed scores for the Qari display."""
+    """Return the live Top 3 and an auditable score for every selected student."""
     challenge = db.query(TrainingChallenge).filter(
         TrainingChallenge.id == challenge_id,
         TrainingChallenge.qari_id == current_user.id,
@@ -513,9 +513,62 @@ def get_training_challenge_leaderboard(
         best_by_student.values(),
         key=lambda item: (-item["score"], item["achieved_at"] or ""),
     )[:3]
+    # A pre-session attempt is visible as context, never counted towards the
+    # live Top 3. Limit it to the day before the challenge starts so an old
+    # practice score cannot silently appear as a current course result.
+    pre_session_start = challenge.start_at - timedelta(days=1)
+    pre_session_rows = db.query(
+        UserSession.user_id,
+        AnalysisResult.score,
+        AnalysisResult.created_at,
+    ).join(
+        AnalysisResult, AnalysisResult.user_session_id == UserSession.id,
+    ).join(
+        TrainingChallengeParticipant,
+        and_(
+            TrainingChallengeParticipant.challenge_id == challenge.id,
+            TrainingChallengeParticipant.student_id == UserSession.user_id,
+        ),
+    ).filter(
+        UserSession.reference_id == challenge.reference_id,
+        AnalysisResult.created_at >= pre_session_start,
+        AnalysisResult.created_at < challenge.start_at,
+    ).all()
+    pre_session_best = {}
+    for student_id, score, achieved_at in pre_session_rows:
+        candidate = {"score": round(float(score), 2), "achieved_at": achieved_at.isoformat()}
+        current = pre_session_best.get(student_id)
+        if current is None or candidate["score"] > current["score"]:
+            pre_session_best[student_id] = candidate
+
+    participants = db.query(
+        TrainingChallengeParticipant.student_id,
+        User.full_name,
+    ).join(
+        User, User.id == TrainingChallengeParticipant.student_id,
+    ).filter(
+        TrainingChallengeParticipant.challenge_id == challenge.id,
+    ).all()
+    participant_scores = []
+    for student_id, full_name in participants:
+        live = best_by_student.get(student_id)
+        prior = pre_session_best.get(student_id) if live is None else None
+        participant_scores.append({
+            "student_id": str(student_id),
+            "student_name": full_name or "Student",
+            "score": live["score"] if live else prior["score"] if prior else None,
+            "achieved_at": live["achieved_at"] if live else prior["achieved_at"] if prior else None,
+            "score_period": "live" if live else "before_session" if prior else "none",
+        })
+    participant_scores.sort(key=lambda item: (
+        {"live": 0, "before_session": 1, "none": 2}[item["score_period"]],
+        -(item["score"] or 0),
+        item["student_name"].casefold(),
+    ))
     return {
         "challenge": _challenge_payload(challenge, len(best_by_student)),
         "leaders": [{**leader, "rank": index + 1} for index, leader in enumerate(leaders)],
+        "participant_scores": participant_scores,
     }
 
 

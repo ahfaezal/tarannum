@@ -8,6 +8,7 @@ import {
   StudentInfo,
   TrainingChallenge,
   TrainingChallengeLeaderboardEntry,
+  TrainingChallengeParticipantScore,
   updateTrainingChallengeStatus,
 } from "../services/platformService";
 
@@ -33,6 +34,7 @@ const TrainingChallengePanel: React.FC<Props> = ({ students, content, managedQar
   const [error, setError] = useState<string | null>(null);
   const [challenges, setChallenges] = useState<TrainingChallenge[]>([]);
   const [leaders, setLeaders] = useState<Record<string, TrainingChallengeLeaderboardEntry[]>>({});
+  const [participantScores, setParticipantScores] = useState<Record<string, TrainingChallengeParticipantScore[]>>({});
   const [leaderboardLoading, setLeaderboardLoading] = useState<string | null>(null);
   const [liveBoardId, setLiveBoardId] = useState<string | null>(null);
   const [leaderboardUpdatedAt, setLeaderboardUpdatedAt] = useState<Record<string, Date>>({});
@@ -102,6 +104,7 @@ const TrainingChallengePanel: React.FC<Props> = ({ students, content, managedQar
     try {
       const response = await getTrainingChallengeLeaderboard(challengeId, managedQariId);
       setLeaders((current) => ({ ...current, [challengeId]: response.leaders || [] }));
+      setParticipantScores((current) => ({ ...current, [challengeId]: response.participant_scores || [] }));
       setLeaderboardUpdatedAt((current) => ({ ...current, [challengeId]: new Date() }));
       setBoardPulse(challengeId);
       window.setTimeout(() => setBoardPulse((current) => current === challengeId ? null : current), 700);
@@ -239,6 +242,7 @@ const TrainingChallengePanel: React.FC<Props> = ({ students, content, managedQar
       {liveBoardId && (() => {
         const challenge = challenges.find((item) => item.id === liveBoardId);
         const boardLeaders = leaders[liveBoardId] || [];
+        const boardParticipants = participantScores[liveBoardId] || [];
         if (!challenge) return null;
         return <div className="fixed inset-0 z-[100] flex flex-col bg-slate-950 p-6 text-white md:p-10">
           {managedQariName && <p className="mb-3 text-lg font-semibold text-emerald-300">Qari: {managedQariName} · Dikendalikan oleh Admin</p>}
@@ -246,7 +250,7 @@ const TrainingChallengePanel: React.FC<Props> = ({ students, content, managedQar
             <div><div className="flex flex-wrap items-center gap-3"><p className="text-sm font-bold uppercase tracking-[0.25em] text-emerald-400">Live Training Leaderboard</p><span className="inline-flex items-center gap-2 rounded-full bg-red-500/15 px-3 py-1 text-xs font-black tracking-wider text-red-300"><span className="h-2 w-2 animate-pulse rounded-full bg-red-400" />LIVE</span></div><h2 className="mt-2 text-3xl font-black md:text-5xl">{challenge.title}</h2><div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1 text-sm text-slate-300"><span>Highest Experimental Score V2.3</span><span className="font-mono text-base font-bold text-white">Time remaining: {formatRemaining(challenge.end_at)}</span><span>Updated: {leaderboardUpdatedAt[liveBoardId]?.toLocaleTimeString() || "Waiting…"}</span></div></div>
             <button type="button" onClick={() => setLiveBoardId(null)} className="rounded-xl border border-white/20 p-3 hover:bg-white/10" aria-label="Close live board"><X className="h-6 w-6" /></button>
           </div>
-          <div className="flex flex-1 items-center justify-center py-8">
+          <div className="flex min-h-0 flex-1 items-center justify-center py-4">
             {boardLeaders.length === 0 ? <div className="text-center"><Trophy className="mx-auto h-20 w-20 text-amber-400/50" /><p className="mt-5 text-2xl font-bold">Waiting for completed scores…</p><p className="mt-2 text-slate-400">Students may continue using the normal Recording & Assessment page.</p></div> : <div className={`grid w-full max-w-6xl gap-5 transition-opacity duration-700 md:grid-cols-3 ${boardPulse === liveBoardId ? "opacity-70" : "opacity-100"}`}>{boardLeaders.map((leader, index) => {
               const styles = index === 0
                 ? { card: "border-amber-400 bg-amber-400/10 md:-translate-y-6", badge: "bg-amber-400 text-slate-950", label: "Gold" }
@@ -256,7 +260,19 @@ const TrainingChallengePanel: React.FC<Props> = ({ students, content, managedQar
               return <div key={leader.student_id} className={`rounded-3xl border p-7 text-center transition-all duration-700 ${styles.card}`}><div className={`mx-auto flex h-16 w-16 items-center justify-center rounded-full text-2xl font-black ${styles.badge}`}>#{leader.rank}</div><div className="mt-3 text-xs font-bold uppercase tracking-[0.2em] text-slate-400">{styles.label}</div><h3 className="mt-4 truncate text-2xl font-bold">{leader.student_name}</h3><div className="mt-5 text-6xl font-black text-emerald-400 md:text-7xl">{Math.round(leader.score)}%</div></div>;
             })}</div>}
           </div>
-          <div className="text-center text-sm text-slate-500">Top 3 only · motivational training display · not an official ranking</div>
+          <div className="max-h-[35vh] overflow-y-auto rounded-xl border border-white/15 bg-white/5 p-4">
+            <h3 className="mb-2 text-lg font-bold">Skor semua peserta</h3>
+            <p className="mb-3 text-xs text-slate-400">Skor sebelum sesi dipaparkan untuk rujukan sahaja dan tidak dikira dalam Top 3 sesi ini.</p>
+            <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
+              {boardParticipants.map((participant) => <div key={participant.student_id} className="flex items-center justify-between gap-3 rounded-lg bg-slate-900 px-3 py-2 text-sm">
+                <span className="min-w-0 truncate" title={participant.student_name}>{participant.student_name}</span>
+                <span className="shrink-0 text-right font-bold">{participant.score === null ? "Belum ada skor" : `${Math.round(participant.score)}%`}
+                  {participant.score_period === "before_session" && <span className="block text-xs font-normal text-amber-300">Sebelum sesi{participant.achieved_at ? ` · ${new Date(`${participant.achieved_at}Z`).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : ""}</span>}
+                </span>
+              </div>)}
+            </div>
+          </div>
+          <div className="pt-2 text-center text-sm text-slate-500">Top 3 sesi semasa · paparan motivasi latihan · bukan kedudukan rasmi</div>
         </div>;
       })()}
     </section>
