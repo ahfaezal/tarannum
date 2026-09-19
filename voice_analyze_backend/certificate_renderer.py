@@ -77,10 +77,10 @@ def _course_date_label(value: str) -> str:
 
 
 def _draw_attendance_body(c: canvas.Canvas, certificate: Certificate, snapshot: dict, width: float, height: float):
-    _centered(c, "SIJIL KEHADIRAN & PENYERTAAN", height - 198, "Times-Bold", 29, EMERALD)
+    _centered(c, "SIJIL KEHADIRAN & PENYERTAAN", height - 198, "Times-Roman", 31, EMERALD)
     _centered(c, "Dengan ini diperakui bahawa", height - 239, "Helvetica", 12.5, NAVY)
     student_name = (snapshot.get("student_name") or "").upper()
-    _centered(c, student_name, height - 279, "Times-Bold", _fit_font(student_name, "Times-Bold", 27, width - 145, 14), EMERALD)
+    _centered(c, student_name, height - 279, "Times-Roman", _fit_font(student_name, "Times-Roman", 29, width - 145, 14), EMERALD)
     _centered(c, "telah menghadiri", height - 309, "Helvetica", 12, NAVY)
 
     # The empty ornate course cartouche is part of the approved background.
@@ -91,7 +91,7 @@ def _draw_attendance_body(c: canvas.Canvas, certificate: Certificate, snapshot: 
 
     left = 123
     c.setFillColor(NAVY)
-    c.setFont("Helvetica", 9)
+    c.setFont("Helvetica", 10)
     duration_minutes = snapshot.get("course_duration_minutes") or 360
     duration_hours = round(duration_minutes / 60)
     footer_items = (
@@ -116,8 +116,8 @@ def _draw_logo(c: canvas.Canvas, certificate_type: str):
     logo_path = Path(os.getenv("CERTIFICATE_LOGO_PATH", str(default_logo)))
     width, height = landscape(A4)
     if logo_path.exists():
-        logo_size = 82 if certificate_type == "attendance" else 60
-        logo_bottom = height - 138 if certificate_type == "attendance" else height - 82
+        logo_size = 105 if certificate_type == "attendance" else 60
+        logo_bottom = height - 149 if certificate_type == "attendance" else height - 82
         c.drawImage(str(logo_path), width / 2 - logo_size / 2, logo_bottom, logo_size, logo_size, preserveAspectRatio=True, mask="auto")
     label_y = height - 159 if certificate_type == "attendance" else height - 102
     _centered(c, "tarannum.ai", label_y, "Helvetica-Bold", 15, EMERALD)
@@ -171,15 +171,15 @@ def render_certificate_pdf(db, certificate: Certificate) -> Path:
     _draw_border(c, certificate.certificate_type)
     _draw_logo(c, certificate.certificate_type)
 
-    c.saveState()
-    c.translate(width / 2, height / 2)
-    c.rotate(25)
-    c.setFillColor(PALE)
-    c.setFont("Helvetica-Bold", 62)
-    c.drawCentredString(0, -15, "CONTOH - SAH" if os.getenv("CERTIFICATE_SAMPLE_MODE") == "true" else "TARANNUM.AI")
-    c.restoreState()
-
     is_attendance = certificate.certificate_type == "attendance"
+    if not is_attendance:
+        c.saveState()
+        c.translate(width / 2, height / 2)
+        c.rotate(25)
+        c.setFillColor(PALE)
+        c.setFont("Helvetica-Bold", 62)
+        c.drawCentredString(0, -15, "CONTOH - SAH" if os.getenv("CERTIFICATE_SAMPLE_MODE") == "true" else "TARANNUM.AI")
+        c.restoreState()
     title = (
         "SIJIL KOMPETENSI AZAN" if certificate.certificate_type == "competency_azan" else "SIJIL KOMPETENSI TARANNUM"
     )
