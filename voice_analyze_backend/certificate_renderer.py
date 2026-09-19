@@ -14,6 +14,7 @@ from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.pdfgen import canvas
 from reportlab.lib.utils import ImageReader
 
+from certificate_display import certificate_display_snapshot
 from database import Certificate, QariSignature, CEOSignature
 
 
@@ -162,7 +163,7 @@ def render_certificate_pdf(db, certificate: Certificate) -> Path:
     output_dir = Path(os.getenv("CERTIFICATE_OUTPUT_DIR", "data/private/certificates")).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / f"{certificate.certificate_number}.pdf"
-    snapshot = certificate.snapshot_json or {}
+    snapshot = certificate_display_snapshot(certificate)
     c = canvas.Canvas(str(output_path), pagesize=landscape(A4), pageCompression=1)
     width, height = landscape(A4)
     c.setTitle(certificate.certificate_number)

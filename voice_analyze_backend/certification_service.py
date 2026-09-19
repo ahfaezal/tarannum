@@ -11,6 +11,7 @@ from uuid import UUID
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
+from certificate_display import certificate_display_snapshot
 from assessment_service import assessment_service
 from database import (
     AnalysisResult,
@@ -402,5 +403,5 @@ def certificate_public_payload(certificate: Certificate) -> dict:
         "certificate_type": certificate.certificate_type,
         "status": certificate.status,
         "issued_at": certificate.issued_at.isoformat(),
-        "details": certificate.snapshot_json,
+        "details": certificate_display_snapshot(certificate),
     }
