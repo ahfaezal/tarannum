@@ -244,25 +244,26 @@ const TrainingChallengePanel: React.FC<Props> = ({ students, content, managedQar
         const boardLeaders = leaders[liveBoardId] || [];
         const boardParticipants = participantScores[liveBoardId] || [];
         if (!challenge) return null;
-        return <div className="fixed inset-0 z-[100] flex flex-col bg-slate-950 p-6 text-white md:p-10">
-          {managedQariName && <p className="mb-3 text-lg font-semibold text-emerald-300">Qari: {managedQariName} · Dikendalikan oleh Admin</p>}
-          <div className="flex items-start justify-between gap-4 border-b border-white/15 pb-6">
-            <div><div className="flex flex-wrap items-center gap-3"><p className="text-sm font-bold uppercase tracking-[0.25em] text-emerald-400">Live Training Leaderboard</p><span className="inline-flex items-center gap-2 rounded-full bg-red-500/15 px-3 py-1 text-xs font-black tracking-wider text-red-300"><span className="h-2 w-2 animate-pulse rounded-full bg-red-400" />LIVE</span></div><h2 className="mt-2 text-3xl font-black md:text-5xl">{challenge.title}</h2><div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1 text-sm text-slate-300"><span>Highest Experimental Score V2.3</span><span className="font-mono text-base font-bold text-white">Time remaining: {formatRemaining(challenge.end_at)}</span><span>Updated: {leaderboardUpdatedAt[liveBoardId]?.toLocaleTimeString() || "Waiting…"}</span></div></div>
+        return <div className="fixed inset-0 z-[100] flex h-dvh min-h-0 flex-col gap-3 overflow-hidden bg-slate-950 px-4 py-4 text-white md:px-8 md:py-5">
+          {managedQariName && <p className="shrink-0 text-base font-semibold text-emerald-300">Qari: {managedQariName} · Dikendalikan oleh Admin</p>}
+          <div className="flex shrink-0 items-start justify-between gap-4 border-b border-white/15 pb-3">
+            <div className="min-w-0"><div className="flex flex-wrap items-center gap-3"><p className="text-sm font-bold uppercase tracking-[0.25em] text-emerald-400">Live Training Leaderboard</p><span className="inline-flex items-center gap-2 rounded-full bg-red-500/15 px-3 py-1 text-xs font-black tracking-wider text-red-300"><span className="h-2 w-2 animate-pulse rounded-full bg-red-400" />LIVE</span></div><h2 className="mt-1 text-3xl font-black md:text-4xl">{challenge.title}</h2><div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-sm text-slate-300"><span>Highest Experimental Score V2.3</span><span className="font-mono font-bold text-white">Time remaining: {formatRemaining(challenge.end_at)}</span><span>Updated: {leaderboardUpdatedAt[liveBoardId]?.toLocaleTimeString() || "Waiting…"}</span></div></div>
             <button type="button" onClick={() => setLiveBoardId(null)} className="rounded-xl border border-white/20 p-3 hover:bg-white/10" aria-label="Close live board"><X className="h-6 w-6" /></button>
           </div>
-          <div className="flex min-h-0 flex-1 items-center justify-center py-4">
+          <div className="flex max-h-[38vh] shrink-0 items-center justify-center overflow-y-auto py-1 md:max-h-none">
             {boardLeaders.length === 0 ? <div className="text-center"><Trophy className="mx-auto h-20 w-20 text-amber-400/50" /><p className="mt-5 text-2xl font-bold">Waiting for completed scores…</p><p className="mt-2 text-slate-400">Students may continue using the normal Recording & Assessment page.</p></div> : <div className={`grid w-full max-w-6xl gap-5 transition-opacity duration-700 md:grid-cols-3 ${boardPulse === liveBoardId ? "opacity-70" : "opacity-100"}`}>{boardLeaders.map((leader, index) => {
               const styles = index === 0
-                ? { card: "border-amber-400 bg-amber-400/10 md:-translate-y-6", badge: "bg-amber-400 text-slate-950", label: "Gold" }
+                ? { card: "border-amber-400 bg-amber-400/10", badge: "bg-amber-400 text-slate-950", label: "Gold" }
                 : index === 1
                 ? { card: "border-slate-300/60 bg-slate-300/10", badge: "bg-slate-300 text-slate-950", label: "Silver" }
                 : { card: "border-orange-500/60 bg-orange-500/10", badge: "bg-orange-600 text-white", label: "Bronze" };
-              return <div key={leader.student_id} className={`rounded-3xl border p-7 text-center transition-all duration-700 ${styles.card}`}><div className={`mx-auto flex h-16 w-16 items-center justify-center rounded-full text-2xl font-black ${styles.badge}`}>#{leader.rank}</div><div className="mt-3 text-xs font-bold uppercase tracking-[0.2em] text-slate-400">{styles.label}</div><h3 className="mt-4 truncate text-2xl font-bold">{leader.student_name}</h3><div className="mt-5 text-6xl font-black text-emerald-400 md:text-7xl">{Math.round(leader.score)}%</div></div>;
+              return <div key={leader.student_id} className={`min-w-0 rounded-2xl border p-4 text-center transition-all duration-700 ${styles.card}`}><div className={`mx-auto flex h-12 w-12 items-center justify-center rounded-full text-xl font-black ${styles.badge}`}>#{leader.rank}</div><div className="mt-2 text-xs font-bold uppercase tracking-[0.2em] text-slate-400">{styles.label}</div><h3 className="mt-2 truncate text-lg font-bold" title={leader.student_name}>{leader.student_name}</h3><div className="mt-2 text-5xl font-black text-emerald-400">{Math.round(leader.score)}%</div></div>;
             })}</div>}
           </div>
-          <div className="max-h-[35vh] overflow-y-auto rounded-xl border border-white/15 bg-white/5 p-4">
-            <h3 className="mb-2 text-lg font-bold">Skor semua peserta</h3>
-            <p className="mb-3 text-xs text-slate-400">Skor sebelum sesi dipaparkan untuk rujukan sahaja dan tidak dikira dalam Top 3 sesi ini.</p>
+          <div className="flex min-h-0 flex-1 flex-col rounded-xl border border-white/15 bg-white/5 p-3">
+            <h3 className="shrink-0 text-lg font-bold">Skor semua peserta</h3>
+            <p className="mb-2 shrink-0 text-xs text-slate-400">Skor sebelum sesi dipaparkan untuk rujukan sahaja dan tidak dikira dalam Top 3 sesi ini.</p>
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
             <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
               {boardParticipants.map((participant) => <div key={participant.student_id} className="flex items-center justify-between gap-3 rounded-lg bg-slate-900 px-3 py-2 text-sm">
                 <span className="min-w-0 truncate" title={participant.student_name}>{participant.student_name}</span>
@@ -271,8 +272,9 @@ const TrainingChallengePanel: React.FC<Props> = ({ students, content, managedQar
                 </span>
               </div>)}
             </div>
+            </div>
           </div>
-          <div className="pt-2 text-center text-sm text-slate-500">Top 3 sesi semasa · paparan motivasi latihan · bukan kedudukan rasmi</div>
+          <div className="shrink-0 text-center text-xs text-slate-500">Top 3 sesi semasa · paparan motivasi latihan · bukan kedudukan rasmi</div>
         </div>;
       })()}
     </section>
