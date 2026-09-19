@@ -583,6 +583,7 @@ class QariSignature(Base):
     # legacy path remains nullable for compatibility with older records.
     storage_path = Column(String, nullable=True)
     image_data = Column(LargeBinary, nullable=True)
+    signer_title = Column(String, nullable=True)
     checksum = Column(String, nullable=False)
     mime_type = Column(String, nullable=False)
     is_active = Column(Boolean, nullable=False, default=True)
@@ -832,6 +833,7 @@ def ensure_qari_signature_columns():
     """Make Qari signatures durable and shared across API replicas."""
     with engine.begin() as conn:
         conn.execute(text('ALTER TABLE qari_signatures ADD COLUMN IF NOT EXISTS image_data BYTEA'))
+        conn.execute(text('ALTER TABLE qari_signatures ADD COLUMN IF NOT EXISTS signer_title VARCHAR'))
         conn.execute(text('ALTER TABLE qari_signatures ALTER COLUMN storage_path DROP NOT NULL'))
 
 

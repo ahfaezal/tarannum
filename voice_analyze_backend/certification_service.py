@@ -29,7 +29,7 @@ from database import (
 )
 
 
-CEO_NAME = os.getenv("CERTIFICATE_CEO_NAME", "Ts. Ah Faezal Husni Hj. Arshad")
+CEO_NAME = os.getenv("CERTIFICATE_CEO_NAME", "Ts. Ah Faezal Husni bin Hj. Arshad")
 CEO_TITLE = os.getenv("CERTIFICATE_CEO_TITLE", "Ketua Pegawai Eksekutif")
 CEO_ORGANIZATION = os.getenv("CERTIFICATE_CEO_ORGANIZATION", "Tarannum Technologies")
 VERIFY_BASE_URL = os.getenv("CERTIFICATE_VERIFY_BASE_URL", "https://tarannum.ai/verify")
@@ -147,6 +147,7 @@ def issue_certificate(
         "practice_minutes": round((course.required_practice_seconds if course else 0) / 60),
         "final_grade": grade_label(final_grade),
         "qari_name": (qari.full_name or qari.email) if qari else None,
+        "qari_title": (db.query(QariSignature.signer_title).filter(QariSignature.qari_id == qari.id).scalar() if qari else None),
         "ceo_name": CEO_NAME,
         "ceo_title": CEO_TITLE,
         "ceo_organization": CEO_ORGANIZATION,

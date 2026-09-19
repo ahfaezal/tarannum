@@ -96,7 +96,7 @@ def _draw_signature(c: canvas.Canvas, x: float, y: float, name: str, title_lines
     c.setFont("Helvetica", size)
     c.drawCentredString(x, y - 3, name)
     for index, line in enumerate(title_lines):
-        c.setFont("Helvetica", 7.5)
+        c.setFont("Helvetica", _fit_font(line or "", "Helvetica", 7.5, 180, 6))
         c.drawCentredString(x, y - 15 - index * 10, line)
 
 
@@ -165,7 +165,8 @@ def render_certificate_pdf(db, certificate: Certificate) -> Path:
                 qari_signature_image = ImageReader(io.BytesIO(qari_signature.image_data))
             elif qari_signature.storage_path and Path(qari_signature.storage_path).exists():
                 qari_signature_image = qari_signature.storage_path
-        _draw_signature(c, 255, 86, snapshot.get("qari_name", "Qari Berautoriti"), ["Tandatangan Qari"], qari_signature_image)
+        qari_title = snapshot.get("qari_title") or (qari_signature.signer_title if qari_signature else None)
+        _draw_signature(c, 255, 86, snapshot.get("qari_name", "Qari Berautoriti"), [qari_title or "Qari Berautoriti"], qari_signature_image)
         _draw_signature(c, 545, 86, snapshot.get("ceo_name", ""), [snapshot.get("ceo_title", ""), snapshot.get("ceo_organization", "")], ceo_signature)
 
     _draw_qr(c, snapshot.get("verification_url", "https://tarannum.ai"))
