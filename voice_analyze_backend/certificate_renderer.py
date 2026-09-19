@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import hashlib
 import io
+import math
 import os
+from datetime import datetime
 from pathlib import Path
 
 import qrcode
@@ -39,6 +41,9 @@ def _centered(c: canvas.Canvas, text: str, y: float, font: str, size: float, col
 
 def _draw_border(c: canvas.Canvas, certificate_type: str):
     width, height = landscape(A4)
+    if certificate_type == "attendance":
+        _draw_attendance_frame(c, width, height)
+        return
     c.setFillColor(CREAM)
     c.rect(0, 0, width, height, fill=1, stroke=0)
     outer = 10
@@ -59,6 +64,105 @@ def _draw_border(c: canvas.Canvas, certificate_type: str):
         for point in points[1:]:
             path.lineTo(*point)
         c.drawPath(path)
+
+
+def _draw_rosette(c: canvas.Canvas, x: float, y: float, radius: float):
+    """Eight-point gold ornament used by the attendance template."""
+    c.setStrokeColor(GOLD)
+    c.setLineWidth(0.8)
+    for offset in (0, math.pi / 8):
+        points = [
+            (x + radius * math.cos(offset + index * math.pi / 4),
+             y + radius * math.sin(offset + index * math.pi / 4))
+            for index in range(8)
+        ]
+        path = c.beginPath()
+        path.moveTo(*points[0])
+        for point in points[1:]:
+            path.lineTo(*point)
+        path.close()
+        c.drawPath(path)
+    c.circle(x, y, radius * 0.24, fill=0, stroke=1)
+
+
+def _draw_attendance_frame(c: canvas.Canvas, width: float, height: float):
+    """Vector recreation of the approved green-and-gold attendance design."""
+    c.setFillColor(EMERALD)
+    c.rect(0, 0, width, height, fill=1, stroke=0)
+    c.setStrokeColor(Color(0.79, 0.60, 0.25, alpha=0.50))
+    c.setLineWidth(0.4)
+    # The geometric lattice stays visible only in the dark outer frame.
+    for x in range(-12, int(width) + 20, 18):
+        for y in range(-12, int(height) + 20, 18):
+            c.line(x, y + 9, x + 9, y + 18)
+            c.line(x + 9, y + 18, x + 18, y + 9)
+            c.line(x + 18, y + 9, x + 9, y)
+            c.line(x + 9, y, x, y + 9)
+
+    c.setFillColor(CREAM)
+    c.setStrokeColor(GOLD)
+    c.setLineWidth(2.2)
+    c.roundRect(21, 18, width - 42, height - 36, 47, fill=1, stroke=1)
+    c.setLineWidth(0.8)
+    c.roundRect(26, 23, width - 52, height - 46, 43, fill=0, stroke=1)
+    c.roundRect(31, 28, width - 62, height - 56, 39, fill=0, stroke=1)
+    c.setStrokeColor(EMERALD)
+    c.setLineWidth(1.4)
+    c.rect(9, 9, width - 18, height - 18, fill=0, stroke=1)
+    c.setStrokeColor(GOLD)
+    c.setLineWidth(0.8)
+    c.rect(13, 13, width - 26, height - 26, fill=0, stroke=1)
+
+    for x in (47, width - 47):
+        for y in (47, height - 47):
+            _draw_rosette(c, x, y, 19)
+    for x, y in ((width / 2, height - 21), (width / 2, 21), (22, height / 2), (width - 22, height / 2)):
+        _draw_rosette(c, x, y, 8)
+
+
+def _course_date_label(value: str) -> str:
+    months = ("Januari", "Februari", "Mac", "April", "Mei", "Jun", "Julai", "Ogos", "September", "Oktober", "November", "Disember")
+    try:
+        course_date = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except (ValueError, AttributeError):
+        return value[:10] if value else ""
+    return f"{course_date.day} {months[course_date.month - 1]} {course_date.year}"
+
+
+def _draw_attendance_body(c: canvas.Canvas, certificate: Certificate, snapshot: dict, width: float, height: float):
+    _centered(c, "SIJIL KEHADIRAN & PENYERTAAN", height - 184, "Times-Bold", 28, EMERALD)
+    _centered(c, "Dengan ini diperakui bahawa", height - 218, "Times-Roman", 13, NAVY)
+    student_name = (snapshot.get("student_name") or "").upper()
+    _centered(c, student_name, height - 250, "Times-Bold", _fit_font(student_name, "Times-Bold", 25, width - 135, 14), EMERALD)
+    _centered(c, "telah menghadiri", height - 278, "Times-Roman", 12.5, NAVY)
+
+    c.setFillColor(CREAM)
+    c.setStrokeColor(GOLD)
+    c.setLineWidth(1.1)
+    c.roundRect(135, height - 347, width - 270, 48, 17, fill=1, stroke=1)
+    c.setLineWidth(0.45)
+    c.roundRect(139, height - 343, width - 278, 40, 14, fill=0, stroke=1)
+    _draw_rosette(c, 135, height - 323, 10)
+    _draw_rosette(c, width - 135, height - 323, 10)
+    course_title = (snapshot.get("course_title") or snapshot.get("reference_title") or "").upper()
+    _centered(c, course_title, height - 330, "Times-Bold", _fit_font(course_title, "Times-Bold", 16, width - 305, 10), EMERALD)
+    practice_minutes = snapshot.get("practice_minutes") or 60
+    _centered(c, f"dan berjaya menyempurnakan {practice_minutes} minit latihan rakaman", height - 378, "Helvetica", 11, NAVY)
+
+    left = 105
+    c.setFillColor(NAVY)
+    c.setFont("Helvetica", 9)
+    duration_minutes = snapshot.get("course_duration_minutes") or 360
+    duration_hours = round(duration_minutes / 60)
+    footer_items = (
+        f"Tarikh Kursus: {_course_date_label(snapshot.get('course_date') or '')}",
+        f"Tempoh Kursus: 1 Hari - {duration_hours} Jam",
+        f"No. Sijil: {certificate.certificate_number}",
+    )
+    for index, item in enumerate(footer_items):
+        y = 127 - index * 23
+        _draw_rosette(c, left - 13, y + 3, 5)
+        c.drawString(left, y, item)
 
 
 def _draw_logo(c: canvas.Canvas):
@@ -118,25 +222,20 @@ def render_certificate_pdf(db, certificate: Certificate) -> Path:
     c.rotate(25)
     c.setFillColor(PALE)
     c.setFont("Helvetica-Bold", 62)
-    c.drawCentredString(0, -15, "CONTOH" if os.getenv("CERTIFICATE_SAMPLE_MODE") == "true" else "TARANNUM.AI")
+    c.drawCentredString(0, -15, "CONTOH - SAH" if os.getenv("CERTIFICATE_SAMPLE_MODE") == "true" else "TARANNUM.AI")
     c.restoreState()
 
     is_attendance = certificate.certificate_type == "attendance"
-    title = "SIJIL KEHADIRAN & PENYERTAAN" if is_attendance else (
+    title = (
         "SIJIL KOMPETENSI AZAN" if certificate.certificate_type == "competency_azan" else "SIJIL KOMPETENSI TARANNUM"
     )
-    _centered(c, title, height - 150, "Times-Bold", _fit_font(title, "Times-Bold", 29, width - 130), EMERALD)
-    _centered(c, "Dengan ini diperakui bahawa", height - 181, "Times-Roman", 13, NAVY)
-    student_name = (snapshot.get("student_name") or "").upper()
-    _centered(c, student_name, height - 220, "Times-Bold", _fit_font(student_name, "Times-Bold", 27, width - 150), EMERALD)
-
     if is_attendance:
-        _centered(c, "telah menghadiri", height - 247, "Times-Roman", 13, NAVY)
-        course_title = (snapshot.get("course_title") or snapshot.get("reference_title") or "").upper()
-        _centered(c, course_title, height - 280, "Times-Bold", _fit_font(course_title, "Times-Bold", 18, width - 180), EMERALD)
-        _centered(c, "dan berjaya menyempurnakan 60 minit latihan rakaman", height - 307, "Helvetica", 11, NAVY)
-        _centered(c, f"Tarikh Kursus: {(snapshot.get('course_date') or '')[:10]}   •   Tempoh Kursus: 1 Hari • 6 Jam", height - 338, "Helvetica", 9, NAVY)
+        _draw_attendance_body(c, certificate, snapshot, width, height)
     else:
+        _centered(c, title, height - 150, "Times-Bold", _fit_font(title, "Times-Bold", 29, width - 130), EMERALD)
+        _centered(c, "Dengan ini diperakui bahawa", height - 181, "Times-Roman", 13, NAVY)
+        student_name = (snapshot.get("student_name") or "").upper()
+        _centered(c, student_name, height - 220, "Times-Bold", _fit_font(student_name, "Times-Bold", 27, width - 150), EMERALD)
         _centered(c, "telah menunjukkan kompetensi dalam", height - 250, "Times-Roman", 13, NAVY)
         competency = " • ".join(filter(None, [snapshot.get("reference_title"), snapshot.get("maqam")])).upper()
         _centered(c, competency, height - 283, "Times-Bold", _fit_font(competency, "Times-Bold", 19, width - 170), EMERALD)
@@ -146,10 +245,11 @@ def render_certificate_pdf(db, certificate: Certificate) -> Path:
         _centered(c, f"TAHAP: {grade}", height - 317, "Times-Bold", 16, GOLD)
         _centered(c, "Disahkan oleh Qari Berautoriti", height - 346, "Times-Roman", 10.5, NAVY)
 
-    c.setFillColor(NAVY)
-    c.setFont("Helvetica", 8)
-    c.drawString(52, 82, f"No. Sijil: {certificate.certificate_number}")
-    c.drawString(52, 69, f"Tarikh Dikeluarkan: {certificate.issued_at.strftime('%d/%m/%Y')}")
+    if not is_attendance:
+        c.setFillColor(NAVY)
+        c.setFont("Helvetica", 8)
+        c.drawString(52, 82, f"No. Sijil: {certificate.certificate_number}")
+        c.drawString(52, 69, f"Tarikh Dikeluarkan: {certificate.issued_at.strftime('%d/%m/%Y')}")
 
     ceo_signature = os.getenv("CERTIFICATE_CEO_SIGNATURE_PATH")
     uploaded_ceo_signature = db.get(CEOSignature, 1)
