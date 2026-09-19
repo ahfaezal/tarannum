@@ -58,12 +58,12 @@ const CertificatesPage: React.FC = () => {
     <header className="rounded-2xl bg-gradient-to-r from-emerald-950 to-emerald-800 p-6 text-white">
       <p className="text-sm font-semibold uppercase tracking-wider text-emerald-200">Tarannum.ai</p>
       <h1 className="mt-1 text-3xl font-bold">Sijil Saya</h1>
-      <p className="mt-2 text-emerald-100">Pantau latihan kursus dan muat turun sijil rasmi anda.</p>
+      <p className="mt-2 text-emerald-100">Pantau latihan kursus dan sijil yang telah diterbitkan untuk anda.</p>
       <button type="button" disabled={refreshing} onClick={refreshStatus} className="mt-4 inline-flex items-center gap-2 rounded-xl border border-white/40 px-4 py-2 font-semibold text-white hover:bg-white/10 disabled:cursor-wait disabled:opacity-60">
         <RefreshCw size={17} className={refreshing ? "animate-spin" : ""} />
         {refreshing ? "Mengemaskini…" : "Kemaskini Status"}
       </button>
-      <p className="mt-2 text-sm text-emerald-100" role="status" aria-live="polite">{refreshing ? "Sedang menyemak kemajuan dan sijil terkini." : "Sijil tersedia dalam akaun ini. Tekan Muat turun PDF untuk menyimpannya; tiada penghantaran e-mel atau WhatsApp automatik."}</p>
+      <p className="mt-2 text-sm text-emerald-100" role="status" aria-live="polite">{refreshing ? "Sedang menyemak kemajuan dan sijil terkini." : "Sijil kursus yang sedang disemak hanya akan dipaparkan selepas senarai penerima dimuktamadkan."}</p>
     </header>
     {error && <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-700">{error}</div>}
 
@@ -91,7 +91,7 @@ const CertificatesPage: React.FC = () => {
     <section>
       <h2 className="mb-3 text-xl font-bold text-slate-900">Sijil Rasmi</h2>
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {certificates.length === 0 && <p className="rounded-xl border bg-white p-5 text-slate-500">Belum ada sijil dikeluarkan.</p>}
+        {certificates.length === 0 && <p className="rounded-xl border bg-white p-5 text-slate-500">Belum ada sijil untuk dimuat turun.</p>}
         {certificates.map((certificate) => <article key={certificate.id} className="rounded-2xl border border-emerald-100 bg-white p-5 shadow-sm">
           <Award className="h-9 w-9 text-amber-500" />
           <h3 className="mt-3 font-bold text-slate-900">{labels[certificate.certificate_type]}</h3>

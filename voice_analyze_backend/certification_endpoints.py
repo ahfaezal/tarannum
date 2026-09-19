@@ -44,6 +44,14 @@ from database import (
 
 router = APIRouter(prefix="/api/certification", tags=["certification"])
 
+# Hold publication for the 19 September 2026 Muazzin course while the final
+# recipient list is reviewed. Issued records remain valid and admin-visible.
+HELD_CERTIFICATE_COURSE_IDS = {UUID("11c98b50-8b68-4a03-89aa-8a468c7fc275")}
+
+
+def certificate_publication_held(certificate: Certificate) -> bool:
+    return certificate.course_id in HELD_CERTIFICATE_COURSE_IDS
+
 
 class CourseCreate(BaseModel):
     title: str = Field(min_length=3, max_length=240)
@@ -466,7 +474,7 @@ async def upload_qari_signature(file: UploadFile = File(...), qari: User = Depen
 @router.get("/certificates/mine")
 def my_certificates(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     rows = db.query(Certificate).filter(Certificate.student_id == current_user.id).order_by(Certificate.issued_at.desc()).all()
-    return [certificate_public_payload(row) | {"id": str(row.id)} for row in rows]
+    return [certificate_public_payload(row) | {"id": str(row.id)} for row in rows if not certificate_publication_held(row)]
 
 
 @router.get("/admin/certificates")
@@ -498,6 +506,8 @@ def download_certificate(certificate_id: UUID, current_user: User = Depends(get_
     allowed = current_user.role == "admin" or certificate.student_id == current_user.id or certificate.qari_id == current_user.id
     if not allowed:
         raise HTTPException(403, "You do not have access to this certificate")
+    if certificate_publication_held(certificate) and current_user.role != "admin":
+        raise HTTPException(403, "Certificate publication is on hold")
     if certificate.status != "valid":
         raise HTTPException(409, f"Certificate status is {certificate.status}")
     path = render_certificate_pdf(db, certificate)
@@ -508,16 +518,25 @@ def download_certificate(certificate_id: UUID, current_user: User = Depends(get_
 @router.get("/notifications")
 def my_notifications(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     rows = db.query(CertificationNotification).filter(CertificationNotification.user_id == current_user.id).order_by(CertificationNotification.created_at.desc()).limit(100).all()
+    held_certificate_ids = {
+        str(certificate_id) for (certificate_id,) in db.query(Certificate.id).filter(
+            Certificate.student_id == current_user.id,
+            Certificate.course_id.in_(HELD_CERTIFICATE_COURSE_IDS),
+        ).all()
+    }
     return [{
         "id": str(row.id), "type": row.notification_type, "title": row.title, "message": row.message,
         "metadata": row.metadata_json, "read_at": row.read_at.isoformat() if row.read_at else None,
         "created_at": row.created_at.isoformat(),
-    } for row in rows]
+    } for row in rows if not (
+        row.notification_type == "certificate_issued"
+        and str((row.metadata_json or {}).get("certificate_id")) in held_certificate_ids
+    )]
 
 
 @router.get("/verify/{verification_token}")
 def verify_certificate(verification_token: str, db: Session = Depends(get_db)):
     certificate = db.query(Certificate).filter(Certificate.verification_token == verification_token).first()
-    if not certificate:
+    if not certificate or certificate_publication_held(certificate):
         raise HTTPException(404, "Certificate not found")
     return certificate_public_payload(certificate)

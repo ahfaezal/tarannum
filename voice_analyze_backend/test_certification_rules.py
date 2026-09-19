@@ -1,5 +1,8 @@
 import unittest
+from types import SimpleNamespace
+from uuid import UUID
 
+from certification_endpoints import certificate_publication_held
 from certification_service import grade_for_score, required_recording_count
 
 
@@ -23,6 +26,14 @@ class CertificationRuleTests(unittest.TestCase):
     def test_score_below_threshold_is_rejected(self):
         with self.assertRaises(ValueError):
             grade_for_score(74.99)
+
+    def test_muazzin_course_certificates_are_held_from_publication(self):
+        certificate = SimpleNamespace(course_id=UUID("11c98b50-8b68-4a03-89aa-8a468c7fc275"))
+        self.assertTrue(certificate_publication_held(certificate))
+
+    def test_other_course_certificates_are_not_held(self):
+        certificate = SimpleNamespace(course_id=UUID("00000000-0000-0000-0000-000000000001"))
+        self.assertFalse(certificate_publication_held(certificate))
 
 
 if __name__ == "__main__":
