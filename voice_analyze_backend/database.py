@@ -579,7 +579,10 @@ class QariSignature(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     qari_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    storage_path = Column(String, nullable=False)
+    # Keep the binary in Postgres so every API replica can render it. The
+    # legacy path remains nullable for compatibility with older records.
+    storage_path = Column(String, nullable=True)
+    image_data = Column(LargeBinary, nullable=True)
     checksum = Column(String, nullable=False)
     mime_type = Column(String, nullable=False)
     is_active = Column(Boolean, nullable=False, default=True)
@@ -818,10 +821,18 @@ def init_db():
         ensure_user_session_metadata_columns()
         ensure_qari_dashboard_columns()
         ensure_expert_evaluation_columns()
+        ensure_qari_signature_columns()
         logger.info("Database tables created successfully")
     except Exception as e:
         logger.error(f"Error creating database tables: {e}", exc_info=True)
         raise
+
+
+def ensure_qari_signature_columns():
+    """Make Qari signatures durable and shared across API replicas."""
+    with engine.begin() as conn:
+        conn.execute(text('ALTER TABLE qari_signatures ADD COLUMN IF NOT EXISTS image_data BYTEA'))
+        conn.execute(text('ALTER TABLE qari_signatures ALTER COLUMN storage_path DROP NOT NULL'))
 
 
 def ensure_course_management_columns():

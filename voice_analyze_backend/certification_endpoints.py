@@ -442,35 +442,25 @@ async def upload_ceo_signature(file: UploadFile = File(...),
 
 @router.post("/qari/signature")
 async def upload_qari_signature(file: UploadFile = File(...), qari: User = Depends(get_current_qari_user), db: Session = Depends(get_db)):
-    allowed = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp"}
-    if file.content_type not in allowed:
-        raise HTTPException(400, "Signature must be PNG, JPEG, or WebP")
-    content = await file.read()
-    if not content or len(content) > 2 * 1024 * 1024:
-        raise HTTPException(400, "Signature must be between 1 byte and 2 MB")
+    from ceo_signature_service import normalize_signature, MAX_SIGNATURE_BYTES
+    content = await file.read(MAX_SIGNATURE_BYTES + 1)
     try:
-        image = Image.open(io.BytesIO(content))
-        image.verify()
-        if image.width > 4000 or image.height > 4000:
-            raise ValueError("Image dimensions are too large")
-    except Exception as exc:
+        image_data = normalize_signature(content, file.content_type)
+    except ValueError as exc:
         raise HTTPException(400, f"Invalid signature image: {exc}")
-    checksum = hashlib.sha256(content).hexdigest()
-    directory = Path(os.getenv("CERTIFICATE_SIGNATURE_DIR", "data/private/signatures")).resolve()
-    directory.mkdir(parents=True, exist_ok=True)
-    path = directory / f"{qari.id}-{checksum[:12]}{allowed[file.content_type]}"
-    path.write_bytes(content)
+    checksum = hashlib.sha256(image_data).hexdigest()
     signature = db.query(QariSignature).filter(QariSignature.qari_id == qari.id).first()
     if signature:
-        signature.storage_path = str(path)
+        signature.storage_path = None
+        signature.image_data = image_data
         signature.checksum = checksum
-        signature.mime_type = file.content_type
+        signature.mime_type = "image/png"
         signature.is_active = True
     else:
-        signature = QariSignature(qari_id=qari.id, storage_path=str(path), checksum=checksum, mime_type=file.content_type)
+        signature = QariSignature(qari_id=qari.id, image_data=image_data, checksum=checksum, mime_type="image/png")
         db.add(signature)
     db.commit()
-    return {"uploaded": True, "checksum": checksum, "mime_type": file.content_type}
+    return {"uploaded": True, "checksum": checksum, "mime_type": "image/png"}
 
 
 @router.get("/certificates/mine")

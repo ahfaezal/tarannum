@@ -159,7 +159,13 @@ def render_certificate_pdf(db, certificate: Certificate) -> Path:
         _draw_signature(c, width / 2, 86, snapshot.get("ceo_name", ""), [snapshot.get("ceo_title", ""), snapshot.get("ceo_organization", "")], ceo_signature)
     else:
         qari_signature = db.query(QariSignature).filter(QariSignature.qari_id == certificate.qari_id, QariSignature.is_active.is_(True)).first()
-        _draw_signature(c, 255, 86, snapshot.get("qari_name", "Qari Berautoriti"), ["Tandatangan Qari"], qari_signature.storage_path if qari_signature else None)
+        qari_signature_image = None
+        if qari_signature:
+            if qari_signature.image_data:
+                qari_signature_image = ImageReader(io.BytesIO(qari_signature.image_data))
+            elif qari_signature.storage_path and Path(qari_signature.storage_path).exists():
+                qari_signature_image = qari_signature.storage_path
+        _draw_signature(c, 255, 86, snapshot.get("qari_name", "Qari Berautoriti"), ["Tandatangan Qari"], qari_signature_image)
         _draw_signature(c, 545, 86, snapshot.get("ceo_name", ""), [snapshot.get("ceo_title", ""), snapshot.get("ceo_organization", "")], ceo_signature)
 
     _draw_qr(c, snapshot.get("verification_url", "https://tarannum.ai"))
