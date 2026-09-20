@@ -12,7 +12,18 @@ import ConfirmModal from '../components/ConfirmModal';
 import AlertModal from '../components/AlertModal';
 import { getScoringCapacity, getScoringOperations, retryScoringJob, ScoringCapacity, ScoringOperations } from '../services/apiService';
 import PasswordInput from '../components/PasswordInput';
-import { CertificateSummary, StudentFlowPreview, downloadCertificate, getAdminStudentFlowPreview, getAdminUserCertificates, getCertificatePdfBlob } from '../services/certificationService';
+import { CertificateSummary, QariFlowPreview, StudentFlowPreview, downloadCertificate, getAdminQariFlowPreview, getAdminStudentFlowPreview, getAdminUserCertificates, getCertificatePdfBlob } from '../services/certificationService';
+
+const QARI_PREVIEW_RUBRIC = [
+  { key: 'lafaz_completion', label: 'Kelengkapan dan susunan lafaz', link: 'Completion • Voice coverage', weight: 15 },
+  { key: 'pronunciation', label: 'Ketepatan lafaz dan sebutan', link: 'Recitation validity', weight: 20 },
+  { key: 'melodic_contour', label: 'Bentuk melodi keseluruhan', link: 'Melodic contour', weight: 15 },
+  { key: 'contour_detail', label: 'Perincian lenggok setiap frasa', link: 'Contour detail • Melody similarity', weight: 10 },
+  { key: 'pitch_control', label: 'Kedudukan dan kawalan nada', link: 'Pitch position', weight: 10 },
+  { key: 'timing', label: 'Tempo, jeda dan kesinambungan', link: 'Timing consistency', weight: 10 },
+  { key: 'vocal_breath', label: 'Kestabilan suara dan kawalan nafas', link: 'Vocal stability', weight: 10 },
+  { key: 'overall_azan', label: 'Kesesuaian persembahan azan keseluruhan', link: 'Pertimbangan profesional qari', weight: 10 },
+] as const;
 
 type TabType = 'presets' | 'users' | 'monitoring';
 
@@ -53,6 +64,11 @@ const AdminMode: React.FC<AdminModeProps> = ({ view = 'presets' }) => {
   const [flowPreview, setFlowPreview] = useState<StudentFlowPreview | null>(null);
   const [flowPreviewLoading, setFlowPreviewLoading] = useState(false);
   const [flowPreviewError, setFlowPreviewError] = useState('');
+  const [qariFlowPreviewUser, setQariFlowPreviewUser] = useState<AdminUser | null>(null);
+  const [qariFlowPreview, setQariFlowPreview] = useState<QariFlowPreview | null>(null);
+  const [qariFlowPreviewLoading, setQariFlowPreviewLoading] = useState(false);
+  const [qariFlowPreviewError, setQariFlowPreviewError] = useState('');
+  const [qariPreviewAssessment, setQariPreviewAssessment] = useState<Record<string, number>>({});
   const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
   const [creatingUser, setCreatingUser] = useState(false);
   const [userFormData, setUserFormData] = useState({
@@ -361,6 +377,21 @@ const AdminMode: React.FC<AdminModeProps> = ({ view = 'presets' }) => {
       setFlowPreviewError(error.message || 'Gagal memuatkan pratonton aliran peserta.');
     } finally {
       setFlowPreviewLoading(false);
+    }
+  };
+
+  const handlePreviewQariFlow = async (user: AdminUser) => {
+    setQariFlowPreviewUser(user);
+    setQariFlowPreview(null);
+    setQariFlowPreviewError('');
+    setQariPreviewAssessment({});
+    setQariFlowPreviewLoading(true);
+    try {
+      setQariFlowPreview(await getAdminQariFlowPreview(user.id));
+    } catch (error: any) {
+      setQariFlowPreviewError(error.message || 'Gagal memuatkan pratonton aliran qari.');
+    } finally {
+      setQariFlowPreviewLoading(false);
     }
   };
 
@@ -858,6 +889,14 @@ const AdminMode: React.FC<AdminModeProps> = ({ view = 'presets' }) => {
                                 Content
                               </button>
                             )}
+                            {user.role === 'qari' && (
+                              <button
+                                onClick={() => void handlePreviewQariFlow(user)}
+                                className="text-violet-700 hover:text-violet-900 font-medium"
+                              >
+                                Pratonton Aliran Qari
+                              </button>
+                            )}
                             <button
                               onClick={() => void handleViewUserCertificates(user)}
                               className="text-emerald-700 hover:text-emerald-900 font-medium"
@@ -988,6 +1027,48 @@ const AdminMode: React.FC<AdminModeProps> = ({ view = 'presets' }) => {
 
                   <div className="rounded-xl bg-slate-900 p-4 text-sm text-white"><strong>Aliran kompetensi:</strong> skor ≥75% → peserta hantar rakaman → qari isi 8 rubrik → qari semak jumlah dan buat keputusan → sijil kompetensi dijana selepas lulus.</div>
                 </>}
+              </div>
+            </section>
+          </div>}
+          {qariFlowPreviewUser && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-3 sm:p-6" role="presentation">
+            <section role="dialog" aria-modal="true" aria-labelledby="qari-flow-preview-title" className="flex max-h-[94vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-slate-50 shadow-2xl">
+              <div className="flex items-start justify-between gap-4 border-b bg-white p-5">
+                <div>
+                  <div className="mb-2 inline-flex rounded-full bg-violet-100 px-3 py-1 text-xs font-bold uppercase tracking-wide text-violet-800">Mod pratonton admin · tiada keputusan disimpan</div>
+                  <h2 id="qari-flow-preview-title" className="flex items-center gap-2 text-xl font-bold text-slate-900"><Eye size={22} /> Aliran Penilaian Qari</h2>
+                  <p className="mt-1 text-sm text-slate-600">{formatDisplayName(qariFlowPreviewUser.full_name, qariFlowPreviewUser.email)} · {qariFlowPreviewUser.email}</p>
+                </div>
+                <button type="button" onClick={() => { setQariFlowPreviewUser(null); setQariFlowPreview(null); setQariFlowPreviewError(''); setQariPreviewAssessment({}); }} aria-label="Tutup pratonton aliran qari" className="rounded-lg p-2 text-slate-600 hover:bg-slate-100"><X size={20} /></button>
+              </div>
+              <div className="space-y-6 overflow-y-auto p-5">
+                {qariFlowPreviewLoading && <p className="text-slate-600">Memuatkan aliran qari…</p>}
+                {qariFlowPreviewError && <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{qariFlowPreviewError}</p>}
+                {qariFlowPreview && (() => {
+                  const score = QARI_PREVIEW_RUBRIC.reduce((total, item) => total + ((qariPreviewAssessment[item.key] || 0) / 5) * item.weight, 0);
+                  const complete = QARI_PREVIEW_RUBRIC.every(item => qariPreviewAssessment[item.key]);
+                  return <>
+                    <div className="grid gap-3 md:grid-cols-3">
+                      <div className={`rounded-xl border p-4 ${qariFlowPreview.qari.is_approved ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50'}`}><p className="text-xs font-bold uppercase text-slate-500">Akaun Qari</p><p className="mt-1 font-bold">{qariFlowPreview.qari.is_approved ? 'Diluluskan' : 'Belum diluluskan'} · {qariFlowPreview.qari.is_active ? 'Aktif' : 'Tidak aktif'}</p></div>
+                      <div className={`rounded-xl border p-4 ${qariFlowPreview.qari.signature_uploaded ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50'}`}><p className="text-xs font-bold uppercase text-slate-500">Tandatangan</p><p className="mt-1 font-bold">{qariFlowPreview.qari.signature_uploaded ? 'Sudah dimuat naik' : 'Belum tersedia'}</p></div>
+                      <div className="rounded-xl border border-blue-200 bg-blue-50 p-4"><p className="text-xs font-bold uppercase text-slate-500">Tugasan</p><p className="mt-1 font-bold">{qariFlowPreview.applications.filter(item => item.status === 'pending').length} menunggu · {qariFlowPreview.applications.length} keseluruhan</p></div>
+                    </div>
+
+                    <section>
+                      <h3 className="text-lg font-bold text-slate-900">1. Peti Tugasan Qari</h3>
+                      <p className="mb-3 text-sm text-slate-600">Permohonan hanya muncul selepas peserta menghantar rakaman yang layak.</p>
+                      {qariFlowPreview.applications.length === 0 ? <p className="rounded-xl bg-white p-4 text-slate-600">Belum ada peserta menghantar permohonan kepada qari ini.</p> : <div className="space-y-3">{qariFlowPreview.applications.map(item => <div key={item.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-4"><div><p className="font-bold text-slate-900">{item.student_name}</p><p className="text-sm text-slate-600">{item.certificate_type === 'competency_azan' ? 'Kompetensi Azan' : 'Kompetensi Tarannum'} · dihantar {new Date(item.submitted_at).toLocaleString('ms-MY')}</p></div><div className="text-right"><p className="text-2xl font-black text-emerald-700">{item.score_snapshot.toFixed(1)}%</p><span className="text-xs font-bold uppercase text-slate-600">{item.status}</span>{item.qari_score != null && <p className="text-xs text-slate-600">Skor qari {item.qari_score.toFixed(1)}%</p>}</div></div>)}</div>}
+                    </section>
+
+                    <section>
+                      <h3 className="text-lg font-bold text-slate-900">2. Simulasi Borang Lapan Rubrik</h3>
+                      <p className="mb-3 text-sm text-slate-600">Pilihan di bawah hanya untuk memahami pengiraan. Ia tidak disimpan dan tidak menjejaskan mana-mana peserta.</p>
+                      <div className="overflow-x-auto rounded-xl border bg-white"><table className="w-full min-w-[720px] text-sm"><thead className="bg-slate-100 text-left"><tr><th className="p-3">Elemen qari</th><th className="p-3">Hubungan V2.3</th><th className="p-3">Berat</th><th className="p-3">Skala 1–5</th></tr></thead><tbody>{QARI_PREVIEW_RUBRIC.map(item => <tr key={item.key} className="border-t"><td className="p-3 font-semibold">{item.label}</td><td className="p-3 text-slate-500">{item.link}</td><td className="p-3">{item.weight}%</td><td className="p-3"><select value={qariPreviewAssessment[item.key] || ''} onChange={event => setQariPreviewAssessment(current => ({...current, [item.key]: Number(event.target.value)}))} className="rounded-lg border px-3 py-2" aria-label={`Simulasi ${item.label}`}><option value="">Pilih</option>{[1,2,3,4,5].map(value => <option key={value} value={value}>{value}</option>)}</select></td></tr>)}</tbody></table></div>
+                      <div className="mt-4 grid gap-3 md:grid-cols-[1fr_auto] md:items-center"><div className="rounded-xl bg-white p-4 text-sm text-slate-700"><strong>Qari masih boleh mengubah mana-mana rubrik sebelum submit.</strong> Markah dikira serta-merta. Kelulusan memerlukan sekurang-kurangnya 75% dan tiada kesilapan kritikal.</div><div className={`rounded-xl p-5 text-center ${complete && score >= 75 ? 'bg-emerald-100' : 'bg-amber-100'}`}><p className="text-xs font-bold uppercase text-slate-600">Skor simulasi qari</p><p className="text-4xl font-black text-slate-900">{score.toFixed(0)}%</p><p className="text-xs text-slate-600">{complete ? (score >= 75 ? 'Mencapai had lulus' : 'Belum mencapai had lulus') : 'Lengkapkan 8 elemen'}</p></div></div>
+                    </section>
+
+                    <section className="rounded-xl border border-slate-200 bg-white p-4"><h3 className="font-bold text-slate-900">3. Keputusan dan Sijil</h3><p className="mt-1 text-sm text-slate-600">Selepas mendengar rakaman dan melengkapkan rubrik, qari memilih <strong>Lulus & jana sijil</strong>, <strong>Minta rakam semula</strong>, atau <strong>Tidak lulus</strong>. Dalam pratonton ini semua tindakan kekal dinyahaktifkan.</p><div className="mt-3 flex flex-wrap gap-2"><button disabled className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-bold text-white opacity-50">Lulus & jana sijil</button><button disabled className="rounded-lg bg-amber-100 px-4 py-2 text-sm font-bold text-amber-900 opacity-60">Minta rakam semula</button><button disabled className="rounded-lg bg-red-100 px-4 py-2 text-sm font-bold text-red-800 opacity-60">Tidak lulus</button></div></section>
+                  </>;
+                })()}
               </div>
             </section>
           </div>}

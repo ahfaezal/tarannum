@@ -472,7 +472,11 @@ def admin_student_flow_preview(user_id: UUID, admin: User = Depends(get_current_
 
 @router.get("/qari/applications")
 def qari_applications(qari: User = Depends(get_current_qari_user), db: Session = Depends(get_db)):
-    rows = db.query(CertificateApplication).filter(CertificateApplication.qari_id == qari.id).order_by(CertificateApplication.submitted_at.desc()).all()
+    return _qari_application_rows(db, qari.id)
+
+
+def _qari_application_rows(db: Session, qari_id: UUID) -> list[dict]:
+    rows = db.query(CertificateApplication).filter(CertificateApplication.qari_id == qari_id).order_by(CertificateApplication.submitted_at.desc()).all()
     return [{
         "id": str(row.id),
         "student_id": str(row.student_id),
@@ -490,6 +494,29 @@ def qari_applications(qari: User = Depends(get_current_qari_user), db: Session =
         "critical_error": row.critical_error,
         "submitted_at": row.submitted_at.isoformat(),
     } for row in rows]
+
+
+@router.get("/admin/users/{user_id}/qari-flow-preview")
+def admin_qari_flow_preview(user_id: UUID, admin: User = Depends(get_current_admin_user), db: Session = Depends(get_db)):
+    """Read-only view of the selected Qari's competency assessment queue."""
+    qari = db.query(User).filter(User.id == user_id, User.role == "qari").first()
+    if not qari:
+        raise HTTPException(404, "Qari not found")
+    signature = db.query(QariSignature).filter(
+        QariSignature.qari_id == user_id, QariSignature.is_active == True
+    ).first()
+    return {
+        "qari": {
+            "id": str(qari.id),
+            "full_name": qari.full_name or qari.email,
+            "email": qari.email,
+            "is_active": qari.is_active,
+            "is_approved": qari.is_approved,
+            "signature_uploaded": signature is not None,
+        },
+        "applications": _qari_application_rows(db, qari.id),
+        "read_only": True,
+    }
 
 
 @router.post("/qari/applications/{application_id}/decision")

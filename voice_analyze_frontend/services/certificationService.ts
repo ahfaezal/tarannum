@@ -99,6 +99,12 @@ export interface QariApplication {
   submitted_at: string;
 }
 
+export interface QariFlowPreview {
+  qari: { id: string; full_name: string; email: string; is_active: boolean; is_approved: boolean; signature_uploaded: boolean };
+  applications: QariApplication[];
+  read_only: true;
+}
+
 export const getStudentCourseProgress = () => request<CourseProgress[]>("/student/courses");
 export const getCompetencyEligibility = () => request<any[]>("/student/competency-eligibility");
 export const submitCompetencyApplication = (sessionId: string, certificateType: string) => request<any>("/student/competency-applications", { method: "POST", body: JSON.stringify({ session_id: sessionId, certificate_type: certificateType }) });
@@ -112,6 +118,7 @@ export const enrollCourseStudents = (courseId: string, studentIds: string[]) => 
 export const getCourseEnrollments = (courseId: string) => request<any[]>(`/admin/courses/${courseId}/enrollments`);
 export const setEnrollmentAttendance = (enrollmentId: string, attendance_status: string) => request<any>(`/admin/enrollments/${enrollmentId}/attendance`, { method: "PATCH", body: JSON.stringify({ attendance_status }) });
 export const getQariApplications = () => request<QariApplication[]>("/qari/applications");
+export const getAdminQariFlowPreview = (userId: string) => request<QariFlowPreview>(`/admin/users/${encodeURIComponent(userId)}/qari-flow-preview`);
 export const decideQariApplication = (id: string, payload: Record<string, any>) => request<{ status: string; certificate_id?: string }>(`/qari/applications/${id}/decision`, { method: "POST", body: JSON.stringify(payload) });
 
 export const uploadQariSignature = async (file: File) => {
