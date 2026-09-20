@@ -202,6 +202,9 @@ def issue_certificate(
         reference_id=reference.id,
         qari_id=qari.id if qari else None,
         final_grade=final_grade,
+        # Attendance issuance reaches here only after verified attendance and
+        # practice completion; competency issuance only after Qari approval.
+        publication_released=bool(enrollment or application),
         snapshot_json=snapshot,
         issued_by=_as_uuid(actor_id) if actor_id else None,
     )
