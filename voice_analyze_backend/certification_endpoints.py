@@ -392,16 +392,57 @@ def _competency_eligibility_rows(db: Session, student_id: UUID) -> list[dict]:
         .limit(50)
         .all()
     )
-    return [{
-        "session_id": str(session.id),
-        "reference_id": reference.id,
-        "reference_title": reference.title,
-        "maqam": reference.maqam,
-        "score": analysis.score,
-        "application_id": str(application.id) if application else None,
-        "application_status": application.status if application else None,
-        "created_at": session.created_at.isoformat(),
-    } for session, analysis, reference, application in rows]
+    result = []
+    for session, analysis, reference, application in rows:
+        course_rows = (
+            db.query(Course, CourseEnrollment)
+            .join(CourseEnrollment, CourseEnrollment.course_id == Course.id)
+            .filter(
+                CourseEnrollment.student_id == student_id,
+                Course.reference_id == session.reference_id,
+                Course.qari_id.isnot(None),
+                Course.starts_at <= session.created_at,
+            )
+            .order_by(Course.starts_at.desc())
+            .all()
+        )
+        matched = next((pair for pair in course_rows
+            if session.created_at <= pair[0].starts_at + timedelta(days=pair[0].completion_window_days)), None)
+        course, enrollment = matched if matched else (None, None)
+        attended = bool(enrollment and enrollment.attendance_status == "attended")
+        practice_complete = bool(enrollment and (
+            enrollment.eligibility_override or (
+                (enrollment.required_recording_count or 0) > 0
+                and (enrollment.valid_recording_count or 0) >= enrollment.required_recording_count
+            )
+        ))
+        can_submit = bool(course and attended and practice_complete)
+        if not course:
+            blocked_reason = "Pendaftaran kursus diperlukan"
+        elif not attended:
+            blocked_reason = "Kehadiran belum disahkan"
+        elif not practice_complete:
+            blocked_reason = "Lengkapkan latihan rakaman 60 minit"
+        else:
+            blocked_reason = None
+        result.append({
+            "session_id": str(session.id),
+            "reference_id": reference.id,
+            "reference_title": reference.title,
+            "maqam": reference.maqam,
+            "score": analysis.score,
+            "application_id": str(application.id) if application else None,
+            "application_status": application.status if application else None,
+            "created_at": session.created_at.isoformat(),
+            "course_id": str(course.id) if course else None,
+            "course_title": course.title if course else None,
+            "certificate_type": ("competency_azan" if course.certificate_category == "azan" else "competency_tarannum") if course else None,
+            "attendance_verified": attended,
+            "practice_60_minutes_complete": practice_complete,
+            "can_submit": can_submit,
+            "blocked_reason": blocked_reason,
+        })
+    return result
 
 
 @router.get("/admin/users/{user_id}/student-flow-preview")

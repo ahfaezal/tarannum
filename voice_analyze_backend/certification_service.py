@@ -339,6 +339,8 @@ def submit_competency_application(db: Session, student: User, session_id, certif
     analysis = db.query(AnalysisResult).filter(AnalysisResult.user_session_id == session.id).first()
     if not analysis:
         raise ValueError("Recording has not been scored")
+    if analysis.score < 75:
+        raise ValueError("A minimum AI practice score of 75 is required")
     suggested = grade_for_score(analysis.score)
     # Managed-course assessments require enrollment, verified attendance and 60-minute completion.
     courses = db.query(Course).filter(Course.reference_id == session.reference_id,
@@ -353,13 +355,14 @@ def submit_competency_application(db: Session, student: User, session_id, certif
             CourseEnrollment.student_id == student.id, CourseEnrollment.course_id.in_([c.id for c in relevant])).all()}
         course = next((c for c in relevant if c.id in enrolled), None)
         if not course: raise ValueError('Only enrolled course participants may apply for this assessment')
-    if course:
-        enrollment = db.query(CourseEnrollment).filter(CourseEnrollment.course_id == course.id,
-            CourseEnrollment.student_id == student.id).first()
-        if not enrollment or not recalculate_enrollment(db, enrollment, actor_id=student.id)['eligible']:
-            raise ValueError('Verified attendance and 60 minutes of course practice are required')
-        expected = 'competency_azan' if course.certificate_category == 'azan' else 'competency_tarannum'
-        if certificate_type != expected: raise ValueError('Certificate type does not match course category')
+    if not course:
+        raise ValueError('Enrollment in a managed course is required for competency assessment')
+    enrollment = db.query(CourseEnrollment).filter(CourseEnrollment.course_id == course.id,
+        CourseEnrollment.student_id == student.id).first()
+    if not enrollment or not recalculate_enrollment(db, enrollment, actor_id=student.id)['eligible']:
+        raise ValueError('Verified attendance and 60 minutes of course practice are required')
+    expected = 'competency_azan' if course.certificate_category == 'azan' else 'competency_tarannum'
+    if certificate_type != expected: raise ValueError('Certificate type does not match course category')
     qari_id = session.qari_id
     if course: qari_id = course.qari_id
     if not qari_id:
@@ -409,11 +412,12 @@ def decide_application(db: Session, application: CertificateApplication, qari: U
     if decision == "approved":
         grade = grade_for_score(qari_score)
     if decision == "approved":
-        if application.course_id:
-            enrollment = db.query(CourseEnrollment).filter(CourseEnrollment.course_id == application.course_id,
-                CourseEnrollment.student_id == application.student_id).first()
-            if not enrollment or not recalculate_enrollment(db, enrollment, actor_id=qari.id)['eligible']:
-                raise ValueError('Course attendance and 60 minutes of practice must remain verified')
+        if not application.course_id:
+            raise ValueError('A managed course enrollment is required for competency certification')
+        enrollment = db.query(CourseEnrollment).filter(CourseEnrollment.course_id == application.course_id,
+            CourseEnrollment.student_id == application.student_id).first()
+        if not enrollment or not recalculate_enrollment(db, enrollment, actor_id=qari.id)['eligible']:
+            raise ValueError('Course attendance and 60 minutes of practice must remain verified')
         signature = db.query(QariSignature).filter(
             QariSignature.qari_id == qari.id,
             QariSignature.is_active.is_(True),

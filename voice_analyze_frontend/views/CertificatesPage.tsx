@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Award, Bell, CheckCircle2, Download, Loader2, LockKeyhole, RefreshCw } from "lucide-react";
-import { CertificateSummary, CourseProgress, downloadCertificate, getCertificationNotifications, getCompetencyEligibility, getMyCertificates, getStudentCourseProgress, submitCompetencyApplication } from "../services/certificationService";
+import { CertificateSummary, CompetencyEligibility, CourseProgress, downloadCertificate, getCertificationNotifications, getCompetencyEligibility, getMyCertificates, getStudentCourseProgress, submitCompetencyApplication } from "../services/certificationService";
 import { getStudentProfile, StudentProfile } from "../services/authService";
 
 const labels: Record<string, string> = {
@@ -14,7 +14,7 @@ const CertificatesPage: React.FC = () => {
   const [progress, setProgress] = useState<CourseProgress[]>([]);
   const [certificates, setCertificates] = useState<CertificateSummary[]>([]);
   const [notifications, setNotifications] = useState<any[]>([]);
-  const [eligibility, setEligibility] = useState<any[]>([]);
+  const [eligibility, setEligibility] = useState<CompetencyEligibility[]>([]);
   const [profile, setProfile] = useState<StudentProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -97,7 +97,7 @@ const CertificatesPage: React.FC = () => {
 
     <section>
       <h2 className="mb-3 text-xl font-bold text-slate-900">Kelayakan Kompetensi</h2>
-      <div className="space-y-3">{eligibility.length === 0 && <p className="rounded-xl border bg-white p-5 text-slate-500">Belum ada rakaman dengan skor 75 ke atas.</p>}{eligibility.map((item) => <article key={item.session_id} className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border bg-white p-5 shadow-sm"><div><h3 className="font-bold">{item.reference_title}{item.maqam ? ` • ${item.maqam}` : ""}</h3><p className="text-sm text-slate-600">Skor AI {Number(item.score).toFixed(1)} • {item.application_status ? `Status: ${item.application_status}` : "Layak dihantar kepada Qari"}</p></div>{!item.application_id && <div className="flex gap-2"><button onClick={async () => { await submitCompetencyApplication(item.session_id, "competency_tarannum"); setEligibility(await getCompetencyEligibility()); }} className="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-bold text-white">Mohon Tarannum</button><button onClick={async () => { await submitCompetencyApplication(item.session_id, "competency_azan"); setEligibility(await getCompetencyEligibility()); }} className="rounded-lg border border-emerald-700 px-3 py-2 text-sm font-bold text-emerald-800">Mohon Azan</button></div>}</article>)}</div>
+      <div className="space-y-3">{eligibility.length === 0 && <p className="rounded-xl border bg-white p-5 text-slate-500">Belum ada rakaman dengan skor 75 ke atas.</p>}{eligibility.map((item) => <article key={item.session_id} className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border bg-white p-5 shadow-sm"><div><h3 className="font-bold">{item.reference_title}{item.maqam ? ` • ${item.maqam}` : ""}</h3><p className="text-sm text-slate-600">Skor latihan AI {Number(item.score).toFixed(1)}% • {item.application_status ? `Status: ${item.application_status}` : item.can_submit ? "Hadir dan latihan 60 minit lengkap — layak dihantar kepada Qari" : item.blocked_reason}</p>{item.course_title && <p className="mt-1 text-xs text-slate-500">Kursus: {item.course_title}</p>}</div>{!item.application_id && <button disabled={!item.can_submit || !item.course_id || !item.certificate_type} onClick={async () => { if (!item.course_id || !item.certificate_type) return; try { await submitCompetencyApplication(item.session_id, item.certificate_type, item.course_id); setEligibility(await getCompetencyEligibility()); } catch (err: any) { setError(err.message || 'Permohonan tidak dapat dihantar.'); } }} className="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-bold text-white disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-600">{item.certificate_type === 'competency_azan' ? 'Mohon Kompetensi Azan' : 'Mohon Kompetensi Tarannum'}</button>}</article>)}</div>
     </section>
 
     <section>

@@ -60,9 +60,26 @@ export interface CertificateSummary {
 export interface StudentFlowPreview {
   student: { id: string; full_name: string; email: string; profile_complete: boolean; missing_profile_fields: string[] };
   courses: Array<CourseProgress & { certificate_category: 'tarannum' | 'azan'; display_valid_recording_count: number; eligibility_override: boolean }>;
-  competency_eligibility: Array<{ session_id: string; reference_title: string; maqam?: string; score: number; application_id?: string | null; application_status?: string | null; created_at: string }>;
+  competency_eligibility: CompetencyEligibility[];
   certificates: CertificateSummary[];
   read_only: true;
+}
+
+export interface CompetencyEligibility {
+  session_id: string;
+  reference_title: string;
+  maqam?: string;
+  score: number;
+  application_id?: string | null;
+  application_status?: string | null;
+  created_at: string;
+  course_id?: string | null;
+  course_title?: string | null;
+  certificate_type?: 'competency_tarannum' | 'competency_azan' | null;
+  attendance_verified: boolean;
+  practice_60_minutes_complete: boolean;
+  can_submit: boolean;
+  blocked_reason?: string | null;
 }
 
 export interface CertificationCourse {
@@ -113,8 +130,8 @@ export const competencyGradeForScore = (score: number): { label: string; range: 
 };
 
 export const getStudentCourseProgress = () => request<CourseProgress[]>("/student/courses");
-export const getCompetencyEligibility = () => request<any[]>("/student/competency-eligibility");
-export const submitCompetencyApplication = (sessionId: string, certificateType: string) => request<any>("/student/competency-applications", { method: "POST", body: JSON.stringify({ session_id: sessionId, certificate_type: certificateType }) });
+export const getCompetencyEligibility = () => request<CompetencyEligibility[]>("/student/competency-eligibility");
+export const submitCompetencyApplication = (sessionId: string, certificateType: string, courseId: string) => request<any>("/student/competency-applications", { method: "POST", body: JSON.stringify({ session_id: sessionId, certificate_type: certificateType, course_id: courseId }) });
 export const getMyCertificates = () => request<CertificateSummary[]>("/certificates/mine");
 export const getAdminUserCertificates = (userId: string) => request<CertificateSummary[]>(`/admin/users/${encodeURIComponent(userId)}/certificates`);
 export const getAdminStudentFlowPreview = (userId: string) => request<StudentFlowPreview>(`/admin/users/${encodeURIComponent(userId)}/student-flow-preview`);
