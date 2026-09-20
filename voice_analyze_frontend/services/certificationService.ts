@@ -57,6 +57,14 @@ export interface CertificateSummary {
   profile_incomplete?: boolean;
 }
 
+export interface StudentFlowPreview {
+  student: { id: string; full_name: string; email: string; profile_complete: boolean; missing_profile_fields: string[] };
+  courses: Array<CourseProgress & { certificate_category: 'tarannum' | 'azan'; display_valid_recording_count: number; eligibility_override: boolean }>;
+  competency_eligibility: Array<{ session_id: string; reference_title: string; maqam?: string; score: number; application_id?: string | null; application_status?: string | null; created_at: string }>;
+  certificates: CertificateSummary[];
+  read_only: true;
+}
+
 export interface CertificationCourse {
   id: string;
   qari_id?: string | null;
@@ -96,6 +104,7 @@ export const getCompetencyEligibility = () => request<any[]>("/student/competenc
 export const submitCompetencyApplication = (sessionId: string, certificateType: string) => request<any>("/student/competency-applications", { method: "POST", body: JSON.stringify({ session_id: sessionId, certificate_type: certificateType }) });
 export const getMyCertificates = () => request<CertificateSummary[]>("/certificates/mine");
 export const getAdminUserCertificates = (userId: string) => request<CertificateSummary[]>(`/admin/users/${encodeURIComponent(userId)}/certificates`);
+export const getAdminStudentFlowPreview = (userId: string) => request<StudentFlowPreview>(`/admin/users/${encodeURIComponent(userId)}/student-flow-preview`);
 export const getCertificationNotifications = () => request<any[]>("/notifications");
 export const getAdminCourses = () => request<CertificationCourse[]>("/admin/courses");
 export const createCertificationCourse = (payload: Record<string, any>) => request<CertificationCourse>("/admin/courses", { method: "POST", body: JSON.stringify(payload) });

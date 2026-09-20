@@ -12,7 +12,7 @@ import ConfirmModal from '../components/ConfirmModal';
 import AlertModal from '../components/AlertModal';
 import { getScoringCapacity, getScoringOperations, retryScoringJob, ScoringCapacity, ScoringOperations } from '../services/apiService';
 import PasswordInput from '../components/PasswordInput';
-import { CertificateSummary, downloadCertificate, getAdminUserCertificates, getCertificatePdfBlob } from '../services/certificationService';
+import { CertificateSummary, StudentFlowPreview, downloadCertificate, getAdminStudentFlowPreview, getAdminUserCertificates, getCertificatePdfBlob } from '../services/certificationService';
 
 type TabType = 'presets' | 'users' | 'monitoring';
 
@@ -49,6 +49,10 @@ const AdminMode: React.FC<AdminModeProps> = ({ view = 'presets' }) => {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const certificateRequestId = useRef(0);
+  const [flowPreviewUser, setFlowPreviewUser] = useState<AdminUser | null>(null);
+  const [flowPreview, setFlowPreview] = useState<StudentFlowPreview | null>(null);
+  const [flowPreviewLoading, setFlowPreviewLoading] = useState(false);
+  const [flowPreviewError, setFlowPreviewError] = useState('');
   const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
   const [creatingUser, setCreatingUser] = useState(false);
   const [userFormData, setUserFormData] = useState({
@@ -343,6 +347,20 @@ const AdminMode: React.FC<AdminModeProps> = ({ view = 'presets' }) => {
       if (requestId === certificateRequestId.current) setCertificatesError(error.message || 'Gagal memuatkan sijil pengguna.');
     } finally {
       if (requestId === certificateRequestId.current) setCertificatesLoading(false);
+    }
+  };
+
+  const handlePreviewStudentFlow = async (user: AdminUser) => {
+    setFlowPreviewUser(user);
+    setFlowPreview(null);
+    setFlowPreviewError('');
+    setFlowPreviewLoading(true);
+    try {
+      setFlowPreview(await getAdminStudentFlowPreview(user.id));
+    } catch (error: any) {
+      setFlowPreviewError(error.message || 'Gagal memuatkan pratonton aliran peserta.');
+    } finally {
+      setFlowPreviewLoading(false);
     }
   };
 
@@ -854,6 +872,14 @@ const AdminMode: React.FC<AdminModeProps> = ({ view = 'presets' }) => {
                             </button>
                             {user.role === 'student' && user.is_active && (
                               <button
+                                onClick={() => void handlePreviewStudentFlow(user)}
+                                className="text-violet-700 hover:text-violet-900 font-medium"
+                              >
+                                Pratonton Aliran
+                              </button>
+                            )}
+                            {user.role === 'student' && user.is_active && (
+                              <button
                                 onClick={() => void handleMergeStudent(user)}
                                 className="text-amber-700 hover:text-amber-900 font-medium"
                               >
@@ -905,6 +931,63 @@ const AdminMode: React.FC<AdminModeProps> = ({ view = 'presets' }) => {
                   <p className="mb-2 text-sm font-semibold text-slate-700">Pratonton: {previewCertificate.certificate_number}</p>
                   <iframe src={previewUrl} title={`Pratonton sijil ${previewCertificate.certificate_number}`} className="h-[55vh] w-full rounded-lg border border-slate-300" />
                 </div>}
+              </div>
+            </section>
+          </div>}
+          {flowPreviewUser && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-3 sm:p-6" role="presentation">
+            <section role="dialog" aria-modal="true" aria-labelledby="student-flow-preview-title" className="flex max-h-[94vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-slate-50 shadow-2xl">
+              <div className="flex items-start justify-between gap-4 border-b bg-white p-5">
+                <div>
+                  <div className="mb-2 inline-flex rounded-full bg-violet-100 px-3 py-1 text-xs font-bold uppercase tracking-wide text-violet-800">Mod pratonton admin · baca sahaja</div>
+                  <h2 id="student-flow-preview-title" className="flex items-center gap-2 text-xl font-bold text-slate-900"><Eye size={22} /> Aliran Peserta</h2>
+                  <p className="mt-1 text-sm text-slate-600">{formatDisplayName(flowPreviewUser.full_name, flowPreviewUser.email)} · {flowPreviewUser.email}</p>
+                </div>
+                <button type="button" onClick={() => { setFlowPreviewUser(null); setFlowPreview(null); setFlowPreviewError(''); }} aria-label="Tutup pratonton aliran" className="rounded-lg p-2 text-slate-600 hover:bg-slate-100"><X size={20} /></button>
+              </div>
+              <div className="space-y-6 overflow-y-auto p-5">
+                {flowPreviewLoading && <p className="text-slate-600">Memuatkan struktur aliran peserta…</p>}
+                {flowPreviewError && <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{flowPreviewError}</p>}
+                {flowPreview && <>
+                  <div className={`rounded-xl border p-4 ${flowPreview.student.profile_complete ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50'}`}>
+                    <p className="font-bold text-slate-900">1. Profil untuk akses sijil</p>
+                    <p className="mt-1 text-sm text-slate-700">{flowPreview.student.profile_complete ? 'Lengkap — peserta boleh melihat sijil yang telah diterbitkan.' : `Belum lengkap: ${flowPreview.student.missing_profile_fields.join(', ')}.`}</p>
+                  </div>
+
+                  <section>
+                    <h3 className="text-lg font-bold text-slate-900">2. Kemajuan Kursus</h3>
+                    <p className="mb-3 text-sm text-slate-600">Paparan ini menggunakan rekod tersimpan dan tidak mengira semula atau mengeluarkan sijil.</p>
+                    {flowPreview.courses.length === 0 ? <p className="rounded-xl bg-white p-4 text-slate-600">Tiada pendaftaran kursus.</p> : <div className="grid gap-3 md:grid-cols-2">
+                      {flowPreview.courses.map(course => <article key={course.enrollment_id} className="rounded-xl border border-slate-200 bg-white p-4">
+                        <div className="flex items-start justify-between gap-3"><div><p className="font-bold text-slate-900">{course.title}</p><p className="text-xs uppercase tracking-wide text-slate-500">{course.certificate_category === 'azan' ? 'Azan' : 'Tarannum'} · {new Date(course.starts_at).toLocaleDateString('ms-MY')}</p></div><span className={`rounded-full px-2 py-1 text-xs font-bold ${course.eligible ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-700'}`}>{course.eligible ? 'Layak' : 'Belum lengkap'}</span></div>
+                        <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-200"><div className="h-full bg-emerald-600" style={{width: `${Math.min(100, (course.display_valid_recording_count / Math.max(1, course.required_recording_count)) * 100)}%`}} /></div>
+                        <p className="mt-2 text-sm font-semibold text-slate-800">{course.display_valid_recording_count}/{course.required_recording_count} rakaman · Kehadiran: {course.attendance_status === 'attended' ? 'Hadir' : course.attendance_status === 'absent' ? 'Tidak hadir' : 'Belum disahkan'}</p>
+                        {course.eligibility_override && <p className="mt-1 text-xs font-semibold text-amber-700">Kelayakan disahkan melalui pelarasan admin.</p>}
+                      </article>)}
+                    </div>}
+                  </section>
+
+                  <section>
+                    <h3 className="text-lg font-bold text-slate-900">3. Kelayakan Penilaian Qari</h3>
+                    <p className="mb-3 text-sm text-slate-600">Rakaman 75% ke atas muncul di sini. Peserta perlu memilih rakaman dan menghantar permohonan sebelum tugasan muncul kepada qari.</p>
+                    {flowPreview.competency_eligibility.length === 0 ? <p className="rounded-xl bg-white p-4 text-slate-600">Belum ada rakaman yang mencapai 75%.</p> : <div className="space-y-3">
+                      {flowPreview.competency_eligibility.map(item => <div key={item.session_id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-4">
+                        <div><p className="font-bold text-slate-900">{item.reference_title}</p><p className="text-sm text-slate-600">{item.maqam || 'Maqam tidak dinyatakan'} · {new Date(item.created_at).toLocaleString('ms-MY')}</p></div>
+                        <div className="text-right"><p className="text-2xl font-black text-emerald-700">{Math.round(item.score)}%</p><span className={`text-xs font-bold ${item.application_status ? 'text-blue-700' : 'text-amber-700'}`}>{item.application_status ? `Permohonan: ${item.application_status}` : 'Menunggu peserta menghantar'}</span></div>
+                      </div>)}
+                    </div>}
+                    <button type="button" disabled className="mt-3 rounded-lg bg-emerald-700 px-4 py-2 text-sm font-bold text-white opacity-50">Hantar kepada Qari (contoh sahaja)</button>
+                  </section>
+
+                  <section>
+                    <h3 className="text-lg font-bold text-slate-900">4. Sijil Rasmi</h3>
+                    <p className="mb-3 text-sm text-slate-600">Selepas kelulusan qari atau pemenuhan syarat kehadiran, sijil muncul di dashboard peserta jika profil lengkap dan penerbitan tidak ditahan.</p>
+                    {flowPreview.certificates.length === 0 ? <p className="rounded-xl bg-white p-4 text-slate-600">Belum ada sijil dijana.</p> : <div className="grid gap-3 md:grid-cols-2">
+                      {flowPreview.certificates.map(certificate => <div key={certificate.id} className="rounded-xl border border-slate-200 bg-white p-4"><p className="font-bold text-slate-900">{certificate.certificate_type === 'attendance' ? 'Sijil Kehadiran & Penyertaan' : certificate.certificate_type === 'competency_azan' ? 'Sijil Kompetensi Azan' : 'Sijil Kompetensi Tarannum'}</p><p className="text-sm text-slate-600">{certificate.certificate_number} · {certificate.status}</p>{certificate.publication_held && <p className="mt-1 text-xs font-bold text-amber-700">Penerbitan ditahan</p>}{certificate.profile_incomplete && <p className="mt-1 text-xs font-bold text-amber-700">Terkunci sehingga profil lengkap</p>}</div>)}
+                    </div>}
+                  </section>
+
+                  <div className="rounded-xl bg-slate-900 p-4 text-sm text-white"><strong>Aliran kompetensi:</strong> skor ≥75% → peserta hantar rakaman → qari isi 8 rubrik → qari semak jumlah dan buat keputusan → sijil kompetensi dijana selepas lulus.</div>
+                </>}
               </div>
             </section>
           </div>}

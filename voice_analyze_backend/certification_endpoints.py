@@ -377,12 +377,17 @@ def create_competency_application(payload: CompetencyApplicationCreate, student:
 
 @router.get("/student/competency-eligibility")
 def competency_eligibility(student: User = Depends(get_current_student_user), db: Session = Depends(get_db)):
+    return _competency_eligibility_rows(db, student.id)
+
+
+def _competency_eligibility_rows(db: Session, student_id: UUID) -> list[dict]:
+    """Return the participant competency queue without changing workflow state."""
     rows = (
         db.query(UserSession, AnalysisResult, Reference, CertificateApplication)
         .join(AnalysisResult, AnalysisResult.user_session_id == UserSession.id)
         .join(Reference, Reference.id == UserSession.reference_id)
         .outerjoin(CertificateApplication, CertificateApplication.session_id == UserSession.id)
-        .filter(UserSession.user_id == student.id, AnalysisResult.score >= 75)
+        .filter(UserSession.user_id == student_id, AnalysisResult.score >= 75)
         .order_by(AnalysisResult.score.desc(), UserSession.created_at.desc())
         .limit(50)
         .all()
@@ -397,6 +402,72 @@ def competency_eligibility(student: User = Depends(get_current_student_user), db
         "application_status": application.status if application else None,
         "created_at": session.created_at.isoformat(),
     } for session, analysis, reference, application in rows]
+
+
+@router.get("/admin/users/{user_id}/student-flow-preview")
+def admin_student_flow_preview(user_id: UUID, admin: User = Depends(get_current_admin_user), db: Session = Depends(get_db)):
+    """Read-only snapshot of what drives a student's certificate journey.
+
+    This deliberately avoids ``recalculate_enrollment`` so opening the preview
+    cannot issue a certificate or otherwise mutate participant data.
+    """
+    student = db.query(User).filter(User.id == user_id, User.role == "student").first()
+    if not student:
+        raise HTTPException(404, "Student not found")
+
+    enrollment_rows = (
+        db.query(CourseEnrollment, Course, Reference)
+        .join(Course, Course.id == CourseEnrollment.course_id)
+        .join(Reference, Reference.id == Course.reference_id)
+        .filter(CourseEnrollment.student_id == user_id)
+        .order_by(Course.starts_at.desc())
+        .all()
+    )
+    courses = []
+    for enrollment, course, reference in enrollment_rows:
+        required = enrollment.required_recording_count or required_recording_count(
+            course.required_practice_seconds, reference.duration
+        )
+        valid = enrollment.valid_recording_count or 0
+        courses.append({
+            "course_id": str(course.id),
+            "enrollment_id": str(enrollment.id),
+            "title": course.title,
+            "certificate_category": course.certificate_category,
+            "starts_at": course.starts_at.isoformat(),
+            "attendance_status": enrollment.attendance_status,
+            "required_recording_count": required,
+            "valid_recording_count": valid,
+            "display_valid_recording_count": min(valid, required),
+            "remaining_recording_count": max(0, required - valid),
+            "eligible": enrollment.attendance_status == "attended" and (
+                valid >= required or bool(enrollment.eligibility_override)
+            ),
+            "eligibility_override": bool(enrollment.eligibility_override),
+            "deadline": (course.starts_at + timedelta(days=course.completion_window_days)).isoformat(),
+        })
+
+    certificates = db.query(Certificate).filter(
+        Certificate.student_id == user_id
+    ).order_by(Certificate.issued_at.desc()).all()
+    profile_missing = missing_certificate_profile_fields(student)
+    return {
+        "student": {
+            "id": str(student.id),
+            "full_name": student.full_name or student.email,
+            "email": student.email,
+            "profile_complete": not profile_missing,
+            "missing_profile_fields": profile_missing,
+        },
+        "courses": courses,
+        "competency_eligibility": _competency_eligibility_rows(db, student.id),
+        "certificates": [certificate_public_payload(row) | {
+            "id": str(row.id),
+            "publication_held": certificate_publication_held(row),
+            "profile_incomplete": bool(profile_missing),
+        } for row in certificates],
+        "read_only": True,
+    }
 
 
 @router.get("/qari/applications")
