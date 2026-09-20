@@ -1780,6 +1780,34 @@ def compute_pitch_stability(pitch_data: List[Dict], times: np.ndarray = None) ->
         }
 
 
+def compute_relative_melodic_stability(
+    reference_stability: Dict[str, float],
+    student_stability: Dict[str, float],
+    penalty: float = 50.0,
+) -> float:
+    """Score local pitch behaviour relative to the melodic reference.
+
+    The legacy score rewarded a globally flat pitch track and therefore
+    penalised intentional Tarannum movement in both the Qari and student. This
+    comparison treats the reference's variation and movement rate as the
+    expected baseline. A 100% relative deviation costs ``penalty`` points.
+    """
+    def component(name: str) -> float:
+        reference_value = float(reference_stability.get(name, 0.0) or 0.0)
+        student_value = float(student_stability.get(name, 0.0) or 0.0)
+        if reference_value <= 0.0:
+            return 0.0
+        relative_error = abs(student_value - reference_value) / reference_value
+        return max(0.0, min(100.0, 100.0 - penalty * relative_error))
+
+    score = (
+        component('stdDev') * 0.4
+        + component('coefficientOfVariation') * 0.3
+        + component('changeRate') * 0.3
+    )
+    return float(max(0.0, min(100.0, score)))
+
+
 def compute_pitch_similarity(
     ref_pitch: List[Dict], 
     user_pitch: List[Dict],
@@ -4637,8 +4665,15 @@ def calculate_similarity_score(reference_path: str, user_path: str, return_segme
                 graph_timing_score = _clamp(float(pitch_shape_score))
 
             if pitch_stability_metrics and isinstance(pitch_stability_metrics, dict):
+                reference_stability = pitch_stability_metrics.get('reference') or {}
                 student_stability = pitch_stability_metrics.get('student') or {}
-                graph_stability_score = _clamp(float(student_stability.get('score', pitch_shape_score)))
+                if reference_stability and student_stability:
+                    graph_stability_score = _clamp(compute_relative_melodic_stability(
+                        reference_stability,
+                        student_stability,
+                    ))
+                else:
+                    graph_stability_score = _clamp(float(student_stability.get('score', pitch_shape_score)))
             else:
                 graph_stability_score = _clamp(float(pitch_shape_score))
 

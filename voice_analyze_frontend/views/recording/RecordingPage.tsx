@@ -656,8 +656,6 @@ const RecordingPage: React.FC = () => {
               { label: "Ayah Completion", value: result.scoreBreakdown.segmentCoverage },
               { label: "Recitation Validity", value: result.scoreBreakdown.recitationValidity },
               { label: "Detected Pitch Coverage", value: result.scoreBreakdown.assessmentValidity?.metrics?.pitchCoverage },
-              { label: "Microphone Stability", value: result.scoreBreakdown.micStability },
-              { label: "Audio Clarity", value: result.scoreBreakdown.audioClarity },
             ]}
           />
         </Suspense>
