@@ -35,6 +35,16 @@ CEO_TITLE = os.getenv("CERTIFICATE_CEO_TITLE", "Ketua Pegawai Eksekutif")
 CEO_ORGANIZATION = os.getenv("CERTIFICATE_CEO_ORGANIZATION", "Tarannum Technologies")
 VERIFY_BASE_URL = os.getenv("CERTIFICATE_VERIFY_BASE_URL", "https://tarannum.ai/verify")
 VALID_GRADES = {"mumtaz", "jayyid_jiddan", "jayyid"}
+QARI_RUBRIC_WEIGHTS = {
+    "lafaz_completion": 0.15,
+    "pronunciation": 0.20,
+    "melodic_contour": 0.15,
+    "contour_detail": 0.10,
+    "pitch_control": 0.10,
+    "timing": 0.10,
+    "vocal_breath": 0.10,
+    "overall_azan": 0.10,
+}
 
 
 def _as_uuid(value):
@@ -66,6 +76,19 @@ def grade_label(grade: Optional[str]) -> Optional[str]:
         "jayyid_jiddan": "Jayyid Jiddan",
         "jayyid": "Jayyid",
     }.get(grade) if grade else None
+
+
+def calculate_qari_score(assessment: dict) -> float:
+    """Convert the complete 1–5 human rubric into a weighted percentage."""
+    if set(assessment) != set(QARI_RUBRIC_WEIGHTS):
+        raise ValueError("Semua elemen penilaian qari mesti dilengkapkan")
+    score = 0.0
+    for key, weight in QARI_RUBRIC_WEIGHTS.items():
+        rating = assessment.get(key)
+        if isinstance(rating, bool) or not isinstance(rating, int) or not 1 <= rating <= 5:
+            raise ValueError("Setiap elemen penilaian qari mesti diberi skala 1 hingga 5")
+        score += (rating / 5.0) * 100.0 * weight
+    return round(score, 2)
 
 
 def _notify(db: Session, user_id, notification_type: str, title: str, message: str, metadata=None):
@@ -355,15 +378,23 @@ def submit_competency_application(db: Session, student: User, session_id, certif
     return application
 
 
-def decide_application(db: Session, application: CertificateApplication, qari: User, decision: str, grade=None, notes=None):
+def decide_application(db: Session, application: CertificateApplication, qari: User, decision: str,
+                       grade=None, notes=None, assessment=None, critical_error=False):
     if application.qari_id != qari.id:
         raise PermissionError("This application belongs to another Qari")
     if application.status != "pending":
         raise ValueError("This application has already been decided")
     if decision not in {"approved", "rejected", "resubmission_requested"}:
         raise ValueError("Invalid decision")
-    if decision == "approved" and grade not in VALID_GRADES:
-        raise ValueError("An approved application requires a valid final grade")
+    qari_score = calculate_qari_score(assessment or {})
+    if decision != "approved" and not (notes or "").strip():
+        raise ValueError("Catatan qari diperlukan untuk keputusan ini")
+    if decision == "approved" and critical_error:
+        raise ValueError("Rakaman dengan kesilapan kritikal tidak boleh diluluskan")
+    if decision == "approved" and qari_score < 75:
+        raise ValueError("Skor penilaian qari mesti sekurang-kurangnya 75 untuk kelulusan")
+    if decision == "approved":
+        grade = grade_for_score(qari_score)
     if decision == "approved":
         if application.course_id:
             enrollment = db.query(CourseEnrollment).filter(CourseEnrollment.course_id == application.course_id,
@@ -380,6 +411,9 @@ def decide_application(db: Session, application: CertificateApplication, qari: U
     application.status = decision
     application.final_grade = grade if decision == "approved" else None
     application.qari_notes = notes
+    application.qari_assessment_json = assessment
+    application.qari_score = qari_score
+    application.critical_error = bool(critical_error)
     application.decided_at = datetime.utcnow()
     certificate = None
     if decision == "approved":
@@ -402,7 +436,9 @@ def decide_application(db: Session, application: CertificateApplication, qari: U
             "application_id": str(application.id), "decision": decision
         })
     _audit(db, "decide", "certificate_application", application.id, qari.id, {
-        "decision": decision, "grade": grade, "notes": notes
+        "decision": decision, "grade": grade, "notes": notes,
+        "qari_score": qari_score, "critical_error": bool(critical_error),
+        "assessment": assessment,
     })
     return certificate
 

@@ -568,6 +568,9 @@ class CertificateApplication(Base):
     final_grade = Column(String, nullable=True)
     status = Column(String, nullable=False, default="pending", index=True)  # pending | approved | rejected | resubmission_requested
     qari_notes = Column(Text, nullable=True)
+    qari_assessment_json = Column(JSON, nullable=True)
+    qari_score = Column(Float, nullable=True)
+    critical_error = Column(Boolean, nullable=False, default=False)
     submitted_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     decided_at = Column(DateTime, nullable=True)
 
@@ -867,6 +870,9 @@ def ensure_course_management_columns():
         conn.execute(text('ALTER TABLE courses ADD COLUMN IF NOT EXISTS qari_id UUID REFERENCES users(id) ON DELETE RESTRICT'))
         conn.execute(text('ALTER TABLE training_challenges ADD COLUMN IF NOT EXISTS course_id UUID REFERENCES courses(id) ON DELETE RESTRICT'))
         conn.execute(text('ALTER TABLE certificate_applications ADD COLUMN IF NOT EXISTS course_id UUID REFERENCES courses(id) ON DELETE RESTRICT'))
+        conn.execute(text('ALTER TABLE certificate_applications ADD COLUMN IF NOT EXISTS qari_assessment_json JSON'))
+        conn.execute(text('ALTER TABLE certificate_applications ADD COLUMN IF NOT EXISTS qari_score DOUBLE PRECISION'))
+        conn.execute(text('ALTER TABLE certificate_applications ADD COLUMN IF NOT EXISTS critical_error BOOLEAN DEFAULT FALSE NOT NULL'))
         conn.execute(text('ALTER TABLE course_enrollments ADD COLUMN IF NOT EXISTS eligibility_override BOOLEAN DEFAULT FALSE NOT NULL'))
         conn.execute(text('ALTER TABLE course_enrollments ADD COLUMN IF NOT EXISTS eligibility_override_reason TEXT'))
         conn.execute(text('ALTER TABLE course_enrollments ADD COLUMN IF NOT EXISTS eligibility_overridden_at TIMESTAMP'))

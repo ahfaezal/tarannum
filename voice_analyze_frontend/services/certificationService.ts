@@ -85,6 +85,9 @@ export interface QariApplication {
   final_grade?: string;
   status: string;
   qari_notes?: string;
+  qari_assessment?: Record<string, number>;
+  qari_score?: number;
+  critical_error?: boolean;
   submitted_at: string;
 }
 

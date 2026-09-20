@@ -12,7 +12,7 @@ from certification_endpoints import (
     my_certificates,
     verify_certificate,
 )
-from certification_service import grade_for_score, required_recording_count
+from certification_service import calculate_qari_score, grade_for_score, required_recording_count
 
 
 class CertificationRuleTests(unittest.TestCase):
@@ -102,6 +102,28 @@ class CertificationRuleTests(unittest.TestCase):
     def test_score_below_threshold_is_rejected(self):
         with self.assertRaises(ValueError):
             grade_for_score(74.99)
+
+    def test_complete_qari_rubric_is_weighted_to_percentage(self):
+        assessment = {
+            "lafaz_completion": 5, "pronunciation": 4,
+            "melodic_contour": 4, "contour_detail": 3,
+            "pitch_control": 4, "timing": 4,
+            "vocal_breath": 3, "overall_azan": 4,
+        }
+        self.assertEqual(calculate_qari_score(assessment), 79.0)
+
+    def test_incomplete_qari_rubric_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "Semua elemen"):
+            calculate_qari_score({"pronunciation": 5})
+
+    def test_qari_rubric_only_accepts_scale_one_to_five(self):
+        assessment = {key: 5 for key in (
+            "lafaz_completion", "pronunciation", "melodic_contour", "contour_detail",
+            "pitch_control", "timing", "vocal_breath", "overall_azan",
+        )}
+        assessment["timing"] = 6
+        with self.assertRaisesRegex(ValueError, "skala 1 hingga 5"):
+            calculate_qari_score(assessment)
 
     def test_muazzin_course_certificates_are_held_from_publication(self):
         certificate = SimpleNamespace(

@@ -6,7 +6,7 @@ import io
 import os
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, Query
@@ -104,6 +104,8 @@ class QariDecision(BaseModel):
     decision: str
     grade: Optional[str] = None
     notes: Optional[str] = Field(default=None, max_length=2000)
+    assessment: Dict[str, int]
+    critical_error: bool = False
 
 
 class RevokeCertificate(BaseModel):
@@ -412,6 +414,9 @@ def qari_applications(qari: User = Depends(get_current_qari_user), db: Session =
         "final_grade": row.final_grade,
         "status": row.status,
         "qari_notes": row.qari_notes,
+        "qari_assessment": row.qari_assessment_json,
+        "qari_score": row.qari_score,
+        "critical_error": row.critical_error,
         "submitted_at": row.submitted_at.isoformat(),
     } for row in rows]
 
@@ -422,7 +427,10 @@ def qari_decision(application_id: UUID, payload: QariDecision, qari: User = Depe
     if not application:
         raise HTTPException(404, "Application not found")
     try:
-        certificate = decide_application(db, application, qari, payload.decision, payload.grade, payload.notes)
+        certificate = decide_application(
+            db, application, qari, payload.decision, payload.grade, payload.notes,
+            payload.assessment, payload.critical_error,
+        )
         db.commit()
         return {"status": application.status, "certificate_id": str(certificate.id) if certificate else None}
     except PermissionError as exc:
