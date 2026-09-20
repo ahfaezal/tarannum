@@ -112,13 +112,16 @@ def _draw_attendance_body(c: canvas.Canvas, certificate: Certificate, snapshot: 
 
 def _draw_logo(c: canvas.Canvas, certificate_type: str):
     backend_dir = Path(__file__).resolve().parent
-    default_logo = backend_dir.parent / "voice_analyze_frontend" / "public" / "images" / "logo.png"
-    logo_path = Path(os.getenv("CERTIFICATE_LOGO_PATH", str(default_logo)))
+    # Railway builds the backend without the frontend/public directory.
+    default_logo = backend_dir / "assets" / "tarannum-logo.png"
+    configured_logo = os.getenv("CERTIFICATE_LOGO_PATH")
+    logo_path = Path(configured_logo) if configured_logo and Path(configured_logo).is_file() else default_logo
     width, height = landscape(A4)
-    if logo_path.exists():
-        logo_size = 105 if certificate_type == "attendance" else 60
-        logo_bottom = height - 149 if certificate_type == "attendance" else height - 82
-        c.drawImage(str(logo_path), width / 2 - logo_size / 2, logo_bottom, logo_size, logo_size, preserveAspectRatio=True, mask="auto")
+    if not logo_path.is_file():
+        raise FileNotFoundError(f"Certificate logo is missing: {logo_path}")
+    logo_size = 105 if certificate_type == "attendance" else 60
+    logo_bottom = height - 149 if certificate_type == "attendance" else height - 82
+    c.drawImage(str(logo_path), width / 2 - logo_size / 2, logo_bottom, logo_size, logo_size, preserveAspectRatio=True, mask="auto")
     label_y = height - 159 if certificate_type == "attendance" else height - 102
     _centered(c, "tarannum.ai", label_y, "Helvetica-Bold", 15, EMERALD)
 

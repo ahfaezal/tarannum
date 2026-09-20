@@ -1,11 +1,22 @@
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 from uuid import UUID
 
 from certificate_display import certificate_display_snapshot
+from certificate_renderer import _draw_logo
 
 
 class CertificateDisplayTests(unittest.TestCase):
+    def test_attendance_logo_is_bundled_with_backend(self):
+        canvas = MagicMock()
+        _draw_logo(canvas, "attendance")
+        logo_path = Path(canvas.drawImage.call_args.args[0])
+        self.assertTrue(logo_path.is_file())
+        self.assertEqual(logo_path.name, "tarannum-logo.png")
+        self.assertEqual(logo_path.parent.name, "assets")
+
     def test_muazzin_attendance_uses_approved_title_without_changing_snapshot(self):
         original = {"course_title": "Kursus Pemantapan Muazzin", "student_name": "Peserta"}
         certificate = SimpleNamespace(

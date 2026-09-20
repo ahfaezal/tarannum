@@ -45,16 +45,26 @@ class CertificationRuleTests(unittest.TestCase):
             download_certificate(certificate.id, current_user=student, db=db)
         self.assertEqual(error.exception.status_code, 403)
 
-    def test_incomplete_student_certificate_cannot_be_publicly_verified(self):
+    def test_public_verification_uses_issued_certificate_not_profile(self):
         certificate = SimpleNamespace(
             student_id=UUID("00000000-0000-0000-0000-000000000001"),
             course_id=UUID("00000000-0000-0000-0000-000000000003"),
         )
-        student = SimpleNamespace(role="student", full_name="Peserta", ic_number=None, address="Alamat", phone_number="0123456789")
         db = MagicMock()
-        db.query.return_value.filter.return_value.first.side_effect = [certificate, student]
+        db.query.return_value.filter.return_value.first.return_value = certificate
+        with patch("certification_endpoints.certificate_public_payload", return_value={"status": "valid"}):
+            self.assertEqual(verify_certificate("example-token", db=db), {"status": "valid"})
+        self.assertEqual(db.query.call_count, 1)
+
+    def test_held_certificate_still_cannot_be_publicly_verified(self):
+        certificate = SimpleNamespace(
+            id=UUID("9b244a19-b26a-47aa-85b1-4e1de26d9205"),
+            course_id=UUID("11c98b50-8b68-4a03-89aa-8a468c7fc275"),
+        )
+        db = MagicMock()
+        db.query.return_value.filter.return_value.first.return_value = certificate
         with self.assertRaises(HTTPException) as error:
-            verify_certificate("example-token", db=db)
+            verify_certificate("held-token", db=db)
         self.assertEqual(error.exception.status_code, 404)
 
     def test_admin_can_list_one_users_held_certificates(self):

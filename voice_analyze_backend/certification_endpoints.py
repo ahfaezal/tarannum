@@ -582,7 +582,6 @@ def verify_certificate(verification_token: str, db: Session = Depends(get_db)):
     certificate = db.query(Certificate).filter(Certificate.verification_token == verification_token).first()
     if not certificate or certificate_publication_held(certificate):
         raise HTTPException(404, "Certificate not found")
-    student = db.query(User).filter(User.id == certificate.student_id).first()
-    if not student or missing_certificate_profile_fields(student):
-        raise HTTPException(404, "Certificate not found")
+    # Public QR verification checks the issued certificate, not the student's
+    # later profile-completion state. PDF access remains profile-gated.
     return certificate_public_payload(certificate)
