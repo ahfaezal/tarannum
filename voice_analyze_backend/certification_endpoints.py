@@ -506,6 +506,23 @@ def admin_certificates(admin: User = Depends(get_current_admin_user), db: Sessio
     return [certificate_public_payload(row) | {"id": str(row.id)} for row in rows]
 
 
+@router.get("/admin/users/{user_id}/certificates")
+def admin_user_certificates(user_id: UUID, admin: User = Depends(get_current_admin_user), db: Session = Depends(get_db)):
+    student = db.query(User).filter(User.id == user_id).first()
+    if not student:
+        raise HTTPException(404, "User not found")
+    rows = db.query(Certificate).filter(Certificate.student_id == user_id).order_by(Certificate.issued_at.desc()).all()
+    profile_incomplete = student.role == "student" and bool(missing_certificate_profile_fields(student))
+    return [
+        certificate_public_payload(row) | {
+            "id": str(row.id),
+            "publication_held": certificate_publication_held(row),
+            "profile_incomplete": profile_incomplete,
+        }
+        for row in rows
+    ]
+
+
 @router.post("/admin/certificates/{certificate_id}/revoke")
 def revoke_certificate(certificate_id: UUID, payload: RevokeCertificate, admin: User = Depends(get_current_admin_user), db: Session = Depends(get_db)):
     certificate = db.query(Certificate).filter(Certificate.id == certificate_id).first()

@@ -1,11 +1,12 @@
 import unittest
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 from uuid import UUID
 
 from fastapi import HTTPException
 from certification_endpoints import (
     certificate_publication_held,
+    admin_user_certificates,
     download_certificate,
     missing_certificate_profile_fields,
     my_certificates,
@@ -49,12 +50,28 @@ class CertificationRuleTests(unittest.TestCase):
             student_id=UUID("00000000-0000-0000-0000-000000000001"),
             course_id=UUID("00000000-0000-0000-0000-000000000003"),
         )
-        student = SimpleNamespace(full_name="Peserta", ic_number=None, address="Alamat", phone_number="0123456789")
+        student = SimpleNamespace(role="student", full_name="Peserta", ic_number=None, address="Alamat", phone_number="0123456789")
         db = MagicMock()
         db.query.return_value.filter.return_value.first.side_effect = [certificate, student]
         with self.assertRaises(HTTPException) as error:
             verify_certificate("example-token", db=db)
         self.assertEqual(error.exception.status_code, 404)
+
+    def test_admin_can_list_one_users_held_certificates(self):
+        student_id = UUID("00000000-0000-0000-0000-000000000001")
+        student = SimpleNamespace(role="student", full_name="Peserta", ic_number=None, address="Alamat", phone_number="0123456789")
+        certificate = SimpleNamespace(
+            id=UUID("9b244a19-b26a-47aa-85b1-4e1de26d9205"),
+            course_id=UUID("11c98b50-8b68-4a03-89aa-8a468c7fc275"),
+        )
+        db = MagicMock()
+        db.query.return_value.filter.return_value.first.return_value = student
+        db.query.return_value.filter.return_value.order_by.return_value.all.return_value = [certificate]
+        with patch("certification_endpoints.certificate_public_payload", return_value={"certificate_number": "TEST"}):
+            rows = admin_user_certificates(student_id, admin=SimpleNamespace(role="admin"), db=db)
+        self.assertEqual(len(rows), 1)
+        self.assertTrue(rows[0]["publication_held"])
+        self.assertTrue(rows[0]["profile_incomplete"])
 
     def test_one_minute_reference_requires_sixty_recordings(self):
         self.assertEqual(required_recording_count(3600, 60), 60)

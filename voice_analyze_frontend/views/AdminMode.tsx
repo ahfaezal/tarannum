@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Plus, Edit, Trash2, Users, BookOpen, CheckCircle, XCircle, UserPlus, Save, X, BarChart3, Activity, TrendingUp, FileAudio, UserCheck, Monitor, HardDrive, PlayCircle } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Plus, Edit, Trash2, Users, BookOpen, CheckCircle, XCircle, UserPlus, Save, X, BarChart3, Activity, TrendingUp, FileAudio, UserCheck, Monitor, HardDrive, PlayCircle, Award, Download, Eye } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { referenceLibraryService, ReferenceAudio, TextSegment } from '../services/referenceLibraryService';
 import { 
@@ -12,6 +12,7 @@ import ConfirmModal from '../components/ConfirmModal';
 import AlertModal from '../components/AlertModal';
 import { getScoringCapacity, ScoringCapacity } from '../services/apiService';
 import PasswordInput from '../components/PasswordInput';
+import { CertificateSummary, downloadCertificate, getAdminUserCertificates, getCertificatePdfBlob } from '../services/certificationService';
 
 type TabType = 'presets' | 'users' | 'monitoring';
 
@@ -40,6 +41,14 @@ const AdminMode: React.FC<AdminModeProps> = ({ view = 'presets' }) => {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [userLoading, setUserLoading] = useState(false);
   const [userFilter, setUserFilter] = useState<string>('all');
+  const [certificateUser, setCertificateUser] = useState<AdminUser | null>(null);
+  const [userCertificates, setUserCertificates] = useState<CertificateSummary[]>([]);
+  const [certificatesLoading, setCertificatesLoading] = useState(false);
+  const [certificatesError, setCertificatesError] = useState('');
+  const [previewCertificate, setPreviewCertificate] = useState<CertificateSummary | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const certificateRequestId = useRef(0);
   const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
   const [creatingUser, setCreatingUser] = useState(false);
   const [userFormData, setUserFormData] = useState({
@@ -295,6 +304,53 @@ const AdminMode: React.FC<AdminModeProps> = ({ view = 'presets' }) => {
   };
 
   // User Management Handlers
+  useEffect(() => () => {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+  }, [previewUrl]);
+
+  const closeUserCertificates = () => {
+    certificateRequestId.current += 1;
+    setCertificateUser(null);
+    setUserCertificates([]);
+    setPreviewCertificate(null);
+    setPreviewUrl(null);
+    setCertificatesError('');
+  };
+
+  const handleViewUserCertificates = async (user: AdminUser) => {
+    const requestId = ++certificateRequestId.current;
+    setCertificateUser(user);
+    setUserCertificates([]);
+    setPreviewCertificate(null);
+    setPreviewUrl(null);
+    setCertificatesError('');
+    setCertificatesLoading(true);
+    try {
+      const certificates = await getAdminUserCertificates(user.id);
+      if (requestId === certificateRequestId.current) setUserCertificates(certificates);
+    } catch (error: any) {
+      if (requestId === certificateRequestId.current) setCertificatesError(error.message || 'Gagal memuatkan sijil pengguna.');
+    } finally {
+      if (requestId === certificateRequestId.current) setCertificatesLoading(false);
+    }
+  };
+
+  const handlePreviewCertificate = async (certificate: CertificateSummary) => {
+    const requestId = ++certificateRequestId.current;
+    setPreviewCertificate(certificate);
+    setPreviewUrl(null);
+    setCertificatesError('');
+    setPreviewLoading(true);
+    try {
+      const pdf = await getCertificatePdfBlob(certificate.id);
+      if (requestId === certificateRequestId.current) setPreviewUrl(URL.createObjectURL(pdf));
+    } catch (error: any) {
+      if (requestId === certificateRequestId.current) setCertificatesError(error.message || 'Gagal membuka sijil.');
+    } finally {
+      if (requestId === certificateRequestId.current) setPreviewLoading(false);
+    }
+  };
+
   const handleApproveQari = async (userId: string) => {
     try {
       await approveQari(userId);
@@ -754,6 +810,12 @@ const AdminMode: React.FC<AdminModeProps> = ({ view = 'presets' }) => {
                               </button>
                             )}
                             <button
+                              onClick={() => void handleViewUserCertificates(user)}
+                              className="text-emerald-700 hover:text-emerald-900 font-medium"
+                            >
+                              Lihat Sijil
+                            </button>
+                            <button
                               onClick={() => handleEditUser(user)}
                               className="text-blue-600 hover:text-blue-900 font-medium"
                             >
@@ -774,6 +836,39 @@ const AdminMode: React.FC<AdminModeProps> = ({ view = 'presets' }) => {
               </div>
             </div>
           )}
+          {certificateUser && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-3 sm:p-6" role="presentation">
+            <section role="dialog" aria-modal="true" aria-labelledby="admin-user-certificates-title" className="flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+              <div className="flex items-start justify-between gap-4 border-b p-5">
+                <div>
+                  <h2 id="admin-user-certificates-title" className="flex items-center gap-2 text-xl font-bold text-slate-900"><Award size={22} /> Sijil Pengguna</h2>
+                  <p className="mt-1 text-sm text-slate-600">{formatDisplayName(certificateUser.full_name, certificateUser.email)} · {certificateUser.email}</p>
+                </div>
+                <button type="button" onClick={closeUserCertificates} aria-label="Tutup senarai sijil" className="rounded-lg p-2 text-slate-600 hover:bg-slate-100"><X size={20} /></button>
+              </div>
+              <div className="space-y-4 overflow-y-auto p-5">
+                {certificatesLoading && <p className="text-slate-600">Memuatkan sijil…</p>}
+                {certificatesError && <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{certificatesError}</p>}
+                {!certificatesLoading && !certificatesError && userCertificates.length === 0 && <p className="rounded-lg bg-slate-50 p-4 text-slate-600">Pengguna ini belum mempunyai sijil.</p>}
+                {userCertificates.map(certificate => <div key={certificate.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 p-4">
+                  <div>
+                    <p className="font-semibold text-slate-900">{certificate.certificate_type === 'attendance' ? 'Sijil Kehadiran & Penyertaan' : certificate.certificate_type === 'competency_azan' ? 'Sijil Kompetensi Azan' : 'Sijil Kompetensi Tarannum'}</p>
+                    <p className="text-sm text-slate-600">{certificate.certificate_number} · {new Date(certificate.issued_at).toLocaleDateString('ms-MY')} · {certificate.status}</p>
+                    {certificate.publication_held && <p className="text-xs font-semibold text-amber-700">Ditahan daripada peserta</p>}
+                    {!certificate.publication_held && certificate.profile_incomplete && <p className="text-xs font-semibold text-amber-700">Menunggu profil peserta lengkap</p>}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button type="button" disabled={certificate.status !== 'valid' || previewLoading} onClick={() => void handlePreviewCertificate(certificate)} className="inline-flex items-center gap-1 rounded-lg border border-emerald-700 px-3 py-2 text-sm font-semibold text-emerald-800 hover:bg-emerald-50 disabled:opacity-50"><Eye size={16} /> Lihat PDF</button>
+                    <button type="button" disabled={certificate.status !== 'valid'} onClick={() => downloadCertificate(certificate.id, certificate.certificate_number).catch((error) => setCertificatesError(error.message))} className="inline-flex items-center gap-1 rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-50"><Download size={16} /> Muat turun</button>
+                  </div>
+                </div>)}
+                {previewLoading && <p className="text-sm text-slate-600">Membuka pratonton PDF…</p>}
+                {previewCertificate && previewUrl && <div>
+                  <p className="mb-2 text-sm font-semibold text-slate-700">Pratonton: {previewCertificate.certificate_number}</p>
+                  <iframe src={previewUrl} title={`Pratonton sijil ${previewCertificate.certificate_number}`} className="h-[55vh] w-full rounded-lg border border-slate-300" />
+                </div>}
+              </div>
+            </section>
+          </div>}
         </>
       )}
 
