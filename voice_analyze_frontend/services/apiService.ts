@@ -443,6 +443,7 @@ export const analyzeRecitation = async (
       recordingAttempt: data.recording_attempt,
       dataSchemaVersion: data.data_schema_version,
       integrityStatus: data.integrity_status,
+      courseCredits: data.courseCredits,
       score,
       normalizedScore,
       feedback,

@@ -117,6 +117,14 @@ class CertificationRuleTests(unittest.TestCase):
         )
         self.assertFalse(certificate_publication_held(certificate))
 
+    def test_explicitly_released_muazzin_certificate_is_visible(self):
+        certificate = SimpleNamespace(
+            id=UUID("9b244a19-b26a-47aa-85b1-4e1de26d9205"),
+            course_id=UUID("11c98b50-8b68-4a03-89aa-8a468c7fc275"),
+            publication_released=True,
+        )
+        self.assertFalse(certificate_publication_held(certificate))
+
     def test_duplicate_muazzin_certificate_remains_held(self):
         certificate = SimpleNamespace(
             id=UUID("9b244a19-b26a-47aa-85b1-4e1de26d9205"),

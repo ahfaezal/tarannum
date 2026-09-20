@@ -60,6 +60,7 @@ RELEASED_MUAZZIN_CERTIFICATE_IDS = {
 
 def certificate_publication_held(certificate: Certificate) -> bool:
     return (certificate.course_id in HELD_CERTIFICATE_COURSE_IDS
+            and not getattr(certificate, "publication_released", False)
             and certificate.id not in RELEASED_MUAZZIN_CERTIFICATE_IDS)
 
 

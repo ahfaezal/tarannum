@@ -540,6 +540,10 @@ class CourseEnrollment(Base):
     required_recording_count = Column(Integer, nullable=False, default=0)
     credited_practice_seconds = Column(Integer, nullable=False, default=0)
     practice_completed_at = Column(DateTime, nullable=True)
+    eligibility_override = Column(Boolean, nullable=False, default=False)
+    eligibility_override_reason = Column(Text, nullable=True)
+    eligibility_overridden_at = Column(DateTime, nullable=True)
+    eligibility_overridden_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     enrolled_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
@@ -614,6 +618,7 @@ class Certificate(Base):
     qari_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     final_grade = Column(String, nullable=True)
     status = Column(String, nullable=False, default="valid", index=True)  # valid | revoked | replaced
+    publication_released = Column(Boolean, nullable=False, default=False)
     snapshot_json = Column(JSON, nullable=False)
     document_path = Column(String, nullable=True)
     document_hash = Column(String, nullable=True)
@@ -862,6 +867,11 @@ def ensure_course_management_columns():
         conn.execute(text('ALTER TABLE courses ADD COLUMN IF NOT EXISTS qari_id UUID REFERENCES users(id) ON DELETE RESTRICT'))
         conn.execute(text('ALTER TABLE training_challenges ADD COLUMN IF NOT EXISTS course_id UUID REFERENCES courses(id) ON DELETE RESTRICT'))
         conn.execute(text('ALTER TABLE certificate_applications ADD COLUMN IF NOT EXISTS course_id UUID REFERENCES courses(id) ON DELETE RESTRICT'))
+        conn.execute(text('ALTER TABLE course_enrollments ADD COLUMN IF NOT EXISTS eligibility_override BOOLEAN DEFAULT FALSE NOT NULL'))
+        conn.execute(text('ALTER TABLE course_enrollments ADD COLUMN IF NOT EXISTS eligibility_override_reason TEXT'))
+        conn.execute(text('ALTER TABLE course_enrollments ADD COLUMN IF NOT EXISTS eligibility_overridden_at TIMESTAMP'))
+        conn.execute(text('ALTER TABLE course_enrollments ADD COLUMN IF NOT EXISTS eligibility_overridden_by UUID REFERENCES users(id) ON DELETE SET NULL'))
+        conn.execute(text('ALTER TABLE certificates ADD COLUMN IF NOT EXISTS publication_released BOOLEAN DEFAULT FALSE NOT NULL'))
 
 
 def _column_exists(conn, table_name: str, column_name: str) -> bool:

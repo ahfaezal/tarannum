@@ -624,6 +624,24 @@ const RecordingPage: React.FC = () => {
         <span className="rounded-full bg-white px-4 py-2 text-sm font-bold text-emerald-800 shadow-sm">{Math.round(result.normalizedScore ?? result.score)}% overall</span>
       </div>
       <p className="mt-3 max-w-2xl text-slate-700">This score supports practice and is not an official result or participant ranking.</p>
+      {result.courseCredits?.map((credit) => (
+        <div
+          key={credit.enrollment_id}
+          className={`mt-4 rounded-xl border p-4 text-sm ${credit.current_recording_credited ? "border-emerald-300 bg-emerald-100 text-emerald-950" : "border-amber-300 bg-amber-50 text-amber-950"}`}
+          role="status"
+        >
+          <p className="font-bold">
+            {credit.current_recording_credited
+              ? "Rakaman ini dikreditkan untuk kelayakan sijil."
+              : "Skor direkodkan, tetapi rakaman ini tidak dikreditkan untuk kelayakan sijil."}
+          </p>
+          <p className="mt-1">
+            Tempoh rakaman {credit.current_recording_duration_seconds}s · minimum {credit.minimum_recording_duration_seconds}s.
+            Kemajuan kelayakan: {credit.valid_recording_count}/{credit.required_recording_count}.
+          </p>
+          {credit.uncredited_recording_count > 0 && <p className="mt-1">Percubaan berskor tetapi tidak cukup tempoh: {credit.uncredited_recording_count}.</p>}
+        </div>
+      ))}
       {result.scoreBreakdown && <div className="mt-6 space-y-6">
         <Suspense fallback={<p className="text-sm text-slate-500">Preparing assessment profile…</p>}>
           <AssessmentInfographic

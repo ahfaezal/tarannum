@@ -181,6 +181,20 @@ export interface AnalysisResult {
   recordingAttempt?: number;
   dataSchemaVersion?: string;
   integrityStatus?: 'pending_audio_upload' | 'pending_score_upload' | 'complete' | 'failed_audio_upload' | 'failed_score_upload';
+  courseCredits?: Array<{
+    course_id: string;
+    enrollment_id: string;
+    attempted_recording_count: number;
+    actual_valid_recording_count: number;
+    uncredited_recording_count: number;
+    valid_recording_count: number;
+    required_recording_count: number;
+    minimum_recording_duration_seconds: number;
+    current_recording_duration_seconds: number;
+    current_recording_credited: boolean;
+    eligibility_override: boolean;
+    eligible: boolean;
+  }>;
   score: number;
   /** Normalized overall score 0-100 (Milestone 5) */
   normalizedScore?: number;

@@ -1921,8 +1921,17 @@ async def score_performance(
                                     )
                                     .all()
                                 )
+                                course_credit_results = []
                                 for enrollment in active_enrollments:
-                                    recalculate_enrollment(db, enrollment, actor_id=user_id)
+                                    credit = recalculate_enrollment(db, enrollment, actor_id=user_id)
+                                    credit["current_recording_duration_seconds"] = round(float(user_session.duration or 0), 1)
+                                    credit["current_recording_credited"] = (
+                                        bool(enrollment.eligibility_override)
+                                        or float(user_session.duration or 0) >= float(credit["minimum_recording_duration_seconds"])
+                                    )
+                                    course_credit_results.append(credit)
+                                if course_credit_results:
+                                    response_data["courseCredits"] = course_credit_results
                             except Exception as certification_error:
                                 logger.error(
                                     f"Error refreshing certification progress (non-fatal): {certification_error}",

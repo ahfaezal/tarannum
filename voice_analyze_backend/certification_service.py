@@ -198,13 +198,12 @@ def recalculate_enrollment(db: Session, enrollment: CourseEnrollment, actor_id=N
 
     required = required_recording_count(course.required_practice_seconds, reference.duration)
     minimum_duration = reference.duration * 0.8
-    sessions = (
+    attempted_sessions = (
         db.query(UserSession)
         .filter(
             UserSession.user_id == enrollment.student_id,
             UserSession.reference_id == course.reference_id,
             UserSession.created_at >= course.starts_at,
-            UserSession.duration >= minimum_duration,
             or_(UserSession.file_path.isnot(None), UserSession.cloud_storage_path.isnot(None)),
         )
         .order_by(UserSession.created_at.asc())
@@ -213,21 +212,27 @@ def recalculate_enrollment(db: Session, enrollment: CourseEnrollment, actor_id=N
 
     deadline = course.starts_at + timedelta(days=course.completion_window_days)
     unique = []
+    attempted_within_window = []
     seen = set()
-    for session in sessions:
+    for session in attempted_sessions:
         if session.created_at > deadline:
             continue
+        attempted_within_window.append(session)
         key = session.audio_checksum or f"session:{session.id}"
         if key in seen:
             continue
         seen.add(key)
+        if (session.duration or 0) < minimum_duration:
+            continue
         unique.append(session)
 
     old_count = enrollment.valid_recording_count or 0
+    actual_valid_count = len(unique)
+    credited_count = required if enrollment.eligibility_override else actual_valid_count
     enrollment.required_recording_count = required
-    enrollment.valid_recording_count = len(unique)
-    enrollment.credited_practice_seconds = min(len(unique), required) * int(math.ceil(reference.duration))
-    eligible = enrollment.attendance_status == "attended" and len(unique) >= required
+    enrollment.valid_recording_count = credited_count
+    enrollment.credited_practice_seconds = min(credited_count, required) * int(math.ceil(reference.duration))
+    eligible = enrollment.attendance_status == "attended" and credited_count >= required
     certificate = None
     if eligible and not enrollment.practice_completed_at:
         enrollment.practice_completed_at = datetime.utcnow()
@@ -244,7 +249,7 @@ def recalculate_enrollment(db: Session, enrollment: CourseEnrollment, actor_id=N
 
     milestones = [25, 50, 75]
     old_percent = int(old_count * 100 / required) if required else 0
-    new_percent = int(min(len(unique), required) * 100 / required) if required else 0
+    new_percent = int(min(credited_count, required) * 100 / required) if required else 0
     for milestone in milestones:
         if old_percent < milestone <= new_percent:
             _notify(
@@ -252,11 +257,11 @@ def recalculate_enrollment(db: Session, enrollment: CourseEnrollment, actor_id=N
                 enrollment.student_id,
                 "practice_progress",
                 f"Latihan {milestone}% selesai",
-                f"Anda telah melengkapkan {len(unique)} daripada {required} rakaman.",
-                {"course_id": str(course.id), "completed": len(unique), "required": required},
+                f"Anda telah melengkapkan {credited_count} daripada {required} rakaman.",
+                {"course_id": str(course.id), "completed": credited_count, "required": required},
             )
     old_remaining = max(0, required - old_count)
-    new_remaining = max(0, required - len(unique))
+    new_remaining = max(0, required - credited_count)
     if old_remaining > 5 >= new_remaining > 0:
         _notify(
             db,
@@ -274,9 +279,14 @@ def recalculate_enrollment(db: Session, enrollment: CourseEnrollment, actor_id=N
         "reference_duration_seconds": reference.duration,
         "required_practice_seconds": course.required_practice_seconds,
         "required_recording_count": required,
-        "valid_recording_count": len(unique),
-        "remaining_recording_count": max(0, required - len(unique)),
+        "attempted_recording_count": len(attempted_within_window),
+        "actual_valid_recording_count": actual_valid_count,
+        "uncredited_recording_count": max(0, len(attempted_within_window) - actual_valid_count),
+        "minimum_recording_duration_seconds": round(minimum_duration, 1),
+        "valid_recording_count": credited_count,
+        "remaining_recording_count": max(0, required - credited_count),
         "eligible": eligible,
+        "eligibility_override": bool(enrollment.eligibility_override),
         "certificate_id": str(certificate.id) if certificate else None,
         "deadline": deadline.isoformat(),
     }
