@@ -47,10 +47,20 @@ router = APIRouter(prefix="/api/certification", tags=["certification"])
 # Hold publication for the 19 September 2026 Muazzin course while the final
 # recipient list is reviewed. Issued records remain valid and admin-visible.
 HELD_CERTIFICATE_COURSE_IDS = {UUID("11c98b50-8b68-4a03-89aa-8a468c7fc275")}
+# Only these five reviewed attendance certificates may be shown to students.
+# The second Aizatt certificate and later course certificates remain on hold.
+RELEASED_MUAZZIN_CERTIFICATE_IDS = {
+    UUID("c64def3f-4793-4c30-8249-7c426c0ea3a6"),  # Ariffin
+    UUID("1f1bc193-3337-4b31-abc9-9b7ccf93c952"),  # Mohamad Nor
+    UUID("ec5ffa40-bd71-4f78-8d75-56f41b1fc005"),  # Mohammad Aizatt
+    UUID("49e77661-c045-47cb-84c3-c4148c9ffdbe"),  # Mohd Nayan
+    UUID("26594796-74cb-447e-a780-3ac01d3c60eb"),  # Rais
+}
 
 
 def certificate_publication_held(certificate: Certificate) -> bool:
-    return certificate.course_id in HELD_CERTIFICATE_COURSE_IDS
+    return (certificate.course_id in HELD_CERTIFICATE_COURSE_IDS
+            and certificate.id not in RELEASED_MUAZZIN_CERTIFICATE_IDS)
 
 
 class CourseCreate(BaseModel):
@@ -519,10 +529,10 @@ def download_certificate(certificate_id: UUID, current_user: User = Depends(get_
 def my_notifications(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     rows = db.query(CertificationNotification).filter(CertificationNotification.user_id == current_user.id).order_by(CertificationNotification.created_at.desc()).limit(100).all()
     held_certificate_ids = {
-        str(certificate_id) for (certificate_id,) in db.query(Certificate.id).filter(
+        str(certificate.id) for certificate in db.query(Certificate).filter(
             Certificate.student_id == current_user.id,
             Certificate.course_id.in_(HELD_CERTIFICATE_COURSE_IDS),
-        ).all()
+        ).all() if certificate_publication_held(certificate)
     }
     return [{
         "id": str(row.id), "type": row.notification_type, "title": row.title, "message": row.message,
