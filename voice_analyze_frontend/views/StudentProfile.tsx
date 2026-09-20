@@ -70,8 +70,8 @@ const StudentProfileView: React.FC = () => {
   const [success, setSuccess] = useState<string | null>(null);
 
   const profileIncomplete = useMemo(
-    () => !form.ic_number.trim() || !form.address.trim(),
-    [form.ic_number, form.address]
+    () => !form.full_name.trim() || !form.ic_number.trim() || !form.address.trim() || !form.phone_number.trim(),
+    [form.full_name, form.ic_number, form.address, form.phone_number]
   );
 
   const loadProfile = async () => {
@@ -313,7 +313,7 @@ const StudentProfileView: React.FC = () => {
                 )}
                 {profileIncomplete && (
                   <div className="rounded-2xl bg-amber-50 p-4 text-sm text-amber-800">
-                    Please complete your IC Number and Address before certificate generation.
+                    Lengkapkan nama penuh, no. kad pengenalan, alamat dan no. telefon untuk melihat atau memuat turun sijil.
                   </div>
                 )}
               </div>

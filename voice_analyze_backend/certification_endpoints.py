@@ -63,6 +63,17 @@ def certificate_publication_held(certificate: Certificate) -> bool:
             and certificate.id not in RELEASED_MUAZZIN_CERTIFICATE_IDS)
 
 
+def missing_certificate_profile_fields(user: User) -> list[str]:
+    """Fields a student must complete before an issued certificate is accessible."""
+    fields = (
+        ("Nama penuh", user.full_name),
+        ("No. kad pengenalan", user.ic_number),
+        ("Alamat", user.address),
+        ("No. telefon", user.phone_number),
+    )
+    return [label for label, value in fields if not (value or "").strip()]
+
+
 class CourseCreate(BaseModel):
     title: str = Field(min_length=3, max_length=240)
     certificate_category: str
@@ -483,6 +494,8 @@ async def upload_qari_signature(file: UploadFile = File(...), qari: User = Depen
 
 @router.get("/certificates/mine")
 def my_certificates(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if current_user.role == "student" and missing_certificate_profile_fields(current_user):
+        return []
     rows = db.query(Certificate).filter(Certificate.student_id == current_user.id).order_by(Certificate.issued_at.desc()).all()
     return [certificate_public_payload(row) | {"id": str(row.id)} for row in rows if not certificate_publication_held(row)]
 
@@ -518,6 +531,8 @@ def download_certificate(certificate_id: UUID, current_user: User = Depends(get_
         raise HTTPException(403, "You do not have access to this certificate")
     if certificate_publication_held(certificate) and current_user.role != "admin":
         raise HTTPException(403, "Certificate publication is on hold")
+    if current_user.role == "student" and missing_certificate_profile_fields(current_user):
+        raise HTTPException(403, "Lengkapkan nama penuh, no. kad pengenalan, alamat dan no. telefon dalam Profil sebelum melihat sijil.")
     if certificate.status != "valid":
         raise HTTPException(409, f"Certificate status is {certificate.status}")
     path = render_certificate_pdf(db, certificate)
@@ -528,6 +543,7 @@ def download_certificate(certificate_id: UUID, current_user: User = Depends(get_
 @router.get("/notifications")
 def my_notifications(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     rows = db.query(CertificationNotification).filter(CertificationNotification.user_id == current_user.id).order_by(CertificationNotification.created_at.desc()).limit(100).all()
+    profile_incomplete = current_user.role == "student" and bool(missing_certificate_profile_fields(current_user))
     held_certificate_ids = {
         str(certificate.id) for certificate in db.query(Certificate).filter(
             Certificate.student_id == current_user.id,
@@ -540,7 +556,7 @@ def my_notifications(current_user: User = Depends(get_current_user), db: Session
         "created_at": row.created_at.isoformat(),
     } for row in rows if not (
         row.notification_type == "certificate_issued"
-        and str((row.metadata_json or {}).get("certificate_id")) in held_certificate_ids
+        and (profile_incomplete or str((row.metadata_json or {}).get("certificate_id")) in held_certificate_ids)
     )]
 
 
@@ -548,5 +564,8 @@ def my_notifications(current_user: User = Depends(get_current_user), db: Session
 def verify_certificate(verification_token: str, db: Session = Depends(get_db)):
     certificate = db.query(Certificate).filter(Certificate.verification_token == verification_token).first()
     if not certificate or certificate_publication_held(certificate):
+        raise HTTPException(404, "Certificate not found")
+    student = db.query(User).filter(User.id == certificate.student_id).first()
+    if not student or missing_certificate_profile_fields(student):
         raise HTTPException(404, "Certificate not found")
     return certificate_public_payload(certificate)

@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from "react";
-import { Award, Bell, CheckCircle2, Download, Loader2, RefreshCw } from "lucide-react";
+import { Link } from "react-router-dom";
+import { Award, Bell, CheckCircle2, Download, Loader2, LockKeyhole, RefreshCw } from "lucide-react";
 import { CertificateSummary, CourseProgress, downloadCertificate, getCertificationNotifications, getCompetencyEligibility, getMyCertificates, getStudentCourseProgress, submitCompetencyApplication } from "../services/certificationService";
+import { getStudentProfile, StudentProfile } from "../services/authService";
 
 const labels: Record<string, string> = {
   attendance: "Sijil Kehadiran & Penyertaan",
@@ -13,6 +15,7 @@ const CertificatesPage: React.FC = () => {
   const [certificates, setCertificates] = useState<CertificateSummary[]>([]);
   const [notifications, setNotifications] = useState<any[]>([]);
   const [eligibility, setEligibility] = useState<any[]>([]);
+  const [profile, setProfile] = useState<StudentProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
@@ -21,10 +24,10 @@ const CertificatesPage: React.FC = () => {
     // Progress recalculation may issue a certificate. Read certificates and
     // notifications only after that transaction has completed.
     const courseData = await getStudentCourseProgress();
-    const [certificateData, notificationData, eligibilityData] = await Promise.all([
-      getMyCertificates(), getCertificationNotifications(), getCompetencyEligibility(),
+    const [certificateData, notificationData, eligibilityData, profileData] = await Promise.all([
+      getMyCertificates(), getCertificationNotifications(), getCompetencyEligibility(), getStudentProfile(),
     ]);
-    return { courseData, certificateData, notificationData, eligibilityData };
+    return { courseData, certificateData, notificationData, eligibilityData, profileData };
   };
 
   const applyStatus = (data: Awaited<ReturnType<typeof loadStatus>>) => {
@@ -32,6 +35,7 @@ const CertificatesPage: React.FC = () => {
     setCertificates(data.certificateData);
     setNotifications(data.notificationData);
     setEligibility(data.eligibilityData);
+    setProfile(data.profileData);
   };
 
   const refreshStatus = async () => {
@@ -53,6 +57,14 @@ const CertificatesPage: React.FC = () => {
   }, []);
 
   if (loading) return <div className="flex min-h-[50vh] items-center justify-center"><Loader2 className="animate-spin text-emerald-700" /></div>;
+
+  const missingProfileFields = [
+    ["Nama penuh", profile?.full_name],
+    ["No. kad pengenalan", profile?.ic_number],
+    ["Alamat", profile?.address],
+    ["No. telefon", profile?.phone_number],
+  ].filter(([, value]) => !String(value || "").trim()).map(([label]) => label);
+  const profileIncomplete = missingProfileFields.length > 0;
 
   return <div className="mx-auto max-w-6xl space-y-6 p-4 sm:p-6 lg:p-8">
     <header className="rounded-2xl bg-gradient-to-r from-emerald-950 to-emerald-800 p-6 text-white">
@@ -90,9 +102,17 @@ const CertificatesPage: React.FC = () => {
 
     <section>
       <h2 className="mb-3 text-xl font-bold text-slate-900">Sijil Rasmi</h2>
+      {profileIncomplete && <div className="mb-4 rounded-2xl border border-amber-300 bg-amber-50 p-5 text-amber-950" role="status">
+        <div className="flex items-start gap-3"><LockKeyhole className="mt-0.5 h-5 w-5 flex-none" /><div>
+          <p className="font-bold">Lengkapkan profil untuk melihat dan memuat turun sijil</p>
+          <p className="mt-1 text-sm">Maklumat belum lengkap: {missingProfileFields.join(", ")}.</p>
+          <p className="mt-1 text-sm">Sijil yang telah dijana akan tersedia selepas maklumat ini disimpan.</p>
+          <Link to="/profile" className="mt-3 inline-flex rounded-lg bg-amber-900 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-950">Lengkapkan Profil</Link>
+        </div></div>
+      </div>}
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {certificates.length === 0 && <p className="rounded-xl border bg-white p-5 text-slate-500">Belum ada sijil untuk dimuat turun.</p>}
-        {certificates.map((certificate) => <article key={certificate.id} className="rounded-2xl border border-emerald-100 bg-white p-5 shadow-sm">
+        {!profileIncomplete && certificates.length === 0 && <p className="rounded-xl border bg-white p-5 text-slate-500">Belum ada sijil untuk dimuat turun.</p>}
+        {!profileIncomplete && certificates.map((certificate) => <article key={certificate.id} className="rounded-2xl border border-emerald-100 bg-white p-5 shadow-sm">
           <Award className="h-9 w-9 text-amber-500" />
           <h3 className="mt-3 font-bold text-slate-900">{labels[certificate.certificate_type]}</h3>
           <p className="mt-1 font-mono text-xs text-slate-500">{certificate.certificate_number}</p>
