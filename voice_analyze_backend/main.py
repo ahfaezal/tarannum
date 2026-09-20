@@ -16,6 +16,7 @@ import threading
 import time
 from pathlib import Path
 from typing import Optional
+import statistics
 
 import setuptools, pkg_resources
 print("setuptools:", setuptools.__version__)
@@ -227,6 +228,58 @@ def recover_stale_queued_scoring_jobs() -> int:
                 unfinished_job.id, existing_session.id,
             )
         db.commit()
+
+        # A worker can be terminated after claiming a job, leaving the durable
+        # row in ``processing`` forever. Only reclaim it after the configured
+        # worker hard limit, and only when the staged audio still exists. The
+        # conditional update is the lease that prevents two API replicas from
+        # dispatching the same recovery.
+        processing_timeout = max(
+            int(os.getenv("SCORING_TASK_TIME_LIMIT_SECONDS", "900")) + 30,
+            int(os.getenv("SCORING_STALE_TIMEOUT_SECONDS", "960")),
+        )
+        processing_cutoff = datetime.utcnow() - timedelta(seconds=processing_timeout)
+        stale_processing_ids = [
+            row[0]
+            for row in db.query(ScoringJob.id).filter(
+                ScoringJob.status == "processing",
+                ScoringJob.started_at.isnot(None),
+                ScoringJob.started_at < processing_cutoff,
+                ScoringJob.staging_path.isnot(None),
+            ).order_by(ScoringJob.started_at.asc()).all()
+        ]
+        for job_id in stale_processing_ids:
+            leased = db.query(ScoringJob).filter(
+                ScoringJob.id == job_id,
+                ScoringJob.status == "processing",
+                ScoringJob.started_at < processing_cutoff,
+            ).update({
+                ScoringJob.status: "queued",
+                ScoringJob.stage: "recovering",
+                ScoringJob.queued_at: datetime.utcnow(),
+                ScoringJob.started_at: None,
+                ScoringJob.error_message: None,
+            }, synchronize_session=False)
+            db.commit()
+            if not leased:
+                continue
+            try:
+                task = process_scoring_job_async.delay(str(job_id))
+                db.query(ScoringJob).filter(ScoringJob.id == job_id).update({
+                    ScoringJob.celery_task_id: task.id,
+                    ScoringJob.stage: "queued",
+                }, synchronize_session=False)
+                db.commit()
+                recovered += 1
+                logger.warning("Recovered abandoned processing job job_id=%s task_id=%s", job_id, task.id)
+            except Exception as dispatch_error:
+                db.query(ScoringJob).filter(ScoringJob.id == job_id).update({
+                    ScoringJob.status: "failed",
+                    ScoringJob.stage: "failed",
+                    ScoringJob.error_message: str(dispatch_error)[:2000],
+                    ScoringJob.completed_at: datetime.utcnow(),
+                }, synchronize_session=False)
+                db.commit()
 
         cutoff = datetime.utcnow() - timedelta(
             seconds=max(60, int(os.getenv("SCORING_REQUEUE_AFTER_SECONDS", "90")))
@@ -817,6 +870,102 @@ def get_scoring_capacity(db: Session = Depends(get_db)):
     }
 
 
+def _percentile(values, percentile: float):
+    if not values:
+        return 0
+    ordered = sorted(float(value) for value in values)
+    position = (len(ordered) - 1) * percentile
+    lower = int(position)
+    upper = min(lower + 1, len(ordered) - 1)
+    fraction = position - lower
+    return round(ordered[lower] + (ordered[upper] - ordered[lower]) * fraction, 1)
+
+
+@app.get("/api/admin/scoring/operations")
+def get_scoring_operations(
+    admin: User = Depends(get_current_admin_user),
+    db: Session = Depends(get_db),
+):
+    """Operational scoring telemetry without exposing audio or score payloads."""
+    now = datetime.utcnow()
+    recent = db.query(ScoringJob).filter(
+        ScoringJob.status == "completed",
+        ScoringJob.completed_at >= now - timedelta(hours=1),
+        ScoringJob.started_at.isnot(None),
+    ).all()
+    total_seconds = [
+        (job.completed_at - job.queued_at).total_seconds()
+        for job in recent if job.completed_at and job.queued_at
+    ]
+    attention = db.query(ScoringJob, User).join(User, User.id == ScoringJob.user_id).filter(
+        ScoringJob.status.in_(["queued", "processing", "failed"]),
+        ScoringJob.queued_at >= now - timedelta(days=1),
+    ).order_by(ScoringJob.queued_at.asc()).limit(50).all()
+    return {
+        "p50_total_seconds": _percentile(total_seconds, 0.50),
+        "p95_total_seconds": _percentile(total_seconds, 0.95),
+        "average_total_seconds": round(statistics.fmean(total_seconds), 1) if total_seconds else 0,
+        "jobs": [{
+            "job_id": str(job.id),
+            "participant": user.full_name or user.email,
+            "email": user.email,
+            "status": job.status,
+            "stage": job.stage,
+            "age_seconds": max(0, round((now - (job.started_at or job.queued_at)).total_seconds())),
+            "queued_at": job.queued_at.isoformat() if job.queued_at else None,
+            "error": job.error_message,
+        } for job, user in attention],
+        "captured_at": now.isoformat(),
+    }
+
+
+@app.post("/api/admin/scoring/jobs/{job_id}/retry")
+def retry_scoring_job(
+    job_id: str,
+    admin: User = Depends(get_current_admin_user),
+    db: Session = Depends(get_db),
+):
+    """Safely requeue a failed or demonstrably abandoned durable job."""
+    try:
+        parsed = uuid.UUID(job_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid Job ID")
+    job = db.query(ScoringJob).filter(ScoringJob.id == parsed).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Scoring job not found")
+    if not job.staging_path:
+        raise HTTPException(status_code=409, detail="The staged recording is no longer available")
+    stale_seconds = max(
+        int(os.getenv("SCORING_TASK_TIME_LIMIT_SECONDS", "900")) + 30,
+        int(os.getenv("SCORING_STALE_TIMEOUT_SECONDS", "960")),
+    )
+    abandoned = job.status == "processing" and job.started_at and (
+        job.started_at < datetime.utcnow() - timedelta(seconds=stale_seconds)
+    )
+    if job.status != "failed" and not abandoned:
+        raise HTTPException(status_code=409, detail="Only failed or abandoned jobs can be retried")
+    job.status = "queued"
+    job.stage = "requeueing"
+    job.queued_at = datetime.utcnow()
+    job.started_at = None
+    job.completed_at = None
+    job.error_message = None
+    db.commit()
+    try:
+        task = process_scoring_job_async.delay(str(job.id))
+        job.celery_task_id = task.id
+        job.stage = "queued"
+        db.commit()
+    except Exception as exc:
+        job.status = "failed"
+        job.stage = "failed"
+        job.completed_at = datetime.utcnow()
+        job.error_message = str(exc)[:2000]
+        db.commit()
+        raise HTTPException(status_code=503, detail="The worker could not accept the retry")
+    return {"job_id": str(job.id), "status": job.status, "stage": job.stage}
+
+
 @app.post("/api/scoring/jobs", status_code=202)
 async def create_scoring_job(
     user_audio: UploadFile = File(...),
@@ -1078,14 +1227,28 @@ def get_scoring_job(
         and job.started_at
         and job.started_at < datetime.utcnow() - timedelta(seconds=stale_after_seconds)
     ):
-        job.status = "failed"
-        job.stage = "failed"
-        job.completed_at = datetime.utcnow()
-        job.error_message = (
-            "Scoring exceeded the processing time limit. "
-            "The original recording can be submitted again."
-        )
+        # The original Celery task is already beyond its hard limit. Reuse the
+        # staged recording automatically so the participant never has to
+        # record again merely because a worker was restarted.
+        job.status = "queued"
+        job.stage = "recovering"
+        job.queued_at = datetime.utcnow()
+        job.started_at = None
+        job.completed_at = None
+        job.error_message = None
         db.commit()
+        try:
+            task = process_scoring_job_async.delay(str(job.id))
+            job.celery_task_id = task.id
+            job.stage = "queued"
+            db.commit()
+            logger.warning("Automatically recovered abandoned scoring job job_id=%s", job.id)
+        except Exception as dispatch_error:
+            job.status = "failed"
+            job.stage = "failed"
+            job.completed_at = datetime.utcnow()
+            job.error_message = str(dispatch_error)[:2000]
+            db.commit()
 
     queue_position = None
     if job.status == "queued":

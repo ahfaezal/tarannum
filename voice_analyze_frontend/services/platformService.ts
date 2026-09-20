@@ -880,6 +880,23 @@ export const deleteUser = async (userId: string): Promise<{
   return response.json();
 };
 
+export const mergeStudentAccount = async (
+  sourceUserId: string,
+  targetUserId: string,
+  confirmTargetEmail: string,
+): Promise<{success: boolean; target_email: string; target_sessions: number}> => {
+  const response = await fetch(`${API_URL}/api/platform/admin/users/${sourceUserId}/merge`, {
+    method: "POST",
+    headers: {"Content-Type": "application/json", ...getAuthHeader()},
+    body: JSON.stringify({target_user_id: targetUserId, confirm_target_email: confirmTargetEmail}),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({detail: response.statusText}));
+    throw new Error(error.detail || "Account merge failed");
+  }
+  return response.json();
+};
+
 /**
  * Admin: Get platform statistics
  */

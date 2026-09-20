@@ -13,6 +13,23 @@ export type ScoringCapacity = {
   captured_at?: string;
 };
 
+export type ScoringOperations = {
+  p50_total_seconds: number;
+  p95_total_seconds: number;
+  average_total_seconds: number;
+  captured_at: string;
+  jobs: Array<{
+    job_id: string;
+    participant: string;
+    email: string;
+    status: 'queued' | 'processing' | 'failed';
+    stage: string;
+    age_seconds: number;
+    queued_at?: string;
+    error?: string;
+  }>;
+};
+
 export type ScoringJobProgress = {
   jobId: string;
   status: 'queued' | 'processing';
@@ -663,6 +680,24 @@ export const extractReferencePitch = async (
   }
 
   return normalizePitchResponse(await response.json());
+};
+
+export const getScoringOperations = async (): Promise<ScoringOperations> => {
+  const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+  const response = await fetch(`${API_URL}/api/admin/scoring/operations`, {headers: getAuthHeader()});
+  if (!response.ok) throw new Error(`Scoring operations unavailable (${response.status})`);
+  return response.json();
+};
+
+export const retryScoringJob = async (jobId: string): Promise<void> => {
+  const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+  const response = await fetch(`${API_URL}/api/admin/scoring/jobs/${encodeURIComponent(jobId)}/retry`, {
+    method: 'POST', headers: getAuthHeader(),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({detail: response.statusText}));
+    throw new Error(error.detail || 'Job could not be retried');
+  }
 };
 
 export interface DurableScoringJobStatus {

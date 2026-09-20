@@ -1702,6 +1702,39 @@ class UpdateUserRequest(BaseModel):
     commission_rate: Optional[float] = None
 
 
+class MergeStudentAccountRequest(BaseModel):
+    target_user_id: UUID
+    confirm_target_email: str
+
+
+@router.post("/admin/users/{source_user_id}/merge")
+def merge_student_user(
+    source_user_id: UUID,
+    payload: MergeStudentAccountRequest,
+    current_user: User = Depends(get_current_admin_user),
+    db: Session = Depends(get_db),
+):
+    """Consolidate an explicitly selected temporary student account."""
+    from account_merge_service import merge_student_accounts
+
+    source = db.query(User).filter(User.id == source_user_id).first()
+    target = db.query(User).filter(User.id == payload.target_user_id).first()
+    if not source or not target:
+        raise HTTPException(status_code=404, detail="Source or destination account was not found")
+    if payload.confirm_target_email.strip().lower() != target.email.strip().lower():
+        raise HTTPException(status_code=400, detail="Destination email confirmation does not match")
+    try:
+        summary = merge_student_accounts(db, source, target, current_user)
+        return {"success": True, **summary}
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        db.rollback()
+        logger.error("Student account merge failed", exc_info=True)
+        raise HTTPException(status_code=409, detail=f"Account merge was rolled back: {exc}")
+
+
 @router.put("/admin/users/{user_id}")
 async def update_user(
     user_id: str,

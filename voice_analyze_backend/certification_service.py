@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 from uuid import UUID
 
-from sqlalchemy import or_
+from sqlalchemy import or_, text
 from sqlalchemy.orm import Session
 
 from certificate_display import certificate_display_snapshot
@@ -143,6 +143,18 @@ def issue_certificate(
     final_grade: Optional[str] = None,
 ) -> Certificate:
     """Create one immutable certificate snapshot; issuance is idempotent by source."""
+    # The earlier read-before-insert check was vulnerable when two API
+    # requests issued the same certificate concurrently. PostgreSQL's
+    # transaction-scoped advisory lock serializes issuance for one source
+    # without changing or locking unrelated students.
+    source_key = None
+    if enrollment:
+        source_key = f"certificate:{certificate_type}:enrollment:{enrollment.id}"
+    elif application:
+        source_key = f"certificate:{certificate_type}:application:{application.id}"
+    if source_key and db.get_bind().dialect.name == "postgresql":
+        db.execute(text("SELECT pg_advisory_xact_lock(hashtext(:source_key))"), {"source_key": source_key})
+
     query = db.query(Certificate).filter(
         Certificate.certificate_type == certificate_type,
         Certificate.student_id == student.id,

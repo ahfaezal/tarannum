@@ -5,12 +5,12 @@ import { referenceLibraryService, ReferenceAudio, TextSegment } from '../service
 import { 
   listAllUsers, getUser, updateUser, createUser, deleteUser, approveQari, AdminUser, 
   getPlatformStatistics, PlatformStatistics, getDetailedUsers, DetailedUser,
-  getAllSessions, DetailedSession, getUsageMetrics, UsageMetrics
+  getAllSessions, DetailedSession, getUsageMetrics, UsageMetrics, mergeStudentAccount
 } from '../services/platformService';
 import PresetEditor from '../components/PresetEditor';
 import ConfirmModal from '../components/ConfirmModal';
 import AlertModal from '../components/AlertModal';
-import { getScoringCapacity, ScoringCapacity } from '../services/apiService';
+import { getScoringCapacity, getScoringOperations, retryScoringJob, ScoringCapacity, ScoringOperations } from '../services/apiService';
 import PasswordInput from '../components/PasswordInput';
 import { CertificateSummary, downloadCertificate, getAdminUserCertificates, getCertificatePdfBlob } from '../services/certificationService';
 
@@ -75,6 +75,7 @@ const AdminMode: React.FC<AdminModeProps> = ({ view = 'presets' }) => {
   const [scoringCapacityError, setScoringCapacityError] = useState(false);
   const [capacityLatencyMs, setCapacityLatencyMs] = useState<number | null>(null);
   const [capacityUpdatedAt, setCapacityUpdatedAt] = useState<Date | null>(null);
+  const [scoringOperations, setScoringOperations] = useState<ScoringOperations | null>(null);
   
   // Modal states
   const [deletePresetConfirm, setDeletePresetConfirm] = useState<{ isOpen: boolean; presetId: string }>({
@@ -117,9 +118,10 @@ const AdminMode: React.FC<AdminModeProps> = ({ view = 'presets' }) => {
     const refreshCapacity = async () => {
       const startedAt = performance.now();
       try {
-        const capacity = await getScoringCapacity();
+        const [capacity, operations] = await Promise.all([getScoringCapacity(), getScoringOperations()]);
         if (active) {
           setScoringCapacity(capacity);
+          setScoringOperations(operations);
           setScoringCapacityError(false);
           setCapacityLatencyMs(Math.round(performance.now() - startedAt));
           setCapacityUpdatedAt(new Date());
@@ -139,6 +141,15 @@ const AdminMode: React.FC<AdminModeProps> = ({ view = 'presets' }) => {
       window.clearInterval(interval);
     };
   }, [activeTab, monitoringView]);
+
+  const handleRetryScoringJob = async (jobId: string) => {
+    try {
+      await retryScoringJob(jobId);
+      setScoringOperations(await getScoringOperations());
+    } catch (error: any) {
+      setAlertModal({isOpen: true, title: 'Retry tidak berjaya', message: error.message, variant: 'error'});
+    }
+  };
 
   const loadStatistics = async () => {
     try {
@@ -442,6 +453,26 @@ const AdminMode: React.FC<AdminModeProps> = ({ view = 'presets' }) => {
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const handleMergeStudent = async (source: AdminUser) => {
+    const targetEmail = window.prompt(`Akaun sementara: ${source.email}\n\nMasukkan e-mel akaun asal peserta:`)?.trim().toLowerCase();
+    if (!targetEmail) return;
+    const target = users.find(user => user.email.toLowerCase() === targetEmail);
+    if (!target || target.role !== 'student') {
+      setAlertModal({isOpen: true, title: 'Akaun tidak ditemui', message: 'Pilih akaun pelajar asal yang wujud dalam senarai semasa.', variant: 'warning'});
+      return;
+    }
+    if (target.id === source.id) return;
+    const confirmed = window.prompt(`Semua rakaman, skor dan pendaftaran ${source.email} akan dipindahkan ke ${target.email}. Akaun sementara akan dinyahaktifkan.\n\nTaip e-mel akaun asal untuk mengesahkan:`)?.trim().toLowerCase();
+    if (confirmed !== target.email.toLowerCase()) return;
+    try {
+      const result = await mergeStudentAccount(source.id, target.id, confirmed);
+      await loadUserData();
+      setAlertModal({isOpen: true, title: 'Akaun berjaya digabungkan', message: `${source.email} telah dipindahkan ke ${result.target_email}. Jumlah sesi pada akaun asal: ${result.target_sessions}.`, variant: 'success'});
+    } catch (error: any) {
+      setAlertModal({isOpen: true, title: 'Penggabungan dibatalkan', message: error.message || 'Tiada data diubah.', variant: 'error'});
+    }
   };
 
   const formatDisplayName = (name?: string | null, fallback?: string) =>
@@ -821,6 +852,14 @@ const AdminMode: React.FC<AdminModeProps> = ({ view = 'presets' }) => {
                             >
                               Edit
                             </button>
+                            {user.role === 'student' && user.is_active && (
+                              <button
+                                onClick={() => void handleMergeStudent(user)}
+                                className="text-amber-700 hover:text-amber-900 font-medium"
+                              >
+                                Gabung Akaun
+                              </button>
+                            )}
                             <button
                               onClick={() => handleDeleteUser(user.id, user.email)}
                               className="text-red-600 hover:text-red-900 font-medium"
@@ -959,6 +998,23 @@ const AdminMode: React.FC<AdminModeProps> = ({ view = 'presets' }) => {
                     </div>
                   ))}
                 </div>
+                <div className="mt-3 grid grid-cols-3 gap-3">
+                  {[
+                    ['Median · 1h', scoringOperations ? `${scoringOperations.p50_total_seconds}s` : '—'],
+                    ['P95 · 1h', scoringOperations ? `${scoringOperations.p95_total_seconds}s` : '—'],
+                    ['Purata · 1h', scoringOperations ? `${scoringOperations.average_total_seconds}s` : '—'],
+                  ].map(([label, value]) => <div key={label} className="rounded-lg border border-slate-200 bg-white p-3"><p className="text-xs text-slate-500">{label}</p><p className="text-xl font-bold text-slate-900">{value}</p></div>)}
+                </div>
+                {scoringOperations && scoringOperations.jobs.length > 0 && <div className="mt-4 overflow-x-auto rounded-lg border border-slate-200 bg-white">
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-slate-50"><tr><th className="p-2">Perlu perhatian</th><th>Status</th><th>Tempoh</th><th>Tindakan</th></tr></thead>
+                    <tbody>{scoringOperations.jobs.map(job => <tr key={job.job_id} className="border-t">
+                      <td className="p-2"><strong>{job.participant}</strong><br/><span className="text-xs text-slate-500">{job.email}</span></td>
+                      <td>{job.status} · {job.stage}</td><td>{job.age_seconds}s</td>
+                      <td>{job.status === 'failed' || (job.status === 'processing' && job.age_seconds >= 960) ? <button onClick={() => void handleRetryScoringJob(job.job_id)} className="rounded bg-amber-600 px-3 py-1 font-semibold text-white">Retry selamat</button> : <span className="text-xs text-slate-500">Sedang dipantau</span>}</td>
+                    </tr>)}</tbody>
+                  </table>
+                </div>}
                 <div className="mt-3 grid gap-2 text-xs text-slate-700 md:grid-cols-3">
                   <p><strong>Hijau:</strong> teruskan kumpulan seterusnya secara berperingkat.</p>
                   <p><strong>Kuning:</strong> berhenti sementara dan tunggu queue menurun.</p>
