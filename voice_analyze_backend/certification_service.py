@@ -61,13 +61,14 @@ def required_recording_count(required_seconds: int, reference_duration: float) -
 
 
 def grade_for_score(score: float) -> str:
-    if score >= 85:
+    """Official Qari grade, separate from the AI practice eligibility gate."""
+    if score >= 90:
         return "mumtaz"
-    if score >= 80:
-        return "jayyid_jiddan"
     if score >= 75:
+        return "jayyid_jiddan"
+    if score >= 60:
         return "jayyid"
-    raise ValueError("A minimum score of 75 is required")
+    raise ValueError("A minimum Qari score of 60 is required")
 
 
 def grade_label(grade: Optional[str]) -> Optional[str]:
@@ -403,8 +404,8 @@ def decide_application(db: Session, application: CertificateApplication, qari: U
         raise ValueError("Catatan qari diperlukan untuk keputusan ini")
     if decision == "approved" and critical_error:
         raise ValueError("Rakaman dengan kesilapan kritikal tidak boleh diluluskan")
-    if decision == "approved" and qari_score < 75:
-        raise ValueError("Skor penilaian qari mesti sekurang-kurangnya 75 untuk kelulusan")
+    if decision == "approved" and qari_score < 60:
+        raise ValueError("Skor penilaian qari mesti sekurang-kurangnya 60 untuk kelulusan")
     if decision == "approved":
         grade = grade_for_score(qari_score)
     if decision == "approved":

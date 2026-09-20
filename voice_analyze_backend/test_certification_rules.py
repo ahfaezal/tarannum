@@ -93,15 +93,15 @@ class CertificationRuleTests(unittest.TestCase):
         self.assertEqual(required_recording_count(3600, 105), 35)
 
     def test_grade_boundaries(self):
-        self.assertEqual(grade_for_score(85), "mumtaz")
-        self.assertEqual(grade_for_score(84.99), "jayyid_jiddan")
-        self.assertEqual(grade_for_score(80), "jayyid_jiddan")
-        self.assertEqual(grade_for_score(79.99), "jayyid")
-        self.assertEqual(grade_for_score(75), "jayyid")
+        self.assertEqual(grade_for_score(90), "mumtaz")
+        self.assertEqual(grade_for_score(89.99), "jayyid_jiddan")
+        self.assertEqual(grade_for_score(75), "jayyid_jiddan")
+        self.assertEqual(grade_for_score(74.99), "jayyid")
+        self.assertEqual(grade_for_score(60), "jayyid")
 
     def test_score_below_threshold_is_rejected(self):
         with self.assertRaises(ValueError):
-            grade_for_score(74.99)
+            grade_for_score(59.99)
 
     def test_complete_qari_rubric_is_weighted_to_percentage(self):
         assessment = {

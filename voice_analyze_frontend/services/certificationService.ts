@@ -105,6 +105,13 @@ export interface QariFlowPreview {
   read_only: true;
 }
 
+export const competencyGradeForScore = (score: number): { label: string; range: string } | null => {
+  if (score >= 90) return { label: 'Mumtaz', range: '90–100%' };
+  if (score >= 75) return { label: 'Jayyid Jiddan', range: '75–89%' };
+  if (score >= 60) return { label: 'Jayyid', range: '60–74%' };
+  return null;
+};
+
 export const getStudentCourseProgress = () => request<CourseProgress[]>("/student/courses");
 export const getCompetencyEligibility = () => request<any[]>("/student/competency-eligibility");
 export const submitCompetencyApplication = (sessionId: string, certificateType: string) => request<any>("/student/competency-applications", { method: "POST", body: JSON.stringify({ session_id: sessionId, certificate_type: certificateType }) });
