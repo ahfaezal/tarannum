@@ -4,7 +4,7 @@ Database connection and session management for PostgreSQL.
 import os
 from sqlalchemy import create_engine, Column, String, Integer, Float, Boolean, DateTime, Text, JSON, ForeignKey, UniqueConstraint, LargeBinary, text
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, relationship, Session
+from sqlalchemy.orm import sessionmaker, relationship, Session, validates
 from sqlalchemy.dialects.postgresql import UUID
 from datetime import datetime
 from typing import Optional
@@ -65,6 +65,13 @@ class User(Base):
     is_active = Column(Boolean, default=True)
     is_approved = Column(Boolean, default=False)  # For Qari approval by Admin
     full_name = Column(String, nullable=True)
+
+    @validates("full_name")
+    def normalize_full_name(self, key, value):
+        """Keep names entered through any user-writing endpoint consistent."""
+        if not value:
+            return None
+        return " ".join(value.split()).upper() or None
     ic_number = Column(String, nullable=True)  # IC/Identity Card Number
     address = Column(String, nullable=True)  # Address
     phone_number = Column(String, nullable=True)
@@ -815,6 +822,7 @@ def init_db():
     try:
         Base.metadata.create_all(bind=engine)
         ensure_email_otp_columns()
+        ensure_student_names_uppercase()
         ensure_course_management_columns()
         ensure_student_selected_recordings_table()
         ensure_user_profile_columns()
@@ -827,6 +835,18 @@ def init_db():
     except Exception as e:
         logger.error(f"Error creating database tables: {e}", exc_info=True)
         raise
+
+
+def ensure_student_names_uppercase():
+    """Normalize legacy student account names without changing certificate snapshots."""
+    with engine.begin() as conn:
+        conn.execute(text("""
+            UPDATE users
+            SET full_name = UPPER(TRIM(full_name))
+            WHERE role = 'student'
+              AND full_name IS NOT NULL
+              AND full_name <> UPPER(TRIM(full_name))
+        """))
 
 
 def ensure_qari_signature_columns():

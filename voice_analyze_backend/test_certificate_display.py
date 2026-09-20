@@ -28,6 +28,16 @@ class CertificateDisplayTests(unittest.TestCase):
         self.assertEqual(display["course_title"], "KURSUS AZAN TARANNUM HIJJAZ")
         self.assertEqual(original["course_title"], "Kursus Pemantapan Muazzin")
 
+    def test_legacy_certificate_name_is_uppercase_only_for_display(self):
+        original = {"student_name": "Mohamad Nor bin Abdul"}
+        certificate = SimpleNamespace(
+            certificate_type="attendance",
+            course_id=UUID("00000000-0000-0000-0000-000000000001"),
+            snapshot_json=original,
+        )
+        self.assertEqual(certificate_display_snapshot(certificate)["student_name"], "MOHAMAD NOR BIN ABDUL")
+        self.assertEqual(original["student_name"], "Mohamad Nor bin Abdul")
+
     def test_other_course_keeps_its_title(self):
         certificate = SimpleNamespace(
             certificate_type="attendance",

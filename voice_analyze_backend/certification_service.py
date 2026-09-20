@@ -139,7 +139,7 @@ def issue_certificate(
     snapshot = {
         "certificate_number": number,
         "certificate_type": certificate_type,
-        "student_name": student.full_name or student.email,
+        "student_name": (student.full_name or student.email).upper(),
         "reference_title": reference.title,
         "maqam": reference.maqam,
         "course_title": course.title if course else None,

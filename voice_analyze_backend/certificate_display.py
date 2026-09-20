@@ -13,6 +13,8 @@ MUAZZIN_CERTIFICATE_TITLE = "KURSUS AZAN TARANNUM HIJJAZ"
 
 def certificate_display_snapshot(certificate) -> dict:
     snapshot = dict(certificate.snapshot_json or {})
+    if snapshot.get("student_name"):
+        snapshot["student_name"] = " ".join(snapshot["student_name"].split()).upper()
     if certificate.certificate_type == "attendance" and certificate.course_id == MUAZZIN_COURSE_ID:
         snapshot["course_title"] = MUAZZIN_CERTIFICATE_TITLE
     return snapshot
