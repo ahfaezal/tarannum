@@ -403,6 +403,8 @@ class TrainingChallenge(Base):
     course_id = Column(UUID(as_uuid=True), ForeignKey('courses.id', ondelete='RESTRICT'), nullable=True)
     reference_id = Column(String, ForeignKey("references.id", ondelete="RESTRICT"), nullable=False, index=True)
     title = Column(String, nullable=False)
+    certificate_course_title = Column(String, nullable=True)
+    competency_name = Column(String, nullable=True)
     start_at = Column(DateTime, nullable=False, index=True)
     end_at = Column(DateTime, nullable=False, index=True)
     status = Column(String, nullable=False, default="scheduled", index=True)
@@ -868,6 +870,9 @@ def ensure_qari_signature_columns():
 def ensure_course_management_columns():
     with engine.begin() as conn:
         conn.execute(text('ALTER TABLE courses ADD COLUMN IF NOT EXISTS qari_id UUID REFERENCES users(id) ON DELETE RESTRICT'))
+        conn.execute(text('ALTER TABLE courses ADD COLUMN IF NOT EXISTS certificate_course_title VARCHAR'))
+        conn.execute(text('ALTER TABLE courses ADD COLUMN IF NOT EXISTS competency_name VARCHAR'))
+        conn.execute(text('UPDATE courses SET certificate_course_title = title WHERE certificate_course_title IS NULL'))
         conn.execute(text('ALTER TABLE training_challenges ADD COLUMN IF NOT EXISTS course_id UUID REFERENCES courses(id) ON DELETE RESTRICT'))
         conn.execute(text('ALTER TABLE certificate_applications ADD COLUMN IF NOT EXISTS course_id UUID REFERENCES courses(id) ON DELETE RESTRICT'))
         conn.execute(text('ALTER TABLE certificate_applications ADD COLUMN IF NOT EXISTS qari_assessment_json JSON'))

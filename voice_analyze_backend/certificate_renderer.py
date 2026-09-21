@@ -90,7 +90,7 @@ def _draw_attendance_body(c: canvas.Canvas, certificate: Certificate, snapshot: 
     _centered(c, "telah menghadiri", height - 309, "Helvetica", 12, NAVY)
 
     # The empty ornate course cartouche is part of the approved background.
-    course_title = (snapshot.get("course_title") or snapshot.get("reference_title") or "").upper()
+    course_title = (snapshot.get("certificate_course_title") or snapshot.get("course_title") or snapshot.get("reference_title") or "").upper()
     _centered(c, course_title, height - 355, "Times-Bold", _fit_font(course_title, "Times-Bold", 18, width - 330, 10), EMERALD)
     practice_minutes = snapshot.get("practice_minutes") or 60
     _centered(c, f"dan berjaya menyempurnakan {practice_minutes} minit latihan rakaman", height - 399, "Helvetica", 11, NAVY)
@@ -100,13 +100,16 @@ def _draw_attendance_body(c: canvas.Canvas, certificate: Certificate, snapshot: 
     c.setFont("Helvetica", 10)
     duration_minutes = snapshot.get("course_duration_minutes") or 360
     duration_hours = round(duration_minutes / 60)
-    footer_items = (
+    footer_items = [
         f"Tarikh Kursus: {_course_date_label(snapshot.get('course_date') or '')}",
         f"Tempoh Kursus: 1 Hari - {duration_hours} Jam",
-        f"No. Sijil: {certificate.certificate_number}",
-    )
+    ]
+    if snapshot.get("course_location"):
+        footer_items.append(f"Lokasi Latihan: {snapshot['course_location']}")
+    footer_items.append(f"No. Sijil: {certificate.certificate_number}")
     for index, item in enumerate(footer_items):
         y = 146 - index * 27
+        c.setFont("Helvetica", _fit_font(item, "Helvetica", 10, 235, 7))
         c.setStrokeColor(GOLD)
         c.setLineWidth(0.9)
         c.line(left - 15, y + 4, left - 11, y + 9)
@@ -220,7 +223,7 @@ def _draw_azan_competency_body(c: canvas.Canvas, certificate: Certificate, snaps
     maqam = (snapshot.get("maqam") or "").upper()
     if maqam in {"HIJAZ", "HIJJAZ"}:
         maqam = "HIJJAZ"
-    competency = "AZAN TARANNUM" + (f" {maqam}" if maqam else "")
+    competency = (snapshot.get("competency_name") or ("AZAN TARANNUM" + (f" {maqam}" if maqam else ""))).upper()
     _centered(c, competency, height - 344, "Times-Roman", _fit_font(competency, "Times-Roman", 24, width - 430, 13), EMERALD)
 
     grade = (snapshot.get("final_grade") or "").upper()
@@ -341,7 +344,7 @@ def render_certificate_pdf(db, certificate: Certificate) -> Path:
         student_name = (snapshot.get("student_name") or "").upper()
         _centered(c, student_name, height - 220, "Times-Bold", _fit_font(student_name, "Times-Bold", 27, width - 150), EMERALD)
         _centered(c, "telah menunjukkan kompetensi dalam", height - 250, "Times-Roman", 13, NAVY)
-        competency = " • ".join(filter(None, [snapshot.get("reference_title"), snapshot.get("maqam")])).upper()
+        competency = (snapshot.get("competency_name") or " • ".join(filter(None, [snapshot.get("reference_title"), snapshot.get("maqam")]))).upper()
         _centered(c, competency, height - 283, "Times-Bold", _fit_font(competency, "Times-Bold", 19, width - 170), EMERALD)
         grade = (snapshot.get("final_grade") or "").upper()
         c.setFillColor(EMERALD)

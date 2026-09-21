@@ -77,11 +77,14 @@ def missing_certificate_profile_fields(user: User) -> list[str]:
 
 class CourseCreate(BaseModel):
     title: str = Field(min_length=3, max_length=240)
+    certificate_course_title: str = Field(min_length=3, max_length=240)
+    competency_name: str = Field(min_length=3, max_length=240)
     certificate_category: str
     reference_id: str
     starts_at: datetime
     duration_minutes: int = Field(default=360, ge=30, le=1440)
-    location: Optional[str] = Field(default=None, max_length=240)
+    location: str = Field(min_length=2, max_length=240)
+    required_practice_minutes: int = Field(default=60, ge=15, le=600)
     completion_window_days: int = Field(default=30, ge=1, le=365)
     qari_id: Optional[UUID] = None
 
@@ -117,6 +120,8 @@ def _course_payload(course: Course, reference: Reference) -> dict:
         "id": str(course.id),
         "qari_id": str(course.qari_id) if course.qari_id else None,
         "title": course.title,
+        "certificate_course_title": course.certificate_course_title or course.title,
+        "competency_name": course.competency_name,
         "certificate_category": course.certificate_category,
         "reference_id": course.reference_id,
         "reference_title": reference.title,
@@ -126,6 +131,7 @@ def _course_payload(course: Course, reference: Reference) -> dict:
         "starts_at": course.starts_at.isoformat(),
         "duration_minutes": course.duration_minutes,
         "location": course.location,
+        "required_practice_minutes": round(course.required_practice_seconds / 60),
         "completion_window_days": course.completion_window_days,
         "status": course.status,
     }
@@ -142,13 +148,15 @@ def create_course(payload: CourseCreate, admin: User = Depends(get_current_admin
         _validate_course_qari(db, payload.qari_id, payload.reference_id)
     course = Course(
         title=payload.title.strip(),
+        certificate_course_title=payload.certificate_course_title.strip(),
+        competency_name=payload.competency_name.strip(),
         certificate_category=payload.certificate_category,
         reference_id=payload.reference_id,
         starts_at=payload.starts_at.astimezone(timezone.utc).replace(tzinfo=None) if payload.starts_at.tzinfo else payload.starts_at,
         duration_minutes=payload.duration_minutes,
-        location=payload.location,
+        location=payload.location.strip(),
         completion_window_days=payload.completion_window_days,
-        required_practice_seconds=3600,
+        required_practice_seconds=payload.required_practice_minutes * 60,
         status="published",
         created_by=admin.id,
         qari_id=payload.qari_id,

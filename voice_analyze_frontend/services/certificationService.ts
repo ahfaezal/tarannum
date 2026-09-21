@@ -34,6 +34,8 @@ export interface CourseProgress {
   course_id: string;
   enrollment_id: string;
   title: string;
+  certificate_course_title: string;
+  competency_name?: string | null;
   starts_at: string;
   attendance_status: "registered" | "attended" | "absent";
   reference_duration_seconds: number;
@@ -95,6 +97,7 @@ export interface CertificationCourse {
   starts_at: string;
   duration_minutes: number;
   location?: string;
+  required_practice_minutes: number;
   completion_window_days: number;
   status: string;
 }
