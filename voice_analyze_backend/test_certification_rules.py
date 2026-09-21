@@ -1,4 +1,5 @@
 import unittest
+from datetime import datetime
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 from uuid import UUID
@@ -12,11 +13,38 @@ from certification_endpoints import (
     my_certificates,
     verify_certificate,
 )
-from certification_service import calculate_qari_score, grade_for_score, required_recording_count
+from certification_service import calculate_qari_score, grade_for_score, recalculate_enrollment, required_recording_count
 from database import Course, TrainingChallenge
 
 
 class CertificationRuleTests(unittest.TestCase):
+    def test_completed_enrollment_recovers_missing_attendance_certificate(self):
+        completed_at = datetime(2026, 9, 21, 3, 59)
+        enrollment = SimpleNamespace(
+            id=UUID("00000000-0000-0000-0000-000000000010"),
+            course_id=UUID("00000000-0000-0000-0000-000000000011"),
+            student_id=UUID("00000000-0000-0000-0000-000000000012"),
+            attendance_status="attended", valid_recording_count=18,
+            eligibility_override=True, practice_completed_at=completed_at,
+        )
+        course = SimpleNamespace(
+            id=enrollment.course_id, reference_id="reference",
+            required_practice_seconds=3600, starts_at=datetime(2026, 9, 19),
+            completion_window_days=30,
+        )
+        reference = SimpleNamespace(duration=200)
+        student = SimpleNamespace(id=enrollment.student_id)
+        certificate = SimpleNamespace(id=UUID("00000000-0000-0000-0000-000000000013"))
+        db = MagicMock()
+        db.query.return_value.filter.return_value.first.side_effect = [course, reference, student]
+        db.query.return_value.filter.return_value.order_by.return_value.all.return_value = []
+        with patch("certification_service.issue_certificate", return_value=certificate) as issue:
+            progress = recalculate_enrollment(db, enrollment)
+        self.assertTrue(progress["eligible"])
+        self.assertEqual(progress["certificate_id"], str(certificate.id))
+        self.assertEqual(enrollment.practice_completed_at, completed_at)
+        issue.assert_called_once()
+
     def test_certificate_metadata_belongs_to_course_model(self):
         self.assertIn("certificate_course_title", Course.__table__.columns)
         self.assertIn("competency_name", Course.__table__.columns)

@@ -276,8 +276,9 @@ def recalculate_enrollment(db: Session, enrollment: CourseEnrollment, actor_id=N
     enrollment.credited_practice_seconds = min(credited_count, required) * int(math.ceil(reference.duration))
     eligible = enrollment.attendance_status == "attended" and credited_count >= required
     certificate = None
-    if eligible and not enrollment.practice_completed_at:
-        enrollment.practice_completed_at = datetime.utcnow()
+    if eligible:
+        if not enrollment.practice_completed_at:
+            enrollment.practice_completed_at = datetime.utcnow()
         student = db.query(User).filter(User.id == enrollment.student_id).first()
         certificate = issue_certificate(
             db,
