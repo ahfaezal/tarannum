@@ -403,8 +403,6 @@ class TrainingChallenge(Base):
     course_id = Column(UUID(as_uuid=True), ForeignKey('courses.id', ondelete='RESTRICT'), nullable=True)
     reference_id = Column(String, ForeignKey("references.id", ondelete="RESTRICT"), nullable=False, index=True)
     title = Column(String, nullable=False)
-    certificate_course_title = Column(String, nullable=True)
-    competency_name = Column(String, nullable=True)
     start_at = Column(DateTime, nullable=False, index=True)
     end_at = Column(DateTime, nullable=False, index=True)
     status = Column(String, nullable=False, default="scheduled", index=True)
@@ -462,6 +460,8 @@ class Course(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     title = Column(String, nullable=False)
+    certificate_course_title = Column(String, nullable=True)
+    competency_name = Column(String, nullable=True)
     qari_id = Column(UUID(as_uuid=True), ForeignKey('users.id', ondelete='RESTRICT'), nullable=True)
     certificate_category = Column(String, nullable=False)  # tarannum | azan
     reference_id = Column(String, ForeignKey("references.id", ondelete="RESTRICT"), nullable=False, index=True)

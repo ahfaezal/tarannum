@@ -13,9 +13,15 @@ from certification_endpoints import (
     verify_certificate,
 )
 from certification_service import calculate_qari_score, grade_for_score, required_recording_count
+from database import Course, TrainingChallenge
 
 
 class CertificationRuleTests(unittest.TestCase):
+    def test_certificate_metadata_belongs_to_course_model(self):
+        self.assertIn("certificate_course_title", Course.__table__.columns)
+        self.assertIn("competency_name", Course.__table__.columns)
+        self.assertNotIn("certificate_course_title", TrainingChallenge.__table__.columns)
+
     def test_certificate_requires_all_student_profile_details(self):
         user = SimpleNamespace(full_name="  ", ic_number=None, address="Jalan 1", phone_number="")
         self.assertEqual(
