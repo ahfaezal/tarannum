@@ -45,6 +45,26 @@ const agenda = [
 ];
 
 const fieldClass = "mt-2 w-full rounded-xl border border-stone-300 bg-white px-4 py-3 text-stone-900 outline-none transition focus:border-emerald-600 focus:ring-4 focus:ring-emerald-100";
+const ATTRIBUTION_KEY = "professional_azan_attribution";
+
+const getAttribution = () => {
+  const params = new URLSearchParams(window.location.search);
+  const stored = (() => {
+    try { return JSON.parse(window.sessionStorage.getItem(ATTRIBUTION_KEY) || "{}") as Record<string, string>; }
+    catch { return {} as Record<string, string>; }
+  })();
+  const source = params.get("utm_source") || (params.has("fbclid") ? "facebook" : "");
+  const medium = params.get("utm_medium") || (params.has("fbclid") ? "paid_social" : "");
+  const campaign = params.get("utm_campaign") || "";
+  const attribution = {
+    attribution_source: (source || stored.attribution_source || "unknown").slice(0, 80),
+    attribution_medium: (medium || stored.attribution_medium || "").slice(0, 80),
+    attribution_campaign: (campaign || stored.attribution_campaign || "").slice(0, 160),
+  };
+  try { window.sessionStorage.setItem(ATTRIBUTION_KEY, JSON.stringify(attribution)); }
+  catch { /* Session storage may be disabled; the current URL still works. */ }
+  return attribution;
+};
 
 const ProfessionalAzanCoursePage: React.FC = () => {
   const location = useLocation();
@@ -55,12 +75,15 @@ const ProfessionalAzanCoursePage: React.FC = () => {
   const [message, setMessage] = useState<string | null>(null);
   const [campaign, setCampaign] = useState<{ available_count: number; is_full: boolean } | null>(null);
   const [paymentStatus, setPaymentStatus] = useState<{ paid: boolean; account_linked: boolean; email: string; full_name: string; status: string } | null>(null);
+  const [statusRefresh, setStatusRefresh] = useState(0);
+  const [statusChecking, setStatusChecking] = useState(false);
   const districts = useMemo(() => DISTRICTS[state] || [], [state]);
   const isPaymentReturn = location.pathname.endsWith("/pembayaran");
   const registrationToken = searchParams.get("registration") || "";
 
   useEffect(() => {
     document.title = "Kursus Profesional Azan | Tarannum.ai";
+    if (!isPaymentReturn) getAttribution();
     const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
     fetch(`${API_URL}/api/promotions/kursus-profesional-azan-hijjaz-oktober-2026`)
       .then(response => response.ok ? response.json() : null)
@@ -73,17 +96,27 @@ const ProfessionalAzanCoursePage: React.FC = () => {
     const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
     let cancelled = false;
     let attempts = 0;
+    let timer: number | undefined;
     const readStatus = async () => {
-      const response = await fetch(`${API_URL}/api/promotions/kursus-profesional-azan-hijjaz-oktober-2026/registrations/${encodeURIComponent(registrationToken)}`);
-      if (!response.ok) throw new Error("Status pembayaran belum dapat disahkan.");
-      const data = await response.json();
-      if (!cancelled) setPaymentStatus(data);
-      attempts += 1;
-      if (!cancelled && !data.paid && attempts < 10) window.setTimeout(readStatus, 3000);
+      if (!cancelled) setStatusChecking(true);
+      let terminal = false;
+      try {
+        const response = await fetch(`${API_URL}/api/promotions/kursus-profesional-azan-hijjaz-oktober-2026/registrations/${encodeURIComponent(registrationToken)}`);
+        if (!response.ok) throw new Error("Status pembayaran belum dapat disemak. Sila cuba semula.");
+        const data = await response.json();
+        if (!cancelled) { setPaymentStatus(data); setMessage(null); }
+        terminal = data.paid || data.status === "payment_failed";
+      } catch (error) {
+        if (!cancelled) setMessage(error instanceof Error ? error.message : "Status belum dapat disemak.");
+      } finally {
+        if (!cancelled) setStatusChecking(false);
+        attempts += 1;
+        if (!cancelled && !terminal && attempts < 10) timer = window.setTimeout(readStatus, 3000);
+      }
     };
-    readStatus().catch(error => !cancelled && setMessage(error.message));
-    return () => { cancelled = true; };
-  }, [isPaymentReturn, registrationToken]);
+    void readStatus();
+    return () => { cancelled = true; if (timer) window.clearTimeout(timer); };
+  }, [isPaymentReturn, registrationToken, statusRefresh]);
 
   const submitInterest = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -96,11 +129,12 @@ const ProfessionalAzanCoursePage: React.FC = () => {
       const response = await fetch(`${API_URL}/api/promotions/kursus-profesional-azan-hijjaz-oktober-2026/${endpoint}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(Object.fromEntries(form.entries())),
+        body: JSON.stringify({ ...Object.fromEntries(form.entries()), ...getAttribution() }),
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.detail || "Pendaftaran belum dapat diproses.");
-      if (payload.checkout_url) window.location.assign(payload.checkout_url);
+      if (payload.already_paid && payload.registration_token) window.location.assign(`/kursus-profesional-azan/pembayaran?registration=${encodeURIComponent(payload.registration_token)}`);
+      else if (payload.checkout_url) window.location.assign(payload.checkout_url);
       else setMessage("Minat anda telah direkodkan. Kami akan menghubungi anda apabila pembayaran dibuka.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Pendaftaran belum dapat diproses.");
@@ -117,10 +151,11 @@ const ProfessionalAzanCoursePage: React.FC = () => {
           {paid ? <Check className="h-8 w-8" /> : <Clock3 className="h-8 w-8" />}
         </div>
         <p className="mt-6 text-sm font-black uppercase tracking-[.2em] text-emerald-700">Kursus Profesional Azan</p>
-        <h1 className="mt-3 text-3xl font-black">{paid ? "Pembayaran berjaya. Tempat anda disahkan." : "Pembayaran sedang disahkan."}</h1>
-        <p className="mt-5 leading-7 text-stone-600">{paid ? "Langkah terakhir ialah membuka atau menghubungkan akaun Tarannum.ai untuk akses latihan 30 hari dan persijilan." : "Halaman ini akan dikemas kini secara automatik selepas ToyyibPay mengesahkan transaksi anda."}</p>
+        <h1 className="mt-3 text-3xl font-black">{paid ? "Pembayaran berjaya. Tempat anda disahkan." : paymentStatus?.status === "payment_failed" ? "Pembayaran belum berjaya." : "Pembayaran sedang disahkan."}</h1>
+        <p className="mt-5 leading-7 text-stone-600">{paid ? "Langkah terakhir ialah membuka atau menghubungkan akaun Tarannum.ai untuk akses latihan 30 hari dan persijilan." : paymentStatus?.status === "payment_failed" ? "Transaksi ini tidak berjaya. Hubungi pihak penganjur jika wang telah ditolak sebelum mencuba pembayaran semula." : "Pengesahan ToyyibPay mungkin mengambil sedikit masa. Jangan buat bayaran kedua sebelum menyemak status transaksi pertama."}</p>
         {paid && !paymentStatus?.account_linked && <Link to={`/register?course_registration=${encodeURIComponent(registrationToken)}&email=${encodeURIComponent(paymentStatus?.email || "")}&name=${encodeURIComponent(paymentStatus?.full_name || "")}`} className="mt-8 inline-flex items-center gap-2 rounded-xl bg-emerald-700 px-6 py-4 font-black text-white">Buka akaun Tarannum.ai <ArrowRight className="h-5 w-5" /></Link>}
         {paid && paymentStatus?.account_linked && <Link to="/login" className="mt-8 inline-flex items-center gap-2 rounded-xl bg-emerald-700 px-6 py-4 font-black text-white">Log masuk Tarannum.ai <ArrowRight className="h-5 w-5" /></Link>}
+        {!paid && <div className="mt-7 flex flex-wrap justify-center gap-3"><button type="button" disabled={statusChecking} onClick={() => { setMessage(null); setStatusRefresh(value => value + 1); }} className="rounded-xl bg-emerald-700 px-5 py-3 font-bold text-white disabled:opacity-60">{statusChecking ? "Menyemak…" : "Semak status semula"}</button><a href="https://wa.me/60192504000?text=Saya%20perlukan%20bantuan%20menyemak%20bayaran%20Kursus%20Profesional%20Azan" className="rounded-xl border border-stone-300 px-5 py-3 font-bold text-emerald-800">Bantuan WhatsApp</a></div>}
         {message && <p className="mt-5 rounded-xl bg-rose-50 p-4 text-sm text-rose-700">{message}</p>}
       </div>
     </section>;
@@ -261,15 +296,18 @@ const ProfessionalAzanCoursePage: React.FC = () => {
               <label className="sm:col-span-2 text-sm font-bold">Nama penuh<input className={fieldClass} name="full_name" required autoComplete="name" /></label>
               <label className="text-sm font-bold">Nombor WhatsApp<input className={fieldClass} name="phone" required autoComplete="tel" inputMode="tel" placeholder="01X-XXXXXXX" /></label>
               <label className="text-sm font-bold">Alamat e-mel<input className={fieldClass} name="email" required type="email" autoComplete="email" /></label>
-              <label className="text-sm font-bold">Negeri<select className={fieldClass} name="state" value={state} required onChange={e=>{setState(e.target.value);setDistrict("");}}><option value="">Pilih negeri</option>{Object.keys(DISTRICTS).map(item=><option key={item}>{item}</option>)}</select></label>
-              <label className="text-sm font-bold">Daerah<select className={fieldClass} name="district" value={district} required disabled={!state} onChange={e=>setDistrict(e.target.value)}><option value="">Pilih daerah</option>{districts.map(item=><option key={item}>{item}</option>)}</select></label>
-              <label className="sm:col-span-2 text-sm font-bold">Masjid, surau atau organisasi <span className="font-normal text-stone-400">(pilihan)</span><input className={fieldClass} name="organization" /></label>
+              <details className="sm:col-span-2 rounded-xl border border-stone-200 p-4 text-sm"><summary className="cursor-pointer font-bold text-emerald-800">Maklumat tambahan (pilihan)</summary><div className="mt-4 grid gap-4 sm:grid-cols-2">
+                <label className="font-bold">Negeri<select className={fieldClass} name="state" value={state} onChange={e=>{setState(e.target.value);setDistrict("");}}><option value="">Pilih negeri</option>{Object.keys(DISTRICTS).map(item=><option key={item}>{item}</option>)}</select></label>
+                <label className="font-bold">Daerah<select className={fieldClass} name="district" value={district} disabled={!state} onChange={e=>setDistrict(e.target.value)}><option value="">Pilih daerah</option>{districts.map(item=><option key={item}>{item}</option>)}</select></label>
+                <label className="sm:col-span-2 font-bold">Masjid, surau atau organisasi<input className={fieldClass} name="organization" /></label>
+              </div></details>
               {campaign?.is_full && <label className="sm:col-span-2 text-sm font-bold">Pilihan kursus akan datang<select className={fieldClass} name="preferred_month" required><option value="">Pilih bulan</option><option>November 2026</option><option>Disember 2026</option><option>Januari 2027</option></select></label>}
             </div>
             <label className="mt-6 flex items-start gap-3 text-sm leading-6 text-stone-600"><input type="checkbox" name="registration_consent" value="true" required className="mt-1 h-4 w-4 accent-emerald-700"/>Saya bersetuju maklumat ini digunakan untuk mengurus pendaftaran, pembayaran dan komunikasi kursus ini, serta telah membaca polisi pembatalan di bawah.</label>
             <label className="mt-3 flex items-start gap-3 text-sm leading-6 text-stone-600"><input type="checkbox" name="marketing_consent" value="true" className="mt-1 h-4 w-4 accent-emerald-700"/>Saya bersetuju menerima maklumat kursus Tarannum Technologies pada masa akan datang.</label>
-            {!campaign?.is_full && <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-5">
-              <p className="font-black text-stone-900">Cara membuat pembayaran melalui ToyyibPay</p>
+            <p className="mt-3 text-xs leading-5 text-stone-500">Sumber kempen (jika ada) direkodkan bersama pendaftaran untuk menilai keberkesanan promosi; ID klik individu tidak disimpan.</p>
+            {!campaign?.is_full && <details className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-5">
+              <summary className="cursor-pointer font-black text-stone-900">Cara membuat pembayaran melalui ToyyibPay</summary>
               <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm leading-6 text-stone-600">
                 <li>Tekan butang <b>Teruskan ke Pembayaran RM200</b>.</li>
                 <li>Di ToyyibPay, pilih <b>Online Banking</b> dan jenis akaun <b>Personal Banking</b>.</li>
@@ -278,7 +316,7 @@ const ProfessionalAzanCoursePage: React.FC = () => {
                 <li>Selepas berjaya, anda akan dibawa kembali ke Tarannum.ai untuk pengesahan tempat.</li>
               </ol>
               <p className="mt-4 border-t border-amber-200 pt-4 text-sm leading-6 text-stone-700">Tidak biasa menggunakan perbankan dalam talian? <a href="https://wa.me/60192504000?text=Saya%20perlukan%20bantuan%20untuk%20bayaran%20Kursus%20Profesional%20Azan" target="_blank" rel="noreferrer" className="font-black text-emerald-700 underline">Hubungi kami melalui WhatsApp</a> untuk bantuan atau pilihan pembayaran terus. Tempat disahkan selepas bayaran diterima.</p>
-            </div>}
+            </details>}
             <button disabled={submitting} className="mt-7 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-700 px-6 py-4 font-black text-white transition hover:bg-emerald-800 disabled:opacity-60">{submitting ? "Memproses…" : campaign?.is_full ? "Sertai Senarai Menunggu" : "Teruskan ke Pembayaran RM200"}<ArrowRight className="h-5 w-5" /></button>
             {message && <p role="status" className="mt-4 rounded-xl bg-stone-100 p-4 text-sm text-stone-700">{message}</p>}
             {!campaign?.is_full && <p className="mt-4 text-center text-xs leading-5 text-stone-400">Pembayaran selamat melalui ToyyibPay. Caj transaksi ditanggung Tarannum Technologies.</p>}

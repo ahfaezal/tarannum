@@ -7,10 +7,12 @@ interface Registration {
   state: string; district: string; organization: string | null;
   status: string; marketing_consent: boolean; preferred_month: string | null;
   paid_at: string | null; account_linked: boolean; created_at: string; payment_method: "direct" | "toyyibpay" | null;
+  attribution_source: string; attribution_medium: string | null; attribution_campaign: string | null;
 }
 interface Report {
   campaign: { title: string; capacity: number; paid_count: number; reserved_count: number; available_count: number; price: number };
   status_counts: Record<string, number>;
+  source_counts: { source: string; registrations: number; paid: number }[];
   registrations: Registration[];
 }
 const labels: Record<string, string> = {
@@ -93,6 +95,11 @@ export default function AdminPromotionRegistrations() {
         {[["Jumlah rekod", data.registrations.length], ["Peserta berbayar", `${data.campaign.paid_count} / ${data.campaign.capacity}`], ["Tempahan aktif", data.campaign.reserved_count], ["Tempat tersedia", data.campaign.available_count], ["Senarai menunggu", data.status_counts.waitlisted || 0]].map(([title, value]) => <div key={title} className="rounded-xl border border-slate-200 bg-white p-4"><p className="text-sm text-slate-600">{title}</p><p className="mt-2 text-3xl font-bold text-emerald-800">{value}</p></div>)}
       </section>
       <p className="text-sm text-slate-600">Tempat tersedia mengambil kira peserta berbayar dan tempahan pembayaran yang masih aktif. Status “Menunggu bayaran” bukan bukti bayaran berjaya; rekod lama mungkin mempunyai tempahan yang sudah tamat. Rekod percubaan tidak dikira sebagai peserta berbayar.</p>
+      <section aria-label="Sumber pendaftaran" className="rounded-xl border border-slate-200 bg-white p-5">
+        <h2 className="font-bold text-emerald-900">Sumber pendaftaran hingga bayaran</h2>
+        <p className="mt-1 text-xs text-slate-600">Dikira pada rekod pendaftaran, bukan jumlah pelawat atau bukti atribusi iklan yang muktamad. Rekod lama tanpa sumber dipaparkan sebagai unknown.</p>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{(data.source_counts || []).map(item => <div key={item.source} className="rounded-lg bg-slate-50 p-4"><p className="font-semibold capitalize">{item.source}</p><p className="mt-1 text-sm">{item.registrations} daftar · {item.paid} bayar</p></div>)}</div>
+      </section>
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="text-sm font-semibold">Cari peserta<input value={query} onChange={e => setQuery(e.target.value)} placeholder="Nama, telefon, e-mel, negeri atau daerah" className="mt-2 w-full rounded-lg border border-slate-300 bg-white p-3 font-normal" /></label>
         <label className="text-sm font-semibold">Status<select value={status} onChange={e => setStatus(e.target.value)} className="mt-2 w-full rounded-lg border border-slate-300 bg-white p-3 font-normal"><option value="all">Semua rekod</option><option value="paid_group">Semua peserta berbayar</option>{Object.keys(data.status_counts).sort().map(key => <option key={key} value={key}>{labels[key] || key}</option>)}</select></label>
@@ -106,7 +113,7 @@ export default function AdminPromotionRegistrations() {
             <td className="p-4"><p className="font-bold">{row.full_name}</p><p className="mt-1">{row.phone}</p><p className="break-all">{row.email}</p></td>
             <td className="p-4">{row.district}, {row.state}<p className="mt-1 text-slate-500">{row.organization || "—"}</p></td>
             <td className="p-4"><span className={`inline-block rounded-lg px-2 py-1 font-semibold ${paidStatuses.has(row.status) ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-900"}`}>{labels[row.status] || row.status}</span>{row.payment_method === "direct" && <p className="mt-2 font-bold text-emerald-800">Nota: Bayaran secara terus</p>}<p className="mt-2 text-slate-600">{row.account_linked ? "Akaun dipautkan" : "Akaun belum dipautkan"}</p>{!paidStatuses.has(row.status) && row.status !== "payment_test" && <button type="button" onClick={() => void recordDirectPayment(row)} disabled={updatingId === row.id} className="mt-3 rounded-lg border border-emerald-700 px-3 py-2 font-semibold text-emerald-800 disabled:opacity-50">{updatingId === row.id ? "Merekod…" : "Rekod bayaran terus"}</button>}</td>
-            <td className="p-4"><p>Daftar: {date(row.created_at)}</p><p className="mt-2">Bayar: {date(row.paid_at)}</p></td>
+            <td className="p-4"><p>Daftar: {date(row.created_at)}</p><p className="mt-2">Bayar: {date(row.paid_at)}</p><p className="mt-2 text-slate-500">Sumber: {row.attribution_source || "unknown"}{row.attribution_campaign ? ` · ${row.attribution_campaign}` : ""}</p></td>
             <td className="p-4"><p>{row.preferred_month || "Tiada pilihan bulan"}</p><p className="mt-2 text-slate-600">Persetujuan promosi: {row.marketing_consent ? "Ya" : "Tidak"}</p></td>
           </tr>)}</tbody>
         </table>

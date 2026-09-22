@@ -520,11 +520,24 @@ class PromotionRegistration(Base):
     paid_at = Column(DateTime, nullable=True, index=True)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     preferred_month = Column(String, nullable=True)
+    attribution_source = Column(String(80), nullable=True)
+    attribution_medium = Column(String(80), nullable=True)
+    attribution_campaign = Column(String(160), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     campaign = relationship("PromotionCampaign", foreign_keys=[campaign_id])
     user = relationship("User", foreign_keys=[user_id])
+
+
+class PromotionPaymentAttempt(Base):
+    """Keep every ToyyibPay bill so a late callback remains attributable."""
+    __tablename__ = "promotion_payment_attempts"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    registration_id = Column(UUID(as_uuid=True), ForeignKey("promotion_registrations.id", ondelete="CASCADE"), nullable=False, index=True)
+    bill_code = Column(String, nullable=False, unique=True, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 
 class CourseEnrollment(Base):
@@ -832,6 +845,7 @@ def init_db():
     try:
         Base.metadata.create_all(bind=engine)
         ensure_email_otp_columns()
+        ensure_promotion_attribution_columns()
         ensure_student_names_uppercase()
         ensure_course_management_columns()
         ensure_student_selected_recordings_table()
@@ -845,6 +859,14 @@ def init_db():
     except Exception as e:
         logger.error(f"Error creating database tables: {e}", exc_info=True)
         raise
+
+
+def ensure_promotion_attribution_columns():
+    """Add nullable campaign attribution to existing promotion registrations."""
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE promotion_registrations ADD COLUMN IF NOT EXISTS attribution_source VARCHAR(80)"))
+        conn.execute(text("ALTER TABLE promotion_registrations ADD COLUMN IF NOT EXISTS attribution_medium VARCHAR(80)"))
+        conn.execute(text("ALTER TABLE promotion_registrations ADD COLUMN IF NOT EXISTS attribution_campaign VARCHAR(160)"))
 
 
 def ensure_student_names_uppercase():

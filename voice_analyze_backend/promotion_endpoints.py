@@ -16,10 +16,10 @@ from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, EmailStr, Field, field_validator
-from sqlalchemy import func
+from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 
-from database import PromotionCampaign, PromotionRegistration, User, get_db
+from database import PromotionCampaign, PromotionPaymentAttempt, PromotionRegistration, User, get_db
 from auth import get_current_admin_user
 
 
@@ -38,11 +38,14 @@ class RegistrationCreate(BaseModel):
     full_name: str = Field(min_length=3, max_length=180)
     phone: str = Field(min_length=8, max_length=30)
     email: EmailStr
-    state: str = Field(min_length=2, max_length=80)
-    district: str = Field(min_length=2, max_length=100)
+    state: str = Field(default="", max_length=80)
+    district: str = Field(default="", max_length=100)
     organization: Optional[str] = Field(default=None, max_length=180)
     registration_consent: bool
     marketing_consent: bool = False
+    attribution_source: Optional[str] = Field(default=None, max_length=80)
+    attribution_medium: Optional[str] = Field(default=None, max_length=80)
+    attribution_campaign: Optional[str] = Field(default=None, max_length=160)
 
     @field_validator("phone")
     @classmethod
@@ -248,6 +251,10 @@ def create_registration(slug: str, payload: RegistrationCreate, db: Session = De
     registration.organization = payload.organization.strip() if payload.organization else None
     registration.registration_consent = True
     registration.marketing_consent = payload.marketing_consent
+    if not registration.attribution_source:
+        registration.attribution_source = (payload.attribution_source or "unknown").strip().lower()
+        registration.attribution_medium = (payload.attribution_medium or "").strip().lower() or None
+        registration.attribution_campaign = (payload.attribution_campaign or "").strip() or None
     registration.consented_at = datetime.utcnow()
     registration.status = "interested"
     db.flush()
@@ -260,6 +267,7 @@ def create_registration(slug: str, payload: RegistrationCreate, db: Session = De
         db.commit()
         raise
     registration.toyyibpay_bill_code = bill_code
+    db.add(PromotionPaymentAttempt(registration_id=registration.id, bill_code=bill_code))
     registration.status = "payment_reserved"
     registration.reservation_expires_at = datetime.utcnow() + timedelta(minutes=RESERVATION_MINUTES)
     db.commit()
@@ -291,6 +299,10 @@ def join_waitlist(slug: str, payload: WaitlistCreate, db: Session = Depends(get_
     registration.organization = payload.organization.strip() if payload.organization else None
     registration.registration_consent = True
     registration.marketing_consent = payload.marketing_consent
+    if not registration.attribution_source:
+        registration.attribution_source = (payload.attribution_source or "unknown").strip().lower()
+        registration.attribution_medium = (payload.attribution_medium or "").strip().lower() or None
+        registration.attribution_campaign = (payload.attribution_campaign or "").strip() or None
     registration.preferred_month = payload.preferred_month
     registration.status = "waitlisted"
     registration.consented_at = datetime.utcnow()
@@ -317,8 +329,14 @@ def toyyibpay_callback(
     except ValueError as exc:
         raise HTTPException(400, "Rujukan pembayaran tidak sah") from exc
     registration = db.query(PromotionRegistration).filter(PromotionRegistration.id == registration_id).with_for_update().first()
-    if not registration or registration.toyyibpay_bill_code != billcode:
+    if not registration:
         raise HTTPException(404, "Pendaftaran tidak ditemui")
+    known_bill = registration.toyyibpay_bill_code == billcode or db.query(PromotionPaymentAttempt.id).filter(
+        PromotionPaymentAttempt.registration_id == registration.id,
+        PromotionPaymentAttempt.bill_code == billcode,
+    ).first() is not None
+    if not known_bill:
+        raise HTTPException(404, "Bil pembayaran tidak ditemui")
     if status == "1" and registration.status not in {"paid", "account_linked", "attended"}:
         registration.status = "paid"
         registration.toyyibpay_reference_no = refno
@@ -329,7 +347,7 @@ def toyyibpay_callback(
         if existing_user:
             registration.user_id = existing_user.id
             registration.status = "account_linked"
-    elif status == "3" and registration.status == "payment_reserved":
+    elif status == "3" and registration.status == "payment_reserved" and registration.toyyibpay_bill_code == billcode:
         registration.status = "payment_failed"
         registration.reservation_expires_at = None
     db.commit()
@@ -378,6 +396,16 @@ def admin_registrations(
     return {
         "campaign": _public_payload(campaign, paid, reserved),
         "status_counts": status_counts,
+        "source_counts": [
+            {"source": source or "unknown", "registrations": count, "paid": paid_count}
+            for source, count, paid_count in db.query(
+                PromotionRegistration.attribution_source,
+                func.count(PromotionRegistration.id),
+                func.sum(case((PromotionRegistration.status.in_(["paid", "account_linked", "attended"]), 1), else_=0)),
+            ).filter(PromotionRegistration.campaign_id == campaign.id)
+            .group_by(PromotionRegistration.attribution_source)
+            .order_by(func.count(PromotionRegistration.id).desc()).all()
+        ],
         "registrations": [
             {
                 "id": str(row.id),
@@ -394,6 +422,9 @@ def admin_registrations(
                 "paid_at": row.paid_at.isoformat() if row.paid_at else None,
                 "account_linked": row.user_id is not None,
                 "created_at": row.created_at.isoformat(),
+                "attribution_source": row.attribution_source or "unknown",
+                "attribution_medium": row.attribution_medium,
+                "attribution_campaign": row.attribution_campaign,
             }
             for row in rows
         ],
