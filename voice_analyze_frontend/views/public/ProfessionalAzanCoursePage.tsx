@@ -13,6 +13,7 @@ import {
   Users,
   Utensils,
 } from "lucide-react";
+import { getMetaConsent, metaPixelConfigured, setMetaConsent, trackMetaEvent } from "../../services/metaPixel";
 
 const DISTRICTS: Record<string, string[]> = {
   Johor: ["Batu Pahat", "Johor Bahru", "Kluang", "Kota Tinggi", "Kulai", "Mersing", "Muar", "Pontian", "Segamat", "Tangkak"],
@@ -77,6 +78,7 @@ const ProfessionalAzanCoursePage: React.FC = () => {
   const [paymentStatus, setPaymentStatus] = useState<{ paid: boolean; account_linked: boolean; email: string; full_name: string; status: string } | null>(null);
   const [statusRefresh, setStatusRefresh] = useState(0);
   const [statusChecking, setStatusChecking] = useState(false);
+  const [analyticsConsent, setAnalyticsConsent] = useState(() => getMetaConsent());
   const districts = useMemo(() => DISTRICTS[state] || [], [state]);
   const isPaymentReturn = location.pathname.endsWith("/pembayaran");
   const registrationToken = searchParams.get("registration") || "";
@@ -90,6 +92,29 @@ const ProfessionalAzanCoursePage: React.FC = () => {
       .then(data => data && setCampaign(data))
       .catch(() => undefined);
   }, []);
+
+  useEffect(() => {
+    if (!isPaymentReturn && analyticsConsent === "granted") {
+      trackMetaEvent("ViewContent", {
+        content_name: "Kursus Profesional Azan Maqam Hijjaz",
+        content_category: "Kursus",
+        value: 200,
+        currency: "MYR",
+      });
+    }
+  }, [analyticsConsent, isPaymentReturn]);
+
+  useEffect(() => {
+    if (!paymentStatus?.paid || analyticsConsent !== "granted" || !registrationToken) return;
+    const purchaseKey = `professional_azan_purchase_${registrationToken}`;
+    if (window.localStorage.getItem(purchaseKey)) return;
+    if (trackMetaEvent("Purchase", {
+      content_name: "Kursus Profesional Azan Maqam Hijjaz",
+      content_type: "product",
+      value: 200,
+      currency: "MYR",
+    })) window.localStorage.setItem(purchaseKey, "sent");
+  }, [analyticsConsent, paymentStatus?.paid, registrationToken]);
 
   useEffect(() => {
     if (!isPaymentReturn || !registrationToken) return;
@@ -134,7 +159,15 @@ const ProfessionalAzanCoursePage: React.FC = () => {
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.detail || "Pendaftaran belum dapat diproses.");
       if (payload.already_paid && payload.registration_token) window.location.assign(`/kursus-profesional-azan/pembayaran?registration=${encodeURIComponent(payload.registration_token)}`);
-      else if (payload.checkout_url) window.location.assign(payload.checkout_url);
+      else if (payload.checkout_url) {
+        trackMetaEvent("InitiateCheckout", {
+          content_name: "Kursus Profesional Azan Maqam Hijjaz",
+          content_type: "product",
+          value: 200,
+          currency: "MYR",
+        });
+        window.location.assign(payload.checkout_url);
+      }
       else setMessage("Minat anda telah direkodkan. Kami akan menghubungi anda apabila pembayaran dibuka.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Pendaftaran belum dapat diproses.");
@@ -163,6 +196,11 @@ const ProfessionalAzanCoursePage: React.FC = () => {
 
   return (
     <div className="bg-[#f7f4ec] text-stone-900">
+      {metaPixelConfigured && analyticsConsent === null && <aside className="fixed inset-x-4 bottom-4 z-50 mx-auto max-w-2xl rounded-2xl border border-stone-200 bg-white p-5 shadow-2xl" aria-label="Persetujuan analitik pemasaran">
+        <p className="font-black text-stone-900">Bantu kami menilai keberkesanan promosi</p>
+        <p className="mt-2 text-sm leading-6 text-stone-600">Dengan izin anda, Meta Pixel merekodkan lawatan dan peringkat pembayaran kursus. Nama, e-mel, nombor telefon dan ID klik individu tidak dihantar melalui integrasi ini.</p>
+        <div className="mt-4 flex flex-wrap gap-3"><button type="button" onClick={() => { setMetaConsent(true); setAnalyticsConsent("granted"); }} className="rounded-xl bg-emerald-700 px-5 py-3 font-bold text-white">Benarkan analitik</button><button type="button" onClick={() => { setMetaConsent(false); setAnalyticsConsent("denied"); }} className="rounded-xl border border-stone-300 px-5 py-3 font-bold text-stone-700">Tidak, terima kasih</button></div>
+      </aside>}
       <section className="relative isolate overflow-hidden bg-[#073f32] text-white">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_82%_18%,rgba(212,168,73,.24),transparent_30%),linear-gradient(135deg,transparent_0%,rgba(255,255,255,.04)_55%,transparent_100%)]" />
         <div className="relative mx-auto grid max-w-7xl gap-12 px-5 py-12 sm:px-8 lg:grid-cols-[1.08fr_.92fr] lg:items-center lg:py-20">
