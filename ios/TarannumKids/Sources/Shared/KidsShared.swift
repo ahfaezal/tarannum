@@ -9,8 +9,8 @@ enum KidsConstants {
     static let accessStartHour = 6
     static let bedtimeHour = 23
     static let bedtimeMinute = 30
-    static let managedStoreName = ManagedSettingsStore.Name("tarannum-kids")
-    static let dailyScheduleName = DeviceActivityName("tarannum-kids-daily")
+    static var managedStoreName: ManagedSettingsStore.Name { ManagedSettingsStore.Name("tarannum-kids") }
+    static var dailyScheduleName: DeviceActivityName { DeviceActivityName("tarannum-kids-daily") }
 }
 
 struct DailyAccessState: Codable, Equatable {
@@ -23,7 +23,7 @@ struct DailyAccessState: Codable, Equatable {
 }
 
 enum SharedState {
-    private static let defaults = UserDefaults(suiteName: KidsConstants.appGroup)!
+    private static var defaults: UserDefaults { UserDefaults(suiteName: KidsConstants.appGroup)! }
     private static let accessKey = "daily-access-state"
     private static let selectionKey = "family-activity-selection"
 
@@ -47,7 +47,7 @@ enum SharedState {
 }
 
 enum ShieldManager {
-    private static let store = ManagedSettingsStore(named: KidsConstants.managedStoreName)
+    private static var store: ManagedSettingsStore { ManagedSettingsStore(named: KidsConstants.managedStoreName) }
 
     static func apply() {
         let selection = SharedState.familySelection
