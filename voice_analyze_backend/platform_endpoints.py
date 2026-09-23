@@ -1121,6 +1121,33 @@ async def get_student_activity_summary(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/kids/daily-access")
+async def get_kids_daily_access(
+    current_user: User = Depends(get_current_student_user),
+    db: Session = Depends(get_db),
+):
+    """Return the server-authoritative Tarannum Kids unlock decision."""
+    from kids_access_service import access_window, daily_access_response
+    from student_activity_analytics_service import sum_practice_seconds
+
+    window = access_window()
+    events = (
+        db.query(StudentActivityEvent)
+        .filter(
+            StudentActivityEvent.student_id == current_user.id,
+            StudentActivityEvent.event_type.in_(("practice_started", "practice_stopped")),
+            StudentActivityEvent.occurred_at >= window.starts_at_utc_naive,
+            StudentActivityEvent.occurred_at < window.expires_at_utc_naive,
+        )
+        .order_by(StudentActivityEvent.occurred_at.asc(), StudentActivityEvent.created_at.asc())
+        .all()
+    )
+    reference_ids = {event.reference_id for event in events if event.reference_id}
+    references = db.query(Reference).filter(Reference.id.in_(reference_ids)).all() if reference_ids else []
+    durations = {str(reference.id): reference.duration for reference in references}
+    return daily_access_response(sum_practice_seconds(events, durations), window)
+
+
 @router.post("/student/activity-events")
 async def create_student_activity_event(
     activity: StudentActivityEventRequest,
