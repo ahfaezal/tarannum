@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { CertificateSummary, CertificationCourse, downloadCertificate, getAdminUserCertificates, getCertificatePdfBlob, managedCertificationRequest as api } from '../services/certificationService';
 import { QariContent } from '../services/platformService';
 import TrainingChallengePanel from './TrainingChallengePanel';
+import CoursePerformanceDashboard from './CoursePerformanceDashboard';
 import { courseContextPath } from '../utils/certificationRequestUtils';
 
 type Context = {qaris: {id: string; name: string}[]; references: QariContent[]; students: {id: string; name: string; email?: string; registered_at?: string}[]; student_total?: number; student_offset?: number; student_limit?: number};
@@ -92,6 +93,7 @@ export default function CourseManager({admin = false, defaultExpanded = false}: 
       </details>
       {course && <div className="space-y-4">
         <h3 className="font-bold">{course.title} · {course.reference_title} · {course.required_recording_count} rakaman sah untuk 60 minit</h3>
+        {admin && <CoursePerformanceDashboard courseId={course.id} />}
         <form className="grid gap-3 md:grid-cols-4" onSubmit={e => {e.preventDefault(); setAppliedFilters({search, ...filters}); void run(() => loadContext(course.qari_id, search, {...filters, offset: 0}));}}>
           <label>Nama atau e-mel<input className="block w-full rounded border p-2" placeholder="Cari calon peserta" value={search} onChange={e => setSearch(e.target.value)} /></label>
           <label>Tarikh daftar dari<input type="date" className="block w-full rounded border p-2" value={filters.registered_from} onChange={e => setFilters({...filters, registered_from:e.target.value})} /></label>

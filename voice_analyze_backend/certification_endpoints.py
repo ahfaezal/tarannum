@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import io
 import os
+import statistics
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -272,6 +273,145 @@ def managed_enrollments(course_id: UUID, user: User = Depends(get_current_user),
         row['competency_status'] = application.status if application else 'not_applied'
     db.commit()
     return rows
+
+
+def _score_band(score: float) -> str:
+    if score >= 90:
+        return '90–100'
+    if score >= 75:
+        return '75–89'
+    if score >= 60:
+        return '60–74'
+    return '<60'
+
+
+@router.get('/managed/courses/{course_id}/performance')
+def managed_course_performance(course_id: UUID, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Read-only course analytics for the reusable admin/Qari infographic."""
+    course = _managed_course(db, course_id, user)
+    reference = db.query(Reference).filter(Reference.id == course.reference_id).first()
+    enrollments = db.query(CourseEnrollment, User).join(
+        User, User.id == CourseEnrollment.student_id
+    ).filter(CourseEnrollment.course_id == course_id).order_by(User.full_name.asc()).all()
+    student_ids = [enrollment.student_id for enrollment, _ in enrollments]
+
+    completion_end = course.starts_at + timedelta(days=course.completion_window_days)
+    scored_rows = []
+    if student_ids:
+        scored_rows = db.query(UserSession, AnalysisResult).join(
+            AnalysisResult, AnalysisResult.user_session_id == UserSession.id
+        ).filter(
+            UserSession.user_id.in_(student_ids),
+            UserSession.reference_id == course.reference_id,
+            UserSession.created_at >= course.starts_at,
+            UserSession.created_at <= completion_end,
+        ).all()
+
+    applications = db.query(CertificateApplication).filter(
+        CertificateApplication.course_id == course_id
+    ).all()
+    certificates = db.query(Certificate).filter(Certificate.course_id == course_id).all()
+    application_by_student = {}
+    for application in sorted(applications, key=lambda row: row.submitted_at or datetime.min):
+        application_by_student[application.student_id] = application
+
+    recordings_by_student: Dict[UUID, list] = {student_id: [] for student_id in student_ids}
+    for session, analysis in scored_rows:
+        recordings_by_student.setdefault(session.user_id, []).append((session, analysis))
+
+    participant_rows = []
+    best_scores = []
+    for enrollment, student in enrollments:
+        recordings = recordings_by_student.get(enrollment.student_id, [])
+        scores = [float(analysis.score) for _, analysis in recordings]
+        best_score = max(scores) if scores else None
+        if best_score is not None:
+            best_scores.append(best_score)
+        application = application_by_student.get(enrollment.student_id)
+        participant_rows.append({
+            'student_id': str(enrollment.student_id),
+            'student_name': (student.full_name or student.email or 'PESERTA').upper(),
+            'attendance_status': enrollment.attendance_status,
+            'valid_recording_count': enrollment.valid_recording_count,
+            'required_recording_count': enrollment.required_recording_count,
+            'credited_practice_minutes': round((enrollment.credited_practice_seconds or 0) / 60, 1),
+            'recording_count': len(recordings),
+            'average_score': round(sum(scores) / len(scores), 1) if scores else None,
+            'best_score': round(best_score, 1) if best_score is not None else None,
+            'ai_qualified': bool(best_score is not None and best_score >= 75),
+            'qari_status': application.status if application else 'not_applied',
+        })
+
+    scores = [float(analysis.score) for _, analysis in scored_rows]
+    attendance_count = sum(enrollment.attendance_status == 'attended' for enrollment, _ in enrollments)
+    practice_complete = sum(
+        enrollment.attendance_status == 'attended' and (
+            enrollment.eligibility_override or
+            (enrollment.required_recording_count > 0 and enrollment.valid_recording_count >= enrollment.required_recording_count)
+        ) for enrollment, _ in enrollments
+    )
+    score_bands = {label: 0 for label in ('<60', '60–74', '75–89', '90–100')}
+    for score in scores:
+        score_bands[_score_band(score)] += 1
+    best_score_bands = {label: 0 for label in ('<60', '60–74', '75–89', '90–100')}
+    for score in best_scores:
+        best_score_bands[_score_band(score)] += 1
+
+    application_counts = {status: sum(row.status == status for row in applications) for status in (
+        'pending', 'approved', 'rejected', 'resubmission_requested'
+    )}
+    attendance_certificates = sum(row.certificate_type == 'attendance' and row.status == 'valid' for row in certificates)
+    competency_certificates = sum(row.certificate_type != 'attendance' and row.status == 'valid' for row in certificates)
+    scoring_versions: Dict[str, int] = {}
+    for session, _ in scored_rows:
+        version = session.scoring_version or 'Tidak direkodkan'
+        scoring_versions[version] = scoring_versions.get(version, 0) + 1
+
+    return {
+        'course': {
+            **_course_payload(course, reference),
+            'completion_deadline': completion_end.isoformat(),
+        },
+        'overview': {
+            'participants': len(enrollments),
+            'attended': attendance_count,
+            'attendance_rate': round(attendance_count * 100 / len(enrollments), 1) if enrollments else 0,
+            'practice_complete': practice_complete,
+            'practice_completion_rate': round(practice_complete * 100 / len(enrollments), 1) if enrollments else 0,
+            'valid_recordings': sum(enrollment.valid_recording_count for enrollment, _ in enrollments),
+            'scored_recordings': len(scores),
+            'total_practice_hours': round(sum((enrollment.credited_practice_seconds or 0) for enrollment, _ in enrollments) / 3600, 1),
+        },
+        'scores': {
+            'average': round(sum(scores) / len(scores), 1) if scores else None,
+            'median': round(statistics.median(scores), 1) if scores else None,
+            'highest': round(max(scores), 1) if scores else None,
+            'lowest': round(min(scores), 1) if scores else None,
+            'recordings_at_60': sum(score >= 60 for score in scores),
+            'recordings_at_75': sum(score >= 75 for score in scores),
+            'students_at_75': sum(score >= 75 for score in best_scores),
+            'recording_distribution': score_bands,
+            'participant_best_distribution': best_score_bands,
+            'versions': scoring_versions,
+        },
+        'funnel': [
+            {'label': 'Berdaftar', 'count': len(enrollments)},
+            {'label': 'Hadir', 'count': attendance_count},
+            {'label': 'Latihan lengkap', 'count': practice_complete},
+            {'label': 'Skor AI ≥75%', 'count': sum(score >= 75 for score in best_scores)},
+            {'label': 'Hantar kepada qari', 'count': len(applications)},
+            {'label': 'Lulus penilaian qari', 'count': application_counts['approved']},
+            {'label': 'Sijil kompetensi', 'count': competency_certificates},
+        ],
+        'certification': {
+            'applications': len(applications),
+            **application_counts,
+            'attendance_certificates': attendance_certificates,
+            'competency_certificates': competency_certificates,
+        },
+        'participants': participant_rows,
+        'generated_at': datetime.utcnow().isoformat(),
+    }
 
 
 @router.patch('/managed/enrollments/{enrollment_id}/attendance')
