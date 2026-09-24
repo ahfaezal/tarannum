@@ -1,5 +1,6 @@
 import DeviceActivity
 import FamilyControls
+import AVFoundation
 import SwiftUI
 
 @main
@@ -11,7 +12,7 @@ struct TarannumKidsApp: App {
 }
 
 @MainActor
-final class KidsViewModel: ObservableObject {
+final class KidsViewModel: NSObject, ObservableObject {
     @Published var access: DailyAccessState?
     @Published var selection = SharedState.familySelection
     @Published var isPickerPresented = false
@@ -24,7 +25,14 @@ final class KidsViewModel: ObservableObject {
     @Published var isSigningIn = false
     @Published var isRefreshing = false
     @Published var lastCheckedAt: Date?
+    @Published var references: [PracticeReference] = []
+    @Published var selectedReferenceID = ""
+    @Published var isRecording = false
+    @Published var isSubmittingRecording = false
+    @Published var practiceMessage = "Pilih tugasan dan mulakan rakaman."
     private let api = KidsAPIClient()
+    private var audioRecorder: AVAudioRecorder?
+    private var practiceSessionID: String?
 
     var isSignedIn: Bool { session != nil }
 
@@ -69,6 +77,7 @@ final class KidsViewModel: ObservableObject {
             session = try await api.login(email: normalizedEmail, password: password)
             password = ""
             await refreshAccess()
+            await loadReferences()
         } catch {
             message = error.localizedDescription
             ShieldManager.apply()
@@ -89,7 +98,10 @@ final class KidsViewModel: ObservableObject {
     private func finishAuthorizedSetup() async {
         do {
             try scheduleDailyBoundary()
-            if isSignedIn { await refreshAccess() }
+            if isSignedIn {
+                await refreshAccess()
+                await loadReferences()
+            }
             else { message = "Log masuk menggunakan akaun pelajar Tarannum.ai."; ShieldManager.apply() }
         } catch {
             message = "Kebenaran diterima, tetapi jadual kawalan tidak dapat dimulakan."
@@ -129,6 +141,91 @@ final class KidsViewModel: ObservableObject {
             access = SharedState.dailyAccess
             message = "Tidak dapat mengesahkan latihan. Aplikasi kekal dilindungi."
             ShieldManager.apply()
+        }
+    }
+
+    func loadReferences() async {
+        guard references.isEmpty else { return }
+        do {
+            references = try await api.fetchPracticeReferences()
+            if selectedReferenceID.isEmpty { selectedReferenceID = references.first?.id ?? "" }
+            if references.isEmpty { practiceMessage = "Tiada tugasan latihan tersedia untuk akaun ini." }
+        } catch {
+            practiceMessage = "Tugasan tidak dapat dimuatkan. Cuba buka semula aplikasi."
+        }
+    }
+
+    func toggleRecording() async {
+        if isRecording { await finishRecording() }
+        else { await startRecording() }
+    }
+
+    private func startRecording() async {
+        guard !selectedReferenceID.isEmpty else { practiceMessage = "Pilih tugasan latihan dahulu."; return }
+        let permitted = await AVAudioApplication.requestRecordPermission()
+        guard permitted else { practiceMessage = "Benarkan akses mikrofon dalam Settings untuk membuat rakaman."; return }
+        do {
+            let audioSession = AVAudioSession.sharedInstance()
+            try audioSession.setCategory(.record, mode: .spokenAudio)
+            try audioSession.setActive(true)
+            let fileURL = FileManager.default.temporaryDirectory.appending(path: "tarannum-\(UUID().uuidString).m4a")
+            let settings: [String: Any] = [
+                AVFormatIDKey: kAudioFormatMPEG4AAC,
+                AVSampleRateKey: 44_100,
+                AVNumberOfChannelsKey: 1,
+                AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue,
+            ]
+            let recorder = try AVAudioRecorder(url: fileURL, settings: settings)
+            recorder.prepareToRecord()
+            guard recorder.record() else { throw KidsAPIError.server("Rakaman tidak dapat dimulakan.") }
+            let sessionID = UUID().uuidString
+            try await api.sendPracticeEvent(type: "practice_started", referenceID: selectedReferenceID, sessionID: sessionID)
+            audioRecorder = recorder
+            practiceSessionID = sessionID
+            isRecording = true
+            practiceMessage = "Rakaman sedang berjalan. Baca tugasan dengan jelas, kemudian tekan Selesai Rakaman."
+        } catch {
+            audioRecorder?.stop()
+            audioRecorder = nil
+            practiceMessage = error.localizedDescription
+        }
+    }
+
+    private func finishRecording() async {
+        guard let recorder = audioRecorder, let sessionID = practiceSessionID else { return }
+        let duration = recorder.currentTime
+        let fileURL = recorder.url
+        recorder.stop()
+        audioRecorder = nil
+        isRecording = false
+        isSubmittingRecording = true
+        practiceMessage = "Menghantar rakaman untuk pengesahan…"
+        defer {
+            isSubmittingRecording = false
+            try? FileManager.default.removeItem(at: fileURL)
+        }
+        guard duration >= 3 else {
+            practiceMessage = "Rakaman terlalu pendek. Buat rakaman sekurang-kurangnya 3 saat."
+            return
+        }
+        do {
+            try await api.submitRecording(fileURL: fileURL, referenceID: selectedReferenceID, sessionID: sessionID)
+            try await api.sendPracticeEvent(
+                type: "practice_stopped",
+                referenceID: selectedReferenceID,
+                sessionID: sessionID,
+                duration: duration
+            )
+            try await api.sendPracticeEvent(
+                type: "recording_submitted",
+                referenceID: selectedReferenceID,
+                sessionID: sessionID,
+                duration: duration
+            )
+            practiceMessage = "Rakaman diterima. Kemajuan telah dikemas kini."
+            await refreshAccess()
+        } catch {
+            practiceMessage = "Rakaman tidak berjaya dihantar. Masa belum dikreditkan. Cuba semula."
         }
     }
 
@@ -206,6 +303,27 @@ struct KidsHomeView: View {
             if let checkedAt = model.lastCheckedAt {
                 Text("Semakan terakhir: \(checkedAt.formatted(date: .omitted, time: .shortened))")
                     .font(.caption).foregroundStyle(.secondary)
+            }
+            Divider().padding(.vertical, 4)
+            Text("Latihan Hari Ini").font(.title2.bold())
+            if model.references.isEmpty {
+                ProgressView("Memuatkan tugasan…")
+            } else {
+                Picker("Tugasan", selection: $model.selectedReferenceID) {
+                    ForEach(model.references) { reference in
+                        Text(reference.maqam?.isEmpty == false ? "\(reference.title) · \(reference.maqam!)" : reference.title)
+                            .tag(reference.id)
+                    }
+                }
+                .pickerStyle(.menu)
+                Text(model.practiceMessage).font(.subheadline).multilineTextAlignment(.center)
+                Button(model.isRecording ? "Selesai Rakaman" : "Mula Rakaman") {
+                    Task { await model.toggleRecording() }
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(model.isRecording ? .red : .green)
+                .disabled(model.isSubmittingRecording)
+                if model.isSubmittingRecording { ProgressView("Menghantar rakaman…") }
             }
             Button("Pilih aplikasi untuk dilindungi") { model.isPickerPresented = true }.buttonStyle(.bordered)
             Button("Log keluar", role: .destructive) { model.signOut() }.buttonStyle(.borderless)

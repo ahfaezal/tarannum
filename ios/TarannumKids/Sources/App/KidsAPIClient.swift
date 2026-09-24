@@ -7,6 +7,13 @@ struct KidsAuthSession: Codable, Equatable {
     let fullName: String?
 }
 
+struct PracticeReference: Decodable, Identifiable, Hashable {
+    let id: String
+    let title: String
+    let maqam: String?
+    let duration: Double?
+}
+
 enum KidsAPIError: LocalizedError {
     case invalidCredentials
     case accountNotReady(String)
@@ -64,6 +71,76 @@ struct KidsAPIClient {
         return try decoder.decode(DailyAccessState.self, from: data)
     }
 
+    func fetchPracticeReferences() async throws -> [PracticeReference] {
+        guard let session = savedSession else { throw KidsAPIError.sessionExpired }
+        var request = URLRequest(url: baseURL.appending(path: "/api/references"))
+        request.setValue("Bearer \(session.accessToken)", forHTTPHeaderField: "Authorization")
+        request.timeoutInterval = 20
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+            throw URLError(.badServerResponse)
+        }
+        return try JSONDecoder().decode(ReferenceListResponse.self, from: data).references
+    }
+
+    func sendPracticeEvent(
+        type: String,
+        referenceID: String,
+        sessionID: String,
+        duration: Double? = nil
+    ) async throws {
+        guard let session = savedSession else { throw KidsAPIError.sessionExpired }
+        var request = URLRequest(url: baseURL.appending(path: "/api/platform/student/activity-events"))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(session.accessToken)", forHTTPHeaderField: "Authorization")
+        request.timeoutInterval = 20
+        request.httpBody = try JSONEncoder().encode(ActivityEvent(
+            eventType: type,
+            referenceID: referenceID,
+            sessionID: sessionID,
+            durationSeconds: duration,
+            occurredAt: ISO8601DateFormatter().string(from: Date())
+        ))
+        let (_, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+            throw URLError(.badServerResponse)
+        }
+    }
+
+    func submitRecording(
+        fileURL: URL,
+        referenceID: String,
+        sessionID: String
+    ) async throws {
+        guard let session = savedSession else { throw KidsAPIError.sessionExpired }
+        let boundary = "TarannumKids-\(UUID().uuidString)"
+        var request = URLRequest(url: baseURL.appending(path: "/api/scoring/jobs"))
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(session.accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 90
+
+        var body = Data()
+        body.appendFormField("reference_id", value: referenceID, boundary: boundary)
+        body.appendFormField("client_session_id", value: sessionID, boundary: boundary)
+        body.appendFormField("recording_mode", value: "R1", boundary: boundary)
+        body.appendFormField("scoring_version", value: "V2.3", boundary: boundary)
+        body.appendFormField("recording_attempt", value: "1", boundary: boundary)
+        body.append("--\(boundary)\r\n")
+        body.append("Content-Disposition: form-data; name=\"user_audio\"; filename=\"practice.m4a\"\r\n")
+        body.append("Content-Type: audio/mp4\r\n\r\n")
+        body.append(try Data(contentsOf: fileURL))
+        body.append("\r\n--\(boundary)--\r\n")
+        request.httpBody = body
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, http.statusCode == 202 else {
+            let detail = (try? JSONDecoder().decode(ErrorResponse.self, from: data))?.detail
+            throw KidsAPIError.server(detail ?? "Rakaman tidak dapat dihantar. Cuba semula.")
+        }
+    }
+
     private func apiError(status: Int, data: Data) -> Error {
         let detail = (try? JSONDecoder().decode(ErrorResponse.self, from: data))?.detail
         switch status {
@@ -75,6 +152,24 @@ struct KidsAPIClient {
 }
 
 private struct LoginRequest: Encodable { let email: String; let password: String }
+
+private struct ReferenceListResponse: Decodable { let references: [PracticeReference] }
+
+private struct ActivityEvent: Encodable {
+    let eventType: String
+    let referenceID: String
+    let sessionID: String
+    let durationSeconds: Double?
+    let occurredAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case eventType = "event_type"
+        case referenceID = "reference_id"
+        case sessionID = "session_id"
+        case durationSeconds = "duration_seconds"
+        case occurredAt = "occurred_at"
+    }
+}
 
 private struct LoginResponse: Decodable {
     let accessToken: String
@@ -130,5 +225,17 @@ private enum KidsKeychain {
             kSecAttrAccount as String: account,
         ]
         SecItemDelete(query as CFDictionary)
+    }
+}
+
+private extension Data {
+    mutating func append(_ string: String) {
+        append(string.data(using: .utf8)!)
+    }
+
+    mutating func appendFormField(_ name: String, value: String, boundary: String) {
+        append("--\(boundary)\r\n")
+        append("Content-Disposition: form-data; name=\"\(name)\"\r\n\r\n")
+        append("\(value)\r\n")
     }
 }
