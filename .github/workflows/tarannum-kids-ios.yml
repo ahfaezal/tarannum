@@ -108,8 +108,10 @@ jobs:
             "$APP_PATH/PlugIns/ShieldConfiguration.appex"
           do
             ENTITLEMENTS=$(codesign -d --entitlements :- "$BUNDLE_PATH" 2>/dev/null)
-            echo "$ENTITLEMENTS" | plutil -extract com.apple.developer.family-controls raw -o - - | grep -qx true
-            echo "$ENTITLEMENTS" | plutil -extract com.apple.security.application-groups raw -o - - | grep -q group.ai.tarannum.kids
+            echo "Verifying $(basename "$BUNDLE_PATH")"
+            echo "$ENTITLEMENTS" | grep -q '<key>com.apple.developer.family-controls</key>'
+            echo "$ENTITLEMENTS" | grep -q '<key>com.apple.security.application-groups</key>'
+            echo "$ENTITLEMENTS" | grep -q '<string>group.ai.tarannum.kids</string>'
           done
       - name: Upload directly to TestFlight
         env:
