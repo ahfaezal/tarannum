@@ -589,7 +589,7 @@ struct KidsHomeView: View {
         if score >= 85 { return "Bacaan sangat baik. Kekalkan sebutan, tempo dan alunan ini." }
         if score >= 70 { return "Kemajuan yang baik. Teruskan latihan untuk memperhalusi bacaan." }
         if score >= 50 { return "Asas bacaan semakin baik. Ulang latihan dengan memberi perhatian pada sebutan dan masa." }
-        return "Dengar audio contoh sekali lagi, kemudian ulang bacaan secara perlahan dan jelas." }
+        return "Dengar audio contoh sekali lagi, kemudian ulang bacaan secara perlahan dan jelas."
     }
 
     private func localizedFocusArea(_ value: String) -> String {
