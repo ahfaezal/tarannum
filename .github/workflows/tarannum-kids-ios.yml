@@ -98,6 +98,19 @@ jobs:
           -archivePath "$RUNNER_TEMP/TarannumKids.xcarchive"
           -exportPath "$RUNNER_TEMP/TarannumKidsExport"
           -exportOptionsPlist Configuration/ExportOptions.plist
+      - name: Verify signed Family Controls entitlements
+        run: |
+          APP_PATH="$RUNNER_TEMP/TarannumKids.xcarchive/Products/Applications/TarannumKids.app"
+          for BUNDLE_PATH in \
+            "$APP_PATH" \
+            "$APP_PATH/PlugIns/DeviceActivityMonitor.appex" \
+            "$APP_PATH/PlugIns/ShieldAction.appex" \
+            "$APP_PATH/PlugIns/ShieldConfiguration.appex"
+          do
+            ENTITLEMENTS=$(codesign -d --entitlements :- "$BUNDLE_PATH" 2>/dev/null)
+            echo "$ENTITLEMENTS" | plutil -extract com.apple.developer.family-controls raw -o - - | grep -qx true
+            echo "$ENTITLEMENTS" | plutil -extract com.apple.security.application-groups raw -o - - | grep -q group.ai.tarannum.kids
+          done
       - name: Upload directly to TestFlight
         env:
           API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
