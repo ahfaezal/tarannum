@@ -22,6 +22,8 @@ final class KidsViewModel: ObservableObject {
     @Published var email = ""
     @Published var password = ""
     @Published var isSigningIn = false
+    @Published var isRefreshing = false
+    @Published var lastCheckedAt: Date?
     private let api = KidsAPIClient()
 
     var isSignedIn: Bool { session != nil }
@@ -102,6 +104,13 @@ final class KidsViewModel: ObservableObject {
     }
 
     func refreshAccess() async {
+        guard !isRefreshing else { return }
+        isRefreshing = true
+        message = "Sedang menyemak kemajuan…"
+        defer {
+            isRefreshing = false
+            lastCheckedAt = Date()
+        }
         do {
             let state = try await api.fetchDailyAccess()
             SharedState.dailyAccess = state
@@ -184,7 +193,20 @@ struct KidsHomeView: View {
             if let session = model.session { Text(session.fullName ?? session.email).font(.headline) }
             ProgressView(value: Double(model.access?.creditedSeconds ?? 0),
                          total: Double(model.access?.requiredSeconds ?? KidsConstants.requiredPracticeSeconds))
-            Button("Semak kemajuan") { Task { await model.refreshAccess() } }.buttonStyle(.borderedProminent)
+            if let access = model.access {
+                Text("\(access.creditedSeconds / 60) daripada \(access.requiredSeconds / 60) minit selesai")
+                    .font(.subheadline).foregroundStyle(.secondary)
+            }
+            Button(model.isRefreshing ? "Sedang menyemak…" : "Semak kemajuan") {
+                Task { await model.refreshAccess() }
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(model.isRefreshing)
+            if model.isRefreshing { ProgressView() }
+            if let checkedAt = model.lastCheckedAt {
+                Text("Semakan terakhir: \(checkedAt.formatted(date: .omitted, time: .shortened))")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             Button("Pilih aplikasi untuk dilindungi") { model.isPickerPresented = true }.buttonStyle(.bordered)
             Button("Log keluar", role: .destructive) { model.signOut() }.buttonStyle(.borderless)
         }
