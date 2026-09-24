@@ -29,6 +29,7 @@ final class KidsViewModel: NSObject, ObservableObject {
     @Published var selectedReferenceID = ""
     @Published var isRecording = false
     @Published var recordingDuration: TimeInterval = 0
+    @Published var recordingTargetDuration: TimeInterval = 0
     @Published var isPlayingReference = false
     @Published var isLoadingReferenceAudio = false
     @Published var referencePlaybackTime: TimeInterval = 0
@@ -44,6 +45,7 @@ final class KidsViewModel: NSObject, ObservableObject {
     private var playbackTimer: Timer?
     private var referenceAudioURL: URL?
     private var practiceSessionID: String?
+    private var isFinishingRecording = false
 
     var isSignedIn: Bool { session != nil }
 
@@ -174,6 +176,10 @@ final class KidsViewModel: NSObject, ObservableObject {
     private func startRecording() async {
         guard !selectedReferenceID.isEmpty else { practiceMessage = "Pilih tugasan latihan dahulu."; return }
         stopReferencePlayback()
+        let targetDuration = references
+            .first(where: { $0.id == selectedReferenceID })?
+            .duration
+            .flatMap { $0 > 0 ? $0 : nil }
         let permitted = await AVAudioApplication.requestRecordPermission()
         guard permitted else { practiceMessage = "Benarkan akses mikrofon dalam Settings untuk membuat rakaman."; return }
         do {
@@ -193,19 +199,33 @@ final class KidsViewModel: NSObject, ObservableObject {
             ]
             let recorder = try AVAudioRecorder(url: fileURL, settings: settings)
             recorder.prepareToRecord()
-            guard recorder.record() else { throw KidsAPIError.server("Rakaman tidak dapat dimulakan.") }
+            let didStart: Bool
+            if let targetDuration {
+                didStart = recorder.record(forDuration: max(3, targetDuration))
+            } else {
+                didStart = recorder.record()
+            }
+            guard didStart else { throw KidsAPIError.server("Rakaman tidak dapat dimulakan.") }
             let sessionID = UUID().uuidString
             try await api.sendPracticeEvent(type: "practice_started", referenceID: selectedReferenceID)
             audioRecorder = recorder
             practiceSessionID = sessionID
             recordingDuration = 0
+            recordingTargetDuration = targetDuration ?? 0
             isRecording = true
             recordingTimer?.invalidate()
             recordingTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
                 guard let self, let recorder = self.audioRecorder else { return }
                 self.recordingDuration = recorder.currentTime
+                if !recorder.isRecording {
+                    self.recordingTimer?.invalidate()
+                    self.recordingTimer = nil
+                    Task { await self.finishRecording() }
+                }
             }
-            practiceMessage = "Rakaman sedang berjalan. Baca tugasan dengan jelas, kemudian tekan Selesai Rakaman."
+            practiceMessage = targetDuration == nil
+                ? "Rakaman sedang berjalan. Baca tugasan dengan jelas, kemudian tekan Selesai Rakaman."
+                : "Rakaman akan berhenti dan dihantar secara automatik apabila tempoh tugasan tamat."
         } catch {
             audioRecorder?.stop()
             audioRecorder = nil
@@ -271,14 +291,18 @@ final class KidsViewModel: NSObject, ObservableObject {
     }
 
     private func finishRecording() async {
+        guard !isFinishingRecording else { return }
         guard let recorder = audioRecorder, let sessionID = practiceSessionID else { return }
-        let duration = recorder.currentTime
+        isFinishingRecording = true
+        defer { isFinishingRecording = false }
+        let duration = max(recorder.currentTime, recordingDuration)
         let fileURL = recorder.url
         recorder.stop()
         recordingTimer?.invalidate()
         recordingTimer = nil
         audioRecorder = nil
         isRecording = false
+        recordingTargetDuration = 0
         isSubmittingRecording = true
         practiceMessage = "Menghantar rakaman untuk pengesahan…"
         defer {
@@ -472,6 +496,11 @@ struct KidsHomeView: View {
                     Text("Masa rakaman: \(formattedDuration(model.recordingDuration))")
                         .font(.title3.monospacedDigit().bold())
                         .foregroundStyle(.red)
+                    if model.recordingTargetDuration > 0 {
+                        Text("Berhenti automatik pada \(formattedDuration(model.recordingTargetDuration))")
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 Button(model.isRecording ? "Selesai Rakaman" : "Mula Rakaman") {
                     Task { await model.toggleRecording() }
