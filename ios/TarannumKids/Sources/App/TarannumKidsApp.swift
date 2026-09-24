@@ -32,19 +32,27 @@ final class KidsViewModel: ObservableObject {
         await finishAuthorizedSetup()
     }
 
-    func authorizeChildDevice() async { await authorize(mode: .child) }
-    func authorizeTestMode() async { await authorize(mode: .individual) }
-
-    private func authorize(mode: FamilyControlsMember) async {
+    func authorizeChildDevice() async {
         isAuthorizing = true
         do {
-            try await AuthorizationCenter.shared.requestAuthorization(for: mode)
+            try await AuthorizationCenter.shared.requestAuthorization(for: .child)
             isAuthorized = true
             await finishAuthorizedSetup()
         } catch {
-            message = mode == .child
-                ? "Peranti Anak memerlukan Apple Account kanak-kanak dalam Family Sharing dan kelulusan ibu bapa."
-                : "Kebenaran Screen Time tidak diberikan. Cuba semula dan pilih Allow."
+            message = "Peranti Anak memerlukan Apple Account kanak-kanak dalam Family Sharing dan kelulusan ibu bapa."
+            ShieldManager.apply()
+        }
+        isAuthorizing = false
+    }
+
+    func authorizeTestMode() async {
+        isAuthorizing = true
+        do {
+            try await AuthorizationCenter.shared.requestAuthorization(for: .individual)
+            isAuthorized = true
+            await finishAuthorizedSetup()
+        } catch {
+            message = "Kebenaran Screen Time tidak diberikan. Cuba semula dan pilih Allow."
             ShieldManager.apply()
         }
         isAuthorizing = false
