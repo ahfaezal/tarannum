@@ -109,7 +109,8 @@ jobs:
           do
             echo "Verifying $(basename "$BUNDLE_PATH")"
             ENTITLEMENTS_PATH="$RUNNER_TEMP/$(basename "$BUNDLE_PATH").entitlements.plist"
-            codesign -d --entitlements "$ENTITLEMENTS_PATH" "$BUNDLE_PATH"
+            codesign -d --entitlements :- "$BUNDLE_PATH" > "$ENTITLEMENTS_PATH" 2>/dev/null
+            plutil -convert xml1 "$ENTITLEMENTS_PATH"
             plutil -p "$ENTITLEMENTS_PATH" | grep -q 'com.apple.developer.family-controls.*true'
             plutil -p "$ENTITLEMENTS_PATH" | grep -q 'com.apple.security.application-groups'
             plutil -p "$ENTITLEMENTS_PATH" | grep -q 'group.ai.tarannum.kids'
