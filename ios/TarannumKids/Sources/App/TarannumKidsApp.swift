@@ -29,11 +29,17 @@ final class KidsViewModel: NSObject, ObservableObject {
     @Published var selectedReferenceID = ""
     @Published var isRecording = false
     @Published var recordingDuration: TimeInterval = 0
+    @Published var isPlayingReference = false
+    @Published var isLoadingReferenceAudio = false
+    @Published var referencePlaybackTime: TimeInterval = 0
     @Published var isSubmittingRecording = false
     @Published var practiceMessage = "Pilih tugasan dan mulakan rakaman."
     private let api = KidsAPIClient()
     private var audioRecorder: AVAudioRecorder?
+    private var audioPlayer: AVAudioPlayer?
     private var recordingTimer: Timer?
+    private var playbackTimer: Timer?
+    private var referenceAudioURL: URL?
     private var practiceSessionID: String?
 
     var isSignedIn: Bool { session != nil }
@@ -164,6 +170,7 @@ final class KidsViewModel: NSObject, ObservableObject {
 
     private func startRecording() async {
         guard !selectedReferenceID.isEmpty else { practiceMessage = "Pilih tugasan latihan dahulu."; return }
+        stopReferencePlayback()
         let permitted = await AVAudioApplication.requestRecordPermission()
         guard permitted else { practiceMessage = "Benarkan akses mikrofon dalam Settings untuk membuat rakaman."; return }
         do {
@@ -200,6 +207,63 @@ final class KidsViewModel: NSObject, ObservableObject {
             audioRecorder?.stop()
             audioRecorder = nil
             practiceMessage = "Rakaman tidak dapat dimulakan. Semak mikrofon atau headset dan cuba semula. (\(error.localizedDescription))"
+        }
+    }
+
+    func toggleReferencePlayback() async {
+        if isPlayingReference {
+            stopReferencePlayback()
+            practiceMessage = "Audio contoh dihentikan."
+            return
+        }
+        guard !selectedReferenceID.isEmpty else { practiceMessage = "Pilih tugasan latihan dahulu."; return }
+        isLoadingReferenceAudio = true
+        practiceMessage = "Memuatkan audio contoh…"
+        defer { isLoadingReferenceAudio = false }
+        do {
+            stopReferencePlayback()
+            let fileURL = try await api.downloadReferenceAudio(referenceID: selectedReferenceID)
+            let audioSession = AVAudioSession.sharedInstance()
+            try audioSession.setCategory(.playback, mode: .default)
+            try audioSession.setActive(true)
+            let player = try AVAudioPlayer(contentsOf: fileURL)
+            guard player.prepareToPlay(), player.play() else {
+                throw KidsAPIError.server("Audio contoh tidak dapat dimainkan.")
+            }
+            audioPlayer = player
+            referenceAudioURL = fileURL
+            referencePlaybackTime = 0
+            isPlayingReference = true
+            practiceMessage = "Dengar audio contoh, kemudian tekan Henti apabila bersedia untuk merakam."
+            playbackTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] timer in
+                guard let self, let player = self.audioPlayer else { timer.invalidate(); return }
+                self.referencePlaybackTime = player.currentTime
+                if !player.isPlaying {
+                    self.stopReferencePlayback()
+                    self.practiceMessage = "Audio contoh selesai. Anda boleh mula merakam."
+                }
+            }
+        } catch {
+            stopReferencePlayback()
+            practiceMessage = "Audio contoh tidak dapat dimainkan. Cuba semula."
+        }
+    }
+
+    func selectedReferenceChanged() {
+        stopReferencePlayback()
+        practiceMessage = "Dengar audio contoh atau mulakan rakaman."
+    }
+
+    private func stopReferencePlayback() {
+        playbackTimer?.invalidate()
+        playbackTimer = nil
+        audioPlayer?.stop()
+        audioPlayer = nil
+        isPlayingReference = false
+        referencePlaybackTime = 0
+        if let referenceAudioURL {
+            try? FileManager.default.removeItem(at: referenceAudioURL)
+            self.referenceAudioURL = nil
         }
     }
 
@@ -328,6 +392,32 @@ struct KidsHomeView: View {
                     }
                 }
                 .pickerStyle(.menu)
+                .onChange(of: model.selectedReferenceID) { _, _ in model.selectedReferenceChanged() }
+                if let reference = model.references.first(where: { $0.id == model.selectedReferenceID }),
+                   let text = reference.textSegments?
+                    .map(\.text)
+                    .filter({ !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
+                    .joined(separator: " "),
+                   !text.isEmpty {
+                    Text(text)
+                        .font(.title3)
+                        .multilineTextAlignment(.center)
+                        .padding()
+                        .frame(maxWidth: .infinity)
+                        .background(.indigo.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+                }
+                Button(model.isPlayingReference ? "Henti Audio Contoh" : "Dengar Audio Contoh") {
+                    Task { await model.toggleReferencePlayback() }
+                }
+                .buttonStyle(.bordered)
+                .disabled(model.isLoadingReferenceAudio || model.isRecording || model.isSubmittingRecording)
+                if model.isLoadingReferenceAudio {
+                    ProgressView("Memuatkan audio contoh…")
+                } else if model.isPlayingReference {
+                    Text("Audio contoh: \(formattedDuration(model.referencePlaybackTime))")
+                        .font(.subheadline.monospacedDigit())
+                        .foregroundStyle(.indigo)
+                }
                 Text(model.practiceMessage).font(.subheadline).multilineTextAlignment(.center)
                 if model.isRecording {
                     Text("Masa rakaman: \(formattedDuration(model.recordingDuration))")

@@ -12,6 +12,18 @@ struct PracticeReference: Decodable, Identifiable, Hashable {
     let title: String
     let maqam: String?
     let duration: Double?
+    let textSegments: [PracticeTextSegment]?
+
+    enum CodingKeys: String, CodingKey {
+        case id, title, maqam, duration
+        case textSegments = "text_segments"
+    }
+}
+
+struct PracticeTextSegment: Decodable, Hashable {
+    let text: String
+    let start: Double
+    let end: Double
 }
 
 enum KidsAPIError: LocalizedError {
@@ -81,6 +93,27 @@ struct KidsAPIClient {
             throw URLError(.badServerResponse)
         }
         return try JSONDecoder().decode(ReferenceListResponse.self, from: data).references
+    }
+
+    func downloadReferenceAudio(referenceID: String) async throws -> URL {
+        guard let session = savedSession else { throw KidsAPIError.sessionExpired }
+        var request = URLRequest(url: baseURL.appending(path: "/api/references/\(referenceID)/audio"))
+        request.setValue("Bearer \(session.accessToken)", forHTTPHeaderField: "Authorization")
+        request.timeoutInterval = 60
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+            throw KidsAPIError.server("Audio contoh tidak dapat dimuatkan.")
+        }
+        let contentType = http.value(forHTTPHeaderField: "Content-Type") ?? ""
+        let fileExtension: String
+        if contentType.contains("wav") { fileExtension = "wav" }
+        else if contentType.contains("mp4") || contentType.contains("m4a") { fileExtension = "m4a" }
+        else if contentType.contains("ogg") { fileExtension = "ogg" }
+        else { fileExtension = "mp3" }
+        let fileURL = FileManager.default.temporaryDirectory
+            .appending(path: "tarannum-reference-\(referenceID).\(fileExtension)")
+        try data.write(to: fileURL, options: .atomic)
+        return fileURL
     }
 
     func sendPracticeEvent(
