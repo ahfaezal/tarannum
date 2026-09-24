@@ -16,15 +16,51 @@ final class KidsViewModel: ObservableObject {
     @Published var selection = SharedState.familySelection
     @Published var isPickerPresented = false
     @Published var message = "Menyemak latihan hari ini…"
+    @Published var isAuthorized = AuthorizationCenter.shared.authorizationStatus == .approved
+    @Published var isAuthorizing = false
     private let api = KidsAPIClient()
 
     func start() async {
+        guard isAuthorized else {
+            message = "Pilih cara menyediakan peranti ini."
+            return
+        }
+
+        await finishAuthorizedSetup()
+    }
+
+    func authorizeChildDevice() async {
+        isAuthorizing = true
         do {
             try await AuthorizationCenter.shared.requestAuthorization(for: .child)
+            isAuthorized = true
+            await finishAuthorizedSetup()
+        } catch {
+            message = "Peranti Anak memerlukan Apple Account kanak-kanak dalam Family Sharing dan kelulusan ibu bapa."
+            ShieldManager.apply()
+        }
+        isAuthorizing = false
+    }
+
+    func authorizeTestMode() async {
+        isAuthorizing = true
+        do {
+            try await AuthorizationCenter.shared.requestAuthorization(for: .individual)
+            isAuthorized = true
+            await finishAuthorizedSetup()
+        } catch {
+            message = "Kebenaran Screen Time tidak diberikan. Cuba semula dan pilih Allow."
+            ShieldManager.apply()
+        }
+        isAuthorizing = false
+    }
+
+    private func finishAuthorizedSetup() async {
+        do {
             try scheduleDailyBoundary()
             await refreshAccess()
         } catch {
-            message = "Kebenaran Screen Time diperlukan oleh ibu bapa."
+            message = "Kebenaran diterima, tetapi jadual kawalan tidak dapat dimulakan."
             ShieldManager.apply()
         }
     }
@@ -73,10 +109,30 @@ struct KidsHomeView: View {
                     .font(.system(size: 64)).foregroundStyle(model.access?.unlockGranted == true ? .green : .indigo)
                 Text("Tarannum Kids").font(.largeTitle.bold())
                 Text(model.message).multilineTextAlignment(.center)
-                ProgressView(value: Double(model.access?.creditedSeconds ?? 0),
-                             total: Double(model.access?.requiredSeconds ?? KidsConstants.requiredPracticeSeconds))
-                Button("Semak kemajuan") { Task { await model.refreshAccess() } }.buttonStyle(.borderedProminent)
-                Button("Pilih aplikasi untuk dilindungi") { model.isPickerPresented = true }.buttonStyle(.bordered)
+                if model.isAuthorized {
+                    ProgressView(value: Double(model.access?.creditedSeconds ?? 0),
+                                 total: Double(model.access?.requiredSeconds ?? KidsConstants.requiredPracticeSeconds))
+                    Button("Semak kemajuan") { Task { await model.refreshAccess() } }.buttonStyle(.borderedProminent)
+                    Button("Pilih aplikasi untuk dilindungi") { model.isPickerPresented = true }.buttonStyle(.bordered)
+                } else {
+                    VStack(spacing: 12) {
+                        Button("Sediakan sebagai Peranti Anak") {
+                            Task { await model.authorizeChildDevice() }
+                        }
+                        .buttonStyle(.borderedProminent)
+
+                        Button("Aktifkan Mod Ujian / Admin") {
+                            Task { await model.authorizeTestMode() }
+                        }
+                        .buttonStyle(.bordered)
+
+                        Text("Gunakan Mod Ujian / Admin pada peranti dewasa. Untuk penggunaan sebenar, pilih Peranti Anak pada iPad yang menggunakan Apple Account kanak-kanak dalam Family Sharing.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .disabled(model.isAuthorizing)
+                }
             }
             .padding(32)
             .familyActivityPicker(isPresented: $model.isPickerPresented, selection: $model.selection)
