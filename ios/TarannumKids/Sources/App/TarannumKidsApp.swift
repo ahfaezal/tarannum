@@ -62,6 +62,7 @@ final class KidsViewModel: ObservableObject {
         let normalizedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !normalizedEmail.isEmpty, !password.isEmpty else { message = "Masukkan e-mel dan kata laluan."; return }
         isSigningIn = true
+        message = "Sedang log masuk…"
         do {
             session = try await api.login(email: normalizedEmail, password: password)
             password = ""
@@ -171,8 +172,9 @@ struct KidsHomeView: View {
                 .textContentType(.username).textInputAutocapitalization(.never).keyboardType(.emailAddress)
                 .autocorrectionDisabled().textFieldStyle(.roundedBorder)
             SecureField("Kata laluan", text: $model.password).textContentType(.password).textFieldStyle(.roundedBorder)
-            Button("Log masuk") { Task { await model.signIn() } }.buttonStyle(.borderedProminent).disabled(model.isSigningIn)
-            if model.isSigningIn { ProgressView() }
+            Button(model.isSigningIn ? "Sedang log masuk…" : "Log masuk") { Task { await model.signIn() } }
+                .buttonStyle(.borderedProminent).disabled(model.isSigningIn)
+            if model.isSigningIn { ProgressView("Menghubungi Tarannum.ai") }
             Text("Gunakan akaun pelajar yang sama seperti di Tarannum.ai.").font(.footnote).foregroundStyle(.secondary)
         }
     }

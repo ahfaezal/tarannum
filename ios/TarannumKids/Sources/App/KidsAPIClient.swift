@@ -26,7 +26,7 @@ enum KidsAPIError: LocalizedError {
 }
 
 struct KidsAPIClient {
-    private let baseURL = URL(string: "https://api.tarannum.ai")!
+    private let baseURL = URL(string: "https://tarannum-production.up.railway.app")!
     var savedSession: KidsAuthSession? { KidsKeychain.loadSession() }
 
     func login(email: String, password: String) async throws -> KidsAuthSession {
