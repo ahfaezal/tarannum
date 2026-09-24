@@ -216,7 +216,10 @@ final class KidsViewModel: NSObject, ObservableObject {
             recordingTimer?.invalidate()
             recordingTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
                 guard let self, let recorder = self.audioRecorder else { return }
-                self.recordingDuration = recorder.currentTime
+                // AVAudioRecorder resets currentTime when a timed recording
+                // stops. Preserve the highest observed value so auto-submit
+                // does not mistake a complete recording for a zero-second one.
+                self.recordingDuration = max(self.recordingDuration, recorder.currentTime)
                 if !recorder.isRecording {
                     self.recordingTimer?.invalidate()
                     self.recordingTimer = nil
