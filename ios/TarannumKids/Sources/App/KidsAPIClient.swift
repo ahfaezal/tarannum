@@ -31,6 +31,13 @@ struct ScoringResultSummary: Equatable {
     let label: String?
     let message: String?
     let focusAreas: [String]
+    let referencePitch: [ScoringPitchPoint]
+    let studentPitch: [ScoringPitchPoint]
+}
+
+struct ScoringPitchPoint: Equatable {
+    let time: Double
+    let value: Double
 }
 
 struct ScoringJobUpdate {
@@ -221,12 +228,27 @@ struct KidsAPIClient {
         let label = feedbackObject?["label"] as? String
         let message = feedbackObject?["message"] as? String ?? feedback as? String
         let focusAreas = feedbackObject?["focus_areas"] as? [String] ?? []
+        let pitchData = result["pitchData"] as? [String: Any]
         return ScoringResultSummary(
             score: min(100, max(0, score)),
             label: label,
             message: message,
-            focusAreas: focusAreas
+            focusAreas: focusAreas,
+            referencePitch: scoringPitchPoints(from: pitchData?["reference"]),
+            studentPitch: scoringPitchPoints(from: pitchData?["student"])
         )
+    }
+
+    private static func scoringPitchPoints(from value: Any?) -> [ScoringPitchPoint] {
+        guard let rows = value as? [[String: Any]] else { return [] }
+        return rows.compactMap { row in
+            guard let time = (row["time"] as? NSNumber)?.doubleValue else { return nil }
+            let pitch = (row["midi"] as? NSNumber)?.doubleValue
+                ?? (row["f_hz"] as? NSNumber)?.doubleValue
+                ?? (row["pitch"] as? NSNumber)?.doubleValue
+            guard let pitch, pitch.isFinite, pitch > 0 else { return nil }
+            return ScoringPitchPoint(time: time, value: pitch)
+        }
     }
 
     private func apiError(status: Int, data: Data) -> Error {

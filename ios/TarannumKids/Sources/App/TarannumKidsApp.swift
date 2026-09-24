@@ -540,6 +540,23 @@ struct KidsHomeView: View {
                                 .font(.subheadline)
                                 .multilineTextAlignment(.center)
                         }
+                        if !score.referencePitch.isEmpty, !score.studentPitch.isEmpty {
+                            Divider()
+                            Text("Graf Nada Bacaan")
+                                .font(.headline)
+                            PitchComparisonGraph(
+                                reference: score.referencePitch,
+                                student: score.studentPitch
+                            )
+                            .frame(height: 190)
+                            HStack(spacing: 18) {
+                                Label("Audio contoh", systemImage: "minus")
+                                    .foregroundStyle(.indigo)
+                                Label("Bacaan pelajar", systemImage: "minus")
+                                    .foregroundStyle(.orange)
+                            }
+                            .font(.caption)
+                        }
                     }
                     .padding()
                     .frame(maxWidth: .infinity)
@@ -609,5 +626,57 @@ struct KidsHomeView: View {
         default:
             return value
         }
+    }
+}
+
+private struct PitchComparisonGraph: View {
+    let reference: [ScoringPitchPoint]
+    let student: [ScoringPitchPoint]
+
+    var body: some View {
+        Canvas { context, size in
+            let all = reference + student
+            guard let minTime = all.map(\.time).min(),
+                  let maxTime = all.map(\.time).max(),
+                  let minPitch = all.map(\.value).min(),
+                  let maxPitch = all.map(\.value).max() else { return }
+            let timeRange = max(0.001, maxTime - minTime)
+            let pitchRange = max(0.001, maxPitch - minPitch)
+
+            for fraction in [0.25, 0.5, 0.75] {
+                var grid = Path()
+                let y = size.height * fraction
+                grid.move(to: CGPoint(x: 0, y: y))
+                grid.addLine(to: CGPoint(x: size.width, y: y))
+                context.stroke(grid, with: .color(.secondary.opacity(0.16)), lineWidth: 1)
+            }
+
+            func draw(_ points: [ScoringPitchPoint], color: Color) {
+                let sampled = downsample(points, maximumCount: 700)
+                guard let first = sampled.first else { return }
+                func position(_ point: ScoringPitchPoint) -> CGPoint {
+                    CGPoint(
+                        x: (point.time - minTime) / timeRange * size.width,
+                        y: size.height - ((point.value - minPitch) / pitchRange * size.height)
+                    )
+                }
+                var path = Path()
+                path.move(to: position(first))
+                for point in sampled.dropFirst() { path.addLine(to: position(point)) }
+                context.stroke(path, with: .color(color), style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+            }
+
+            draw(reference, color: .indigo)
+            draw(student, color: .orange)
+        }
+        .padding(10)
+        .background(.white.opacity(0.75), in: RoundedRectangle(cornerRadius: 10))
+        .accessibilityLabel("Graf perbandingan nada audio contoh dan bacaan pelajar")
+    }
+
+    private func downsample(_ points: [ScoringPitchPoint], maximumCount: Int) -> [ScoringPitchPoint] {
+        guard points.count > maximumCount else { return points }
+        let stride = max(1, points.count / maximumCount)
+        return Swift.stride(from: 0, to: points.count, by: stride).map { points[$0] }
     }
 }
