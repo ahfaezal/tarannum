@@ -10,11 +10,11 @@ enum KidsTrainingMode: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
-final class LivePitchMonitor {
+final class LivePitchMonitor: @unchecked Sendable {
     private let engine = AVAudioEngine()
     private var lastUpdate = Date.distantPast
     private var hasInputTap = false
-    var onPitch: ((Double?) -> Void)?
+    var onPitch: (@MainActor @Sendable (Double?) -> Void)?
 
     func start() throws {
         stop()
@@ -25,7 +25,8 @@ final class LivePitchMonitor {
             guard let self, Date().timeIntervalSince(self.lastUpdate) >= 0.08 else { return }
             self.lastUpdate = Date()
             let midi = Self.detectMIDI(buffer: buffer, sampleRate: format.sampleRate)
-            DispatchQueue.main.async { self.onPitch?(midi) }
+            let handler = self.onPitch
+            Task { @MainActor in handler?(midi) }
         }
         hasInputTap = true
         engine.prepare()
@@ -38,7 +39,8 @@ final class LivePitchMonitor {
             hasInputTap = false
         }
         engine.stop()
-        DispatchQueue.main.async { [weak self] in self?.onPitch?(nil) }
+        let handler = onPitch
+        Task { @MainActor in handler?(nil) }
     }
 
     private static func detectMIDI(buffer: AVAudioPCMBuffer, sampleRate: Double) -> Double? {
