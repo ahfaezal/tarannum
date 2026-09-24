@@ -28,10 +28,12 @@ final class KidsViewModel: NSObject, ObservableObject {
     @Published var references: [PracticeReference] = []
     @Published var selectedReferenceID = ""
     @Published var isRecording = false
+    @Published var recordingDuration: TimeInterval = 0
     @Published var isSubmittingRecording = false
     @Published var practiceMessage = "Pilih tugasan dan mulakan rakaman."
     private let api = KidsAPIClient()
     private var audioRecorder: AVAudioRecorder?
+    private var recordingTimer: Timer?
     private var practiceSessionID: String?
 
     var isSignedIn: Bool { session != nil }
@@ -186,7 +188,13 @@ final class KidsViewModel: NSObject, ObservableObject {
             try await api.sendPracticeEvent(type: "practice_started", referenceID: selectedReferenceID)
             audioRecorder = recorder
             practiceSessionID = sessionID
+            recordingDuration = 0
             isRecording = true
+            recordingTimer?.invalidate()
+            recordingTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
+                guard let self, let recorder = self.audioRecorder else { return }
+                self.recordingDuration = recorder.currentTime
+            }
             practiceMessage = "Rakaman sedang berjalan. Baca tugasan dengan jelas, kemudian tekan Selesai Rakaman."
         } catch {
             audioRecorder?.stop()
@@ -200,6 +208,8 @@ final class KidsViewModel: NSObject, ObservableObject {
         let duration = recorder.currentTime
         let fileURL = recorder.url
         recorder.stop()
+        recordingTimer?.invalidate()
+        recordingTimer = nil
         audioRecorder = nil
         isRecording = false
         isSubmittingRecording = true
@@ -293,7 +303,7 @@ struct KidsHomeView: View {
             ProgressView(value: Double(model.access?.creditedSeconds ?? 0),
                          total: Double(model.access?.requiredSeconds ?? KidsConstants.requiredPracticeSeconds))
             if let access = model.access {
-                Text("\(access.creditedSeconds / 60) daripada \(access.requiredSeconds / 60) minit selesai")
+                Text(progressText(access))
                     .font(.subheadline).foregroundStyle(.secondary)
             }
             Button(model.isRefreshing ? "Sedang menyemak…" : "Semak kemajuan") {
@@ -319,6 +329,11 @@ struct KidsHomeView: View {
                 }
                 .pickerStyle(.menu)
                 Text(model.practiceMessage).font(.subheadline).multilineTextAlignment(.center)
+                if model.isRecording {
+                    Text("Masa rakaman: \(formattedDuration(model.recordingDuration))")
+                        .font(.title3.monospacedDigit().bold())
+                        .foregroundStyle(.red)
+                }
                 Button(model.isRecording ? "Selesai Rakaman" : "Mula Rakaman") {
                     Task { await model.toggleRecording() }
                 }
@@ -330,5 +345,21 @@ struct KidsHomeView: View {
             Button("Pilih aplikasi untuk dilindungi") { model.isPickerPresented = true }.buttonStyle(.bordered)
             Button("Log keluar", role: .destructive) { model.signOut() }.buttonStyle(.borderless)
         }
+    }
+
+    private func progressText(_ access: DailyAccessState) -> String {
+        if access.creditedSeconds < 60 {
+            return "\(access.creditedSeconds) saat daripada \(access.requiredSeconds / 60) minit selesai"
+        }
+        let minutes = access.creditedSeconds / 60
+        let seconds = access.creditedSeconds % 60
+        return seconds == 0
+            ? "\(minutes) daripada \(access.requiredSeconds / 60) minit selesai"
+            : "\(minutes) minit \(seconds) saat daripada \(access.requiredSeconds / 60) minit selesai"
+    }
+
+    private func formattedDuration(_ duration: TimeInterval) -> String {
+        let totalSeconds = max(0, Int(duration))
+        return String(format: "%02d:%02d", totalSeconds / 60, totalSeconds % 60)
     }
 }
