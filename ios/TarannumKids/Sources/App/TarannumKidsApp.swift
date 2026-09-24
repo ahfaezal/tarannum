@@ -18,47 +18,68 @@ final class KidsViewModel: ObservableObject {
     @Published var message = "Menyemak latihan hari ini…"
     @Published var isAuthorized = AuthorizationCenter.shared.authorizationStatus == .approved
     @Published var isAuthorizing = false
+    @Published var session: KidsAuthSession?
+    @Published var email = ""
+    @Published var password = ""
+    @Published var isSigningIn = false
     private let api = KidsAPIClient()
 
-    func start() async {
-        guard isAuthorized else {
-            message = "Pilih cara menyediakan peranti ini."
-            return
-        }
+    var isSignedIn: Bool { session != nil }
 
+    func start() async {
+        session = api.savedSession
+        guard isAuthorized else { message = "Pilih cara menyediakan peranti ini."; return }
         await finishAuthorizedSetup()
     }
 
-    func authorizeChildDevice() async {
+    func authorizeChildDevice() async { await authorize(mode: .child) }
+    func authorizeTestMode() async { await authorize(mode: .individual) }
+
+    private func authorize(mode: FamilyControlsMember) async {
         isAuthorizing = true
         do {
-            try await AuthorizationCenter.shared.requestAuthorization(for: .child)
+            try await AuthorizationCenter.shared.requestAuthorization(for: mode)
             isAuthorized = true
             await finishAuthorizedSetup()
         } catch {
-            message = "Peranti Anak memerlukan Apple Account kanak-kanak dalam Family Sharing dan kelulusan ibu bapa."
+            message = mode == .child
+                ? "Peranti Anak memerlukan Apple Account kanak-kanak dalam Family Sharing dan kelulusan ibu bapa."
+                : "Kebenaran Screen Time tidak diberikan. Cuba semula dan pilih Allow."
             ShieldManager.apply()
         }
         isAuthorizing = false
     }
 
-    func authorizeTestMode() async {
-        isAuthorizing = true
+    func signIn() async {
+        let normalizedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !normalizedEmail.isEmpty, !password.isEmpty else { message = "Masukkan e-mel dan kata laluan."; return }
+        isSigningIn = true
         do {
-            try await AuthorizationCenter.shared.requestAuthorization(for: .individual)
-            isAuthorized = true
-            await finishAuthorizedSetup()
+            session = try await api.login(email: normalizedEmail, password: password)
+            password = ""
+            await refreshAccess()
         } catch {
-            message = "Kebenaran Screen Time tidak diberikan. Cuba semula dan pilih Allow."
+            message = error.localizedDescription
             ShieldManager.apply()
         }
-        isAuthorizing = false
+        isSigningIn = false
+    }
+
+    func signOut() {
+        api.logout()
+        session = nil
+        access = nil
+        SharedState.dailyAccess = nil
+        password = ""
+        message = "Anda telah log keluar. Aplikasi kekal dilindungi."
+        ShieldManager.apply()
     }
 
     private func finishAuthorizedSetup() async {
         do {
             try scheduleDailyBoundary()
-            await refreshAccess()
+            if isSignedIn { await refreshAccess() }
+            else { message = "Log masuk menggunakan akaun pelajar Tarannum.ai."; ShieldManager.apply() }
         } catch {
             message = "Kebenaran diterima, tetapi jadual kawalan tidak dapat dimulakan."
             ShieldManager.apply()
@@ -80,6 +101,12 @@ final class KidsViewModel: ObservableObject {
             message = state.unlockGranted
                 ? "Latihan lengkap. Aplikasi dibuka sehingga 11:30 malam."
                 : "Baki latihan: \(Int(ceil(Double(state.remainingSeconds) / 60))) minit."
+        } catch KidsAPIError.sessionExpired {
+            session = nil
+            access = nil
+            SharedState.dailyAccess = nil
+            message = KidsAPIError.sessionExpired.localizedDescription
+            ShieldManager.apply()
         } catch {
             access = SharedState.dailyAccess
             message = "Tidak dapat mengesahkan latihan. Aplikasi kekal dilindungi."
@@ -104,39 +131,52 @@ struct KidsHomeView: View {
     @EnvironmentObject private var model: KidsViewModel
     var body: some View {
         NavigationStack {
-            VStack(spacing: 24) {
-                Image(systemName: model.access?.unlockGranted == true ? "lock.open.fill" : "lock.fill")
-                    .font(.system(size: 64)).foregroundStyle(model.access?.unlockGranted == true ? .green : .indigo)
-                Text("Tarannum Kids").font(.largeTitle.bold())
-                Text(model.message).multilineTextAlignment(.center)
-                if model.isAuthorized {
-                    ProgressView(value: Double(model.access?.creditedSeconds ?? 0),
-                                 total: Double(model.access?.requiredSeconds ?? KidsConstants.requiredPracticeSeconds))
-                    Button("Semak kemajuan") { Task { await model.refreshAccess() } }.buttonStyle(.borderedProminent)
-                    Button("Pilih aplikasi untuk dilindungi") { model.isPickerPresented = true }.buttonStyle(.bordered)
-                } else {
-                    VStack(spacing: 12) {
-                        Button("Sediakan sebagai Peranti Anak") {
-                            Task { await model.authorizeChildDevice() }
-                        }
-                        .buttonStyle(.borderedProminent)
-
-                        Button("Aktifkan Mod Ujian / Admin") {
-                            Task { await model.authorizeTestMode() }
-                        }
-                        .buttonStyle(.bordered)
-
-                        Text("Gunakan Mod Ujian / Admin pada peranti dewasa. Untuk penggunaan sebenar, pilih Peranti Anak pada iPad yang menggunakan Apple Account kanak-kanak dalam Family Sharing.")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
-                    }
-                    .disabled(model.isAuthorizing)
+            ScrollView {
+                VStack(spacing: 24) {
+                    Image(systemName: model.access?.unlockGranted == true ? "lock.open.fill" : "lock.fill")
+                        .font(.system(size: 64)).foregroundStyle(model.access?.unlockGranted == true ? .green : .indigo)
+                    Text("Tarannum Kids").font(.largeTitle.bold())
+                    Text(model.message).multilineTextAlignment(.center)
+                    if !model.isAuthorized { authorizationView }
+                    else if !model.isSignedIn { loginView }
+                    else { progressView }
                 }
+                .frame(maxWidth: 620).padding(32).frame(maxWidth: .infinity)
             }
-            .padding(32)
             .familyActivityPicker(isPresented: $model.isPickerPresented, selection: $model.selection)
             .onChange(of: model.selection) { _, value in model.saveSelection(value) }
+        }
+    }
+
+    private var authorizationView: some View {
+        VStack(spacing: 12) {
+            Button("Sediakan sebagai Peranti Anak") { Task { await model.authorizeChildDevice() } }.buttonStyle(.borderedProminent)
+            Button("Aktifkan Mod Ujian / Admin") { Task { await model.authorizeTestMode() } }.buttonStyle(.bordered)
+            Text("Gunakan Mod Ujian / Admin pada peranti dewasa. Untuk penggunaan sebenar, pilih Peranti Anak pada iPad yang menggunakan Apple Account kanak-kanak dalam Family Sharing.")
+                .font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
+        }.disabled(model.isAuthorizing)
+    }
+
+    private var loginView: some View {
+        VStack(spacing: 16) {
+            TextField("E-mel pelajar", text: $model.email)
+                .textContentType(.username).textInputAutocapitalization(.never).keyboardType(.emailAddress)
+                .autocorrectionDisabled().textFieldStyle(.roundedBorder)
+            SecureField("Kata laluan", text: $model.password).textContentType(.password).textFieldStyle(.roundedBorder)
+            Button("Log masuk") { Task { await model.signIn() } }.buttonStyle(.borderedProminent).disabled(model.isSigningIn)
+            if model.isSigningIn { ProgressView() }
+            Text("Gunakan akaun pelajar yang sama seperti di Tarannum.ai.").font(.footnote).foregroundStyle(.secondary)
+        }
+    }
+
+    private var progressView: some View {
+        VStack(spacing: 16) {
+            if let session = model.session { Text(session.fullName ?? session.email).font(.headline) }
+            ProgressView(value: Double(model.access?.creditedSeconds ?? 0),
+                         total: Double(model.access?.requiredSeconds ?? KidsConstants.requiredPracticeSeconds))
+            Button("Semak kemajuan") { Task { await model.refreshAccess() } }.buttonStyle(.borderedProminent)
+            Button("Pilih aplikasi untuk dilindungi") { model.isPickerPresented = true }.buttonStyle(.bordered)
+            Button("Log keluar", role: .destructive) { model.signOut() }.buttonStyle(.borderless)
         }
     }
 }
