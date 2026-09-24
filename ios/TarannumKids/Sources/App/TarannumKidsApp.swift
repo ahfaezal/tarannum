@@ -3,6 +3,68 @@ import FamilyControls
 import AVFoundation
 import SwiftUI
 
+enum KidsTrainingMode: String, CaseIterable, Identifiable {
+    case listen = "Dengar"
+    case practice = "Latih Bersama Qari"
+    case record = "Rakaman"
+    var id: String { rawValue }
+}
+
+final class LivePitchMonitor {
+    private let engine = AVAudioEngine()
+    private var lastUpdate = Date.distantPast
+    private var hasInputTap = false
+    var onPitch: ((Double?) -> Void)?
+
+    func start() throws {
+        stop()
+        let input = engine.inputNode
+        let format = input.outputFormat(forBus: 0)
+        guard format.sampleRate > 0, format.channelCount > 0 else { return }
+        input.installTap(onBus: 0, bufferSize: 2048, format: format) { [weak self] buffer, _ in
+            guard let self, Date().timeIntervalSince(self.lastUpdate) >= 0.08 else { return }
+            self.lastUpdate = Date()
+            let midi = Self.detectMIDI(buffer: buffer, sampleRate: format.sampleRate)
+            DispatchQueue.main.async { self.onPitch?(midi) }
+        }
+        hasInputTap = true
+        engine.prepare()
+        try engine.start()
+    }
+
+    func stop() {
+        if hasInputTap {
+            engine.inputNode.removeTap(onBus: 0)
+            hasInputTap = false
+        }
+        engine.stop()
+        DispatchQueue.main.async { [weak self] in self?.onPitch?(nil) }
+    }
+
+    private static func detectMIDI(buffer: AVAudioPCMBuffer, sampleRate: Double) -> Double? {
+        guard let channel = buffer.floatChannelData?[0] else { return nil }
+        let count = Int(buffer.frameLength)
+        guard count >= 512 else { return nil }
+        var energy: Float = 0
+        for index in 0..<count { energy += channel[index] * channel[index] }
+        guard sqrt(energy / Float(count)) > 0.012 else { return nil }
+        let minLag = max(2, Int(sampleRate / 500))
+        let maxLag = min(count / 2, Int(sampleRate / 60))
+        guard minLag < maxLag else { return nil }
+        var bestLag = 0
+        var bestCorrelation: Float = 0
+        for lag in minLag...maxLag {
+            var correlation: Float = 0
+            for index in 0..<(count - lag) { correlation += channel[index] * channel[index + lag] }
+            if correlation > bestCorrelation { bestCorrelation = correlation; bestLag = lag }
+        }
+        guard bestLag > 0 else { return nil }
+        let frequency = sampleRate / Double(bestLag)
+        guard frequency >= 60, frequency <= 500 else { return nil }
+        return 69 + 12 * log2(frequency / 440)
+    }
+}
+
 @main
 struct TarannumKidsApp: App {
     @StateObject private var model = KidsViewModel()
@@ -39,6 +101,9 @@ final class KidsViewModel: NSObject, ObservableObject {
     @Published var latestScore: ScoringResultSummary?
     @Published var referencePitch: [ScoringPitchPoint] = []
     @Published var isLoadingReferencePitch = false
+    @Published var trainingMode: KidsTrainingMode = .listen
+    @Published var isPracticingWithQari = false
+    @Published var liveStudentPitch: Double?
     @Published var practiceMessage = "Pilih tugasan dan mulakan rakaman."
     private let api = KidsAPIClient()
     private var audioRecorder: AVAudioRecorder?
@@ -48,8 +113,14 @@ final class KidsViewModel: NSObject, ObservableObject {
     private var referenceAudioURL: URL?
     private var practiceSessionID: String?
     private var isFinishingRecording = false
+    private let livePitchMonitor = LivePitchMonitor()
 
     var isSignedIn: Bool { session != nil }
+
+    override init() {
+        super.init()
+        livePitchMonitor.onPitch = { [weak self] pitch in self?.liveStudentPitch = pitch }
+    }
 
     func start() async {
         session = api.savedSession
@@ -193,6 +264,7 @@ final class KidsViewModel: NSObject, ObservableObject {
                 options: [.defaultToSpeaker, .allowBluetoothHFP]
             )
             try audioSession.setActive(true)
+            try livePitchMonitor.start()
             let fileURL = FileManager.default.temporaryDirectory.appending(path: "tarannum-\(UUID().uuidString).m4a")
             let settings: [String: Any] = [
                 AVFormatIDKey: kAudioFormatMPEG4AAC,
@@ -233,6 +305,7 @@ final class KidsViewModel: NSObject, ObservableObject {
                 ? "Rakaman sedang berjalan. Baca tugasan dengan jelas, kemudian tekan Selesai Rakaman."
                 : "Rakaman akan berhenti dan dihantar secara automatik apabila tempoh tugasan tamat."
         } catch {
+            livePitchMonitor.stop()
             audioRecorder?.stop()
             audioRecorder = nil
             practiceMessage = "Rakaman tidak dapat dimulakan. Semak mikrofon atau headset dan cuba semula. (\(error.localizedDescription))"
@@ -276,6 +349,74 @@ final class KidsViewModel: NSObject, ObservableObject {
             stopReferencePlayback()
             practiceMessage = "Audio contoh tidak dapat dimainkan. Cuba semula."
         }
+    }
+
+    func togglePracticeWithQari() async {
+        if isPracticingWithQari {
+            stopReferencePlayback()
+            livePitchMonitor.stop()
+            isPracticingWithQari = false
+            practiceMessage = "Latihan bersama qari dihentikan."
+            return
+        }
+        guard !selectedReferenceID.isEmpty else { return }
+        isLoadingReferenceAudio = true
+        practiceMessage = "Menyediakan latihan bersama qari…"
+        defer { isLoadingReferenceAudio = false }
+        do {
+            stopReferencePlayback()
+            let fileURL = try await api.downloadReferenceAudio(referenceID: selectedReferenceID)
+            let audioSession = AVAudioSession.sharedInstance()
+            try audioSession.setCategory(.playAndRecord, mode: .voiceChat, options: [.defaultToSpeaker, .allowBluetoothHFP])
+            try audioSession.setActive(true)
+            try livePitchMonitor.start()
+            let player = try AVAudioPlayer(contentsOf: fileURL)
+            guard player.prepareToPlay(), player.play() else { throw KidsAPIError.server("Audio tidak dapat dimainkan.") }
+            audioPlayer = player
+            referenceAudioURL = fileURL
+            referencePlaybackTime = 0
+            isPlayingReference = true
+            isPracticingWithQari = true
+            practiceMessage = "Ikuti bacaan qari. Bola jingga menunjukkan nada suara anda."
+            playbackTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] timer in
+                guard let self, let player = self.audioPlayer else { timer.invalidate(); return }
+                self.referencePlaybackTime = player.currentTime
+                if !player.isPlaying {
+                    self.stopReferencePlayback()
+                    self.livePitchMonitor.stop()
+                    self.isPracticingWithQari = false
+                    self.practiceMessage = "Latihan bersama qari selesai. Anda boleh ulang atau pergi ke sesi rakaman."
+                }
+            }
+        } catch {
+            stopReferencePlayback()
+            livePitchMonitor.stop()
+            isPracticingWithQari = false
+            practiceMessage = "Latihan bersama qari tidak dapat dimulakan. Cuba gunakan headset dan cuba semula."
+        }
+    }
+
+    func changeTrainingMode(_ mode: KidsTrainingMode) {
+        stopReferencePlayback()
+        livePitchMonitor.stop()
+        isPracticingWithQari = false
+        trainingMode = mode
+        practiceMessage = mode == .record
+            ? "Tekan Mula Rakaman untuk mendapatkan markah."
+            : (mode == .practice ? "Gunakan headset, kemudian latih bacaan bersama qari." : "Dengar audio contoh sebelum berlatih.")
+    }
+
+    func retakeRecording() async {
+        latestScore = nil
+        scoringMessage = ""
+        trainingMode = .record
+        await startRecording()
+    }
+
+    func practiceAgain() {
+        latestScore = nil
+        scoringMessage = ""
+        changeTrainingMode(.practice)
     }
 
     func selectedReferenceChanged() {
@@ -324,6 +465,7 @@ final class KidsViewModel: NSObject, ObservableObject {
         let duration = max(recorder.currentTime, recordingDuration)
         let fileURL = recorder.url
         recorder.stop()
+        livePitchMonitor.stop()
         recordingTimer?.invalidate()
         recordingTimer = nil
         audioRecorder = nil
@@ -492,6 +634,11 @@ struct KidsHomeView: View {
                 }
                 .pickerStyle(.menu)
                 .onChange(of: model.selectedReferenceID) { _, _ in model.selectedReferenceChanged() }
+                Picker("Sesi", selection: $model.trainingMode) {
+                    ForEach(KidsTrainingMode.allCases) { mode in Text(mode.rawValue).tag(mode) }
+                }
+                .pickerStyle(.segmented)
+                .onChange(of: model.trainingMode) { _, mode in model.changeTrainingMode(mode) }
                 if let reference = model.references.first(where: { $0.id == model.selectedReferenceID }),
                    let text = reference.textSegments?
                     .map(\.text)
@@ -516,7 +663,8 @@ struct KidsHomeView: View {
                             student: [],
                             progressTime: model.isRecording
                                 ? model.recordingDuration
-                                : (model.isPlayingReference ? model.referencePlaybackTime : nil)
+                                : (model.isPlayingReference ? model.referencePlaybackTime : nil),
+                            livePitch: model.liveStudentPitch
                         )
                         .frame(height: 180)
                         Label("Ikuti bentuk alunan ungu semasa berlatih", systemImage: "waveform.path")
@@ -527,11 +675,20 @@ struct KidsHomeView: View {
                     .frame(maxWidth: .infinity)
                     .background(.indigo.opacity(0.06), in: RoundedRectangle(cornerRadius: 14))
                 }
-                Button(model.isPlayingReference ? "Henti Audio Contoh" : "Dengar Audio Contoh") {
-                    Task { await model.toggleReferencePlayback() }
+                if model.trainingMode == .listen {
+                    Button(model.isPlayingReference ? "Henti Audio Contoh" : "Dengar Audio Contoh") {
+                        Task { await model.toggleReferencePlayback() }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(model.isLoadingReferenceAudio || model.isRecording || model.isSubmittingRecording)
+                } else if model.trainingMode == .practice {
+                    Button(model.isPracticingWithQari ? "Henti Latihan" : "Mula Latih Bersama Qari") {
+                        Task { await model.togglePracticeWithQari() }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(model.isPracticingWithQari ? .red : .indigo)
+                    .disabled(model.isLoadingReferenceAudio)
                 }
-                .buttonStyle(.bordered)
-                .disabled(model.isLoadingReferenceAudio || model.isRecording || model.isSubmittingRecording)
                 if model.isLoadingReferenceAudio {
                     ProgressView("Memuatkan audio contoh…")
                 } else if model.isPlayingReference {
@@ -540,7 +697,7 @@ struct KidsHomeView: View {
                         .foregroundStyle(.indigo)
                 }
                 Text(model.practiceMessage).font(.subheadline).multilineTextAlignment(.center)
-                if model.isRecording {
+                if model.trainingMode == .record, model.isRecording {
                     Text("Masa rakaman: \(formattedDuration(model.recordingDuration))")
                         .font(.title3.monospacedDigit().bold())
                         .foregroundStyle(.red)
@@ -550,12 +707,14 @@ struct KidsHomeView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
-                Button(model.isRecording ? "Selesai Rakaman" : "Mula Rakaman") {
-                    Task { await model.toggleRecording() }
+                if model.trainingMode == .record, model.latestScore == nil {
+                    Button(model.isRecording ? "Selesai Rakaman" : "Mula Rakaman") {
+                        Task { await model.toggleRecording() }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(model.isRecording ? .red : .green)
+                    .disabled(model.isSubmittingRecording)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(model.isRecording ? .red : .green)
-                .disabled(model.isSubmittingRecording)
                 if model.isSubmittingRecording { ProgressView("Menghantar rakaman…") }
                 if model.isWaitingForScore {
                     VStack(spacing: 8) {
@@ -585,22 +744,13 @@ struct KidsHomeView: View {
                                 .font(.subheadline)
                                 .multilineTextAlignment(.center)
                         }
-                        if !score.referencePitch.isEmpty, !score.studentPitch.isEmpty {
-                            Divider()
-                            Text("Graf Nada Bacaan")
-                                .font(.headline)
-                            PitchComparisonGraph(
-                                reference: score.referencePitch,
-                                student: score.studentPitch
-                            )
-                            .frame(height: 190)
-                            HStack(spacing: 18) {
-                                Label("Audio contoh", systemImage: "minus")
-                                    .foregroundStyle(.indigo)
-                                Label("Bacaan pelajar", systemImage: "minus")
-                                    .foregroundStyle(.orange)
-                            }
-                            .font(.caption)
+                        Divider()
+                        HStack(spacing: 12) {
+                            Button("Rakam Semula") { Task { await model.retakeRecording() } }
+                                .buttonStyle(.borderedProminent)
+                                .tint(.green)
+                            Button("Latih Semula") { model.practiceAgain() }
+                                .buttonStyle(.bordered)
                         }
                     }
                     .padding()
@@ -678,6 +828,7 @@ private struct PitchComparisonGraph: View {
     let reference: [ScoringPitchPoint]
     let student: [ScoringPitchPoint]
     var progressTime: TimeInterval? = nil
+    var livePitch: Double? = nil
 
     var body: some View {
         Canvas { context, size in
@@ -720,6 +871,12 @@ private struct PitchComparisonGraph: View {
                 playhead.move(to: CGPoint(x: x, y: 0))
                 playhead.addLine(to: CGPoint(x: x, y: size.height))
                 context.stroke(playhead, with: .color(.red.opacity(0.85)), lineWidth: 2)
+                if let livePitch {
+                    let y = min(size.height, max(0, size.height - ((livePitch - minPitch) / pitchRange * size.height)))
+                    let ball = CGRect(x: x - 7, y: y - 7, width: 14, height: 14)
+                    context.fill(Path(ellipseIn: ball), with: .color(.orange))
+                    context.stroke(Path(ellipseIn: ball), with: .color(.white), lineWidth: 2)
+                }
             }
         }
         .padding(10)
