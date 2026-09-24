@@ -103,9 +103,33 @@ jobs:
           -archivePath "$RUNNER_TEMP/TarannumKids.xcarchive"
           -exportPath "$RUNNER_TEMP/TarannumKidsExport"
           -exportOptionsPlist Configuration/ExportOptions.plist
+      - name: Re-sign exported IPA with Family Controls entitlements
+        run: |
+          IPA_PATH=$(find "$RUNNER_TEMP/TarannumKidsExport" -name '*.ipa' -print -quit)
+          SIGNING_PATH="$RUNNER_TEMP/TarannumKidsSigning"
+          rm -rf "$SIGNING_PATH"
+          mkdir -p "$SIGNING_PATH"
+          unzip -q "$IPA_PATH" -d "$SIGNING_PATH"
+
+          APP_PATH=$(find "$SIGNING_PATH/Payload" -maxdepth 1 -name '*.app' -print -quit)
+          SIGNING_IDENTITY=$(security find-identity -v -p codesigning | sed -n 's/.*"\(Apple Distribution:.*\)"/\1/p' | head -n 1)
+          test -n "$SIGNING_IDENTITY"
+
+          cp "$HOME/Library/MobileDevice/Provisioning Profiles/tarannum-kids.mobileprovision" "$APP_PATH/embedded.mobileprovision"
+          cp "$HOME/Library/MobileDevice/Provisioning Profiles/tarannum-kids-activity.mobileprovision" "$APP_PATH/PlugIns/DeviceActivityMonitor.appex/embedded.mobileprovision"
+          cp "$HOME/Library/MobileDevice/Provisioning Profiles/tarannum-kids-shield-action.mobileprovision" "$APP_PATH/PlugIns/ShieldAction.appex/embedded.mobileprovision"
+          cp "$HOME/Library/MobileDevice/Provisioning Profiles/tarannum-kids-shield-configuration.mobileprovision" "$APP_PATH/PlugIns/ShieldConfiguration.appex/embedded.mobileprovision"
+
+          codesign --force --sign "$SIGNING_IDENTITY" --entitlements Configuration/DeviceActivityMonitor.entitlements "$APP_PATH/PlugIns/DeviceActivityMonitor.appex"
+          codesign --force --sign "$SIGNING_IDENTITY" --entitlements Configuration/ShieldAction.entitlements "$APP_PATH/PlugIns/ShieldAction.appex"
+          codesign --force --sign "$SIGNING_IDENTITY" --entitlements Configuration/ShieldConfiguration.entitlements "$APP_PATH/PlugIns/ShieldConfiguration.appex"
+          codesign --force --sign "$SIGNING_IDENTITY" --entitlements Configuration/TarannumKids.entitlements "$APP_PATH"
+
+          rm "$IPA_PATH"
+          (cd "$SIGNING_PATH" && zip -qry "$IPA_PATH" Payload)
       - name: Verify signed Family Controls entitlements
         run: |
-          APP_PATH="$RUNNER_TEMP/TarannumKids.xcarchive/Products/Applications/TarannumKids.app"
+          APP_PATH=$(find "$RUNNER_TEMP/TarannumKidsSigning/Payload" -maxdepth 1 -name '*.app' -print -quit)
           for BUNDLE_PATH in \
             "$APP_PATH" \
             "$APP_PATH/PlugIns/DeviceActivityMonitor.appex" \
