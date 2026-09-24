@@ -111,9 +111,11 @@ jobs:
             ENTITLEMENTS_PATH="$RUNNER_TEMP/$(basename "$BUNDLE_PATH").entitlements.plist"
             codesign -d --entitlements :- "$BUNDLE_PATH" > "$ENTITLEMENTS_PATH" 2>/dev/null
             plutil -convert xml1 "$ENTITLEMENTS_PATH"
-            plutil -p "$ENTITLEMENTS_PATH" | grep -q 'com.apple.developer.family-controls.*true'
-            plutil -p "$ENTITLEMENTS_PATH" | grep -q 'com.apple.security.application-groups'
-            plutil -p "$ENTITLEMENTS_PATH" | grep -q 'group.ai.tarannum.kids'
+            plutil -p "$ENTITLEMENTS_PATH"
+            grep -q '<key>com.apple.developer.family-controls</key>' "$ENTITLEMENTS_PATH"
+            grep -q '<true/>' "$ENTITLEMENTS_PATH"
+            grep -q '<key>com.apple.security.application-groups</key>' "$ENTITLEMENTS_PATH"
+            grep -q '<string>group.ai.tarannum.kids</string>' "$ENTITLEMENTS_PATH"
           done
       - name: Upload directly to TestFlight
         env:
