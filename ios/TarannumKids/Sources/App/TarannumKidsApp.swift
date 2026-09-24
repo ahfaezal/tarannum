@@ -37,6 +37,8 @@ final class KidsViewModel: NSObject, ObservableObject {
     @Published var isWaitingForScore = false
     @Published var scoringMessage = ""
     @Published var latestScore: ScoringResultSummary?
+    @Published var referencePitch: [ScoringPitchPoint] = []
+    @Published var isLoadingReferencePitch = false
     @Published var practiceMessage = "Pilih tugasan dan mulakan rakaman."
     private let api = KidsAPIClient()
     private var audioRecorder: AVAudioRecorder?
@@ -163,6 +165,7 @@ final class KidsViewModel: NSObject, ObservableObject {
             references = try await api.fetchPracticeReferences()
             if selectedReferenceID.isEmpty { selectedReferenceID = references.first?.id ?? "" }
             if references.isEmpty { practiceMessage = "Tiada tugasan latihan tersedia untuk akaun ini." }
+            else { await loadReferencePitch() }
         } catch {
             practiceMessage = "Tugasan tidak dapat dimuatkan. Cuba buka semula aplikasi."
         }
@@ -277,7 +280,27 @@ final class KidsViewModel: NSObject, ObservableObject {
 
     func selectedReferenceChanged() {
         stopReferencePlayback()
+        referencePitch = []
+        latestScore = nil
         practiceMessage = "Dengar audio contoh atau mulakan rakaman."
+        Task { await loadReferencePitch() }
+    }
+
+    func loadReferencePitch() async {
+        guard !selectedReferenceID.isEmpty else { return }
+        let requestedReferenceID = selectedReferenceID
+        isLoadingReferencePitch = true
+        defer {
+            if selectedReferenceID == requestedReferenceID { isLoadingReferencePitch = false }
+        }
+        do {
+            let points = try await api.fetchReferencePitch(referenceID: requestedReferenceID)
+            guard selectedReferenceID == requestedReferenceID else { return }
+            referencePitch = points
+        } catch {
+            guard selectedReferenceID == requestedReferenceID else { return }
+            referencePitch = []
+        }
     }
 
     private func stopReferencePlayback() {
@@ -482,6 +505,28 @@ struct KidsHomeView: View {
                         .frame(maxWidth: .infinity)
                         .background(.indigo.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
                 }
+                if model.isLoadingReferencePitch {
+                    ProgressView("Memuatkan graf nada qari…")
+                } else if !model.referencePitch.isEmpty {
+                    VStack(spacing: 8) {
+                        Text("Panduan Nada Qari")
+                            .font(.headline)
+                        PitchComparisonGraph(
+                            reference: model.referencePitch,
+                            student: [],
+                            progressTime: model.isRecording
+                                ? model.recordingDuration
+                                : (model.isPlayingReference ? model.referencePlaybackTime : nil)
+                        )
+                        .frame(height: 180)
+                        Label("Ikuti bentuk alunan ungu semasa berlatih", systemImage: "waveform.path")
+                            .font(.caption)
+                            .foregroundStyle(.indigo)
+                    }
+                    .padding()
+                    .frame(maxWidth: .infinity)
+                    .background(.indigo.opacity(0.06), in: RoundedRectangle(cornerRadius: 14))
+                }
                 Button(model.isPlayingReference ? "Henti Audio Contoh" : "Dengar Audio Contoh") {
                     Task { await model.toggleReferencePlayback() }
                 }
@@ -632,6 +677,7 @@ struct KidsHomeView: View {
 private struct PitchComparisonGraph: View {
     let reference: [ScoringPitchPoint]
     let student: [ScoringPitchPoint]
+    var progressTime: TimeInterval? = nil
 
     var body: some View {
         Canvas { context, size in
@@ -668,6 +714,13 @@ private struct PitchComparisonGraph: View {
 
             draw(reference, color: .indigo)
             draw(student, color: .orange)
+            if let progressTime {
+                let x = min(size.width, max(0, (progressTime - minTime) / timeRange * size.width))
+                var playhead = Path()
+                playhead.move(to: CGPoint(x: x, y: 0))
+                playhead.addLine(to: CGPoint(x: x, y: size.height))
+                context.stroke(playhead, with: .color(.red.opacity(0.85)), lineWidth: 2)
+            }
         }
         .padding(10)
         .background(.white.opacity(0.75), in: RoundedRectangle(cornerRadius: 10))

@@ -138,6 +138,41 @@ struct KidsAPIClient {
         return fileURL
     }
 
+    func fetchReferencePitch(referenceID: String) async throws -> [ScoringPitchPoint] {
+        guard let session = savedSession else { throw KidsAPIError.sessionExpired }
+        var request = URLRequest(url: baseURL.appending(path: "/api/references/\(referenceID)/pitch"))
+        request.setValue("Bearer \(session.accessToken)", forHTTPHeaderField: "Authorization")
+        request.timeoutInterval = 30
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw KidsAPIError.server("Graf nada qari tidak dapat dimuatkan.")
+        }
+        if http.statusCode == 404 {
+            return try await extractReferencePitch(referenceID: referenceID, session: session)
+        }
+        guard http.statusCode == 200,
+              let payload = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw apiError(status: http.statusCode, data: data)
+        }
+        return Self.scoringPitchPoints(from: payload["reference"])
+    }
+
+    private func extractReferencePitch(referenceID: String, session: KidsAuthSession) async throws -> [ScoringPitchPoint] {
+        let boundary = "TarannumKids-\(UUID().uuidString)"
+        var request = URLRequest(url: baseURL.appending(path: "/api/extract-pitch"))
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(session.accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 120
+        request.httpBody = "--\(boundary)\r\nContent-Disposition: form-data; name=\"reference_id\"\r\n\r\n\(referenceID)\r\n--\(boundary)--\r\n".data(using: .utf8)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200,
+              let payload = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw KidsAPIError.server("Graf nada qari belum tersedia.")
+        }
+        return Self.scoringPitchPoints(from: payload["reference"])
+    }
+
     func sendPracticeEvent(
         type: String,
         referenceID: String,
