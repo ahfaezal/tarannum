@@ -80,6 +80,9 @@ jobs:
           echo -n "$PROFILE_ACTIVITY" | base64 --decode -o "$HOME/Library/MobileDevice/Provisioning Profiles/tarannum-kids-activity.mobileprovision"
           echo -n "$PROFILE_SHIELD_ACTION" | base64 --decode -o "$HOME/Library/MobileDevice/Provisioning Profiles/tarannum-kids-shield-action.mobileprovision"
           echo -n "$PROFILE_SHIELD_CONFIGURATION" | base64 --decode -o "$HOME/Library/MobileDevice/Provisioning Profiles/tarannum-kids-shield-configuration.mobileprovision"
+          security cms -D -i "$HOME/Library/MobileDevice/Provisioning Profiles/tarannum-kids.mobileprovision" > "$RUNNER_TEMP/main-profile.plist"
+          grep -q '<key>com.apple.developer.family-controls</key>' "$RUNNER_TEMP/main-profile.plist"
+          grep -q '<string>group.ai.tarannum.kids</string>' "$RUNNER_TEMP/main-profile.plist"
       - name: Generate Xcode project
         run: xcodegen generate
       - name: Archive Tarannum Kids
