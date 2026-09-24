@@ -65,6 +65,8 @@ jobs:
           PROFILE_ACTIVITY: ${{ secrets.IOS_PROFILE_ACTIVITY_BASE64 }}
           PROFILE_SHIELD_ACTION: ${{ secrets.IOS_PROFILE_SHIELD_ACTION_BASE64 }}
           PROFILE_SHIELD_CONFIGURATION: ${{ secrets.IOS_PROFILE_SHIELD_CONFIGURATION_BASE64 }}
+          API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+          API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
         run: |
           CERTIFICATE_PATH="$RUNNER_TEMP/tarannum-kids.p12"
           KEYCHAIN_PATH="$RUNNER_TEMP/tarannum-kids-signing.keychain-db"
@@ -80,12 +82,14 @@ jobs:
           echo -n "$PROFILE_ACTIVITY" | base64 --decode -o "$HOME/Library/MobileDevice/Provisioning Profiles/tarannum-kids-activity.mobileprovision"
           echo -n "$PROFILE_SHIELD_ACTION" | base64 --decode -o "$HOME/Library/MobileDevice/Provisioning Profiles/tarannum-kids-shield-action.mobileprovision"
           echo -n "$PROFILE_SHIELD_CONFIGURATION" | base64 --decode -o "$HOME/Library/MobileDevice/Provisioning Profiles/tarannum-kids-shield-configuration.mobileprovision"
-          security cms -D -i "$HOME/Library/MobileDevice/Provisioning Profiles/tarannum-kids.mobileprovision" > "$RUNNER_TEMP/main-profile.plist"
-          grep -q '<key>com.apple.developer.family-controls</key>' "$RUNNER_TEMP/main-profile.plist"
-          grep -q '<string>group.ai.tarannum.kids</string>' "$RUNNER_TEMP/main-profile.plist"
+          mkdir -p "$HOME/.private_keys"
+          echo -n "$API_KEY_BASE64" | base64 --decode -o "$HOME/.private_keys/AuthKey_$API_KEY_ID.p8"
       - name: Generate Xcode project
         run: xcodegen generate
       - name: Archive Tarannum Kids
+        env:
+          API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
         run: >-
           xcodebuild
           -project TarannumKids.xcodeproj
@@ -93,6 +97,12 @@ jobs:
           -configuration Release
           -destination "generic/platform=iOS"
           -archivePath "$RUNNER_TEMP/TarannumKids.xcarchive"
+          -allowProvisioningUpdates
+          -authenticationKeyPath "$HOME/.private_keys/AuthKey_$API_KEY_ID.p8"
+          -authenticationKeyID "$API_KEY_ID"
+          -authenticationKeyIssuerID "$API_ISSUER_ID"
+          CODE_SIGN_STYLE=Automatic
+          PROVISIONING_PROFILE_SPECIFIER=""
           archive
       - name: Export IPA
         run: >-
