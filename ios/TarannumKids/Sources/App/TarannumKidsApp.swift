@@ -166,7 +166,11 @@ final class KidsViewModel: NSObject, ObservableObject {
         guard permitted else { practiceMessage = "Benarkan akses mikrofon dalam Settings untuk membuat rakaman."; return }
         do {
             let audioSession = AVAudioSession.sharedInstance()
-            try audioSession.setCategory(.record, mode: .spokenAudio)
+            try audioSession.setCategory(
+                .playAndRecord,
+                mode: .default,
+                options: [.defaultToSpeaker, .allowBluetoothHFP]
+            )
             try audioSession.setActive(true)
             let fileURL = FileManager.default.temporaryDirectory.appending(path: "tarannum-\(UUID().uuidString).m4a")
             let settings: [String: Any] = [
@@ -187,7 +191,7 @@ final class KidsViewModel: NSObject, ObservableObject {
         } catch {
             audioRecorder?.stop()
             audioRecorder = nil
-            practiceMessage = error.localizedDescription
+            practiceMessage = "Rakaman tidak dapat dimulakan. Semak mikrofon atau headset dan cuba semula. (\(error.localizedDescription))"
         }
     }
 
