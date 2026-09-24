@@ -120,10 +120,16 @@ jobs:
           cp "$HOME/Library/MobileDevice/Provisioning Profiles/tarannum-kids-shield-action.mobileprovision" "$APP_PATH/PlugIns/ShieldAction.appex/embedded.mobileprovision"
           cp "$HOME/Library/MobileDevice/Provisioning Profiles/tarannum-kids-shield-configuration.mobileprovision" "$APP_PATH/PlugIns/ShieldConfiguration.appex/embedded.mobileprovision"
 
-          codesign --force --sign "$SIGNING_IDENTITY" --entitlements Configuration/DeviceActivityMonitor.entitlements "$APP_PATH/PlugIns/DeviceActivityMonitor.appex"
-          codesign --force --sign "$SIGNING_IDENTITY" --entitlements Configuration/ShieldAction.entitlements "$APP_PATH/PlugIns/ShieldAction.appex"
-          codesign --force --sign "$SIGNING_IDENTITY" --entitlements Configuration/ShieldConfiguration.entitlements "$APP_PATH/PlugIns/ShieldConfiguration.appex"
-          codesign --force --sign "$SIGNING_IDENTITY" --entitlements Configuration/TarannumKids.entitlements "$APP_PATH"
+          for PROFILE_NAME in tarannum-kids tarannum-kids-activity tarannum-kids-shield-action tarannum-kids-shield-configuration
+          do
+            security cms -D -i "$HOME/Library/MobileDevice/Provisioning Profiles/$PROFILE_NAME.mobileprovision" > "$SIGNING_PATH/$PROFILE_NAME.plist"
+            plutil -extract Entitlements xml1 "$SIGNING_PATH/$PROFILE_NAME.plist" -o "$SIGNING_PATH/$PROFILE_NAME.entitlements"
+          done
+
+          codesign --force --sign "$SIGNING_IDENTITY" --entitlements "$SIGNING_PATH/tarannum-kids-activity.entitlements" "$APP_PATH/PlugIns/DeviceActivityMonitor.appex"
+          codesign --force --sign "$SIGNING_IDENTITY" --entitlements "$SIGNING_PATH/tarannum-kids-shield-action.entitlements" "$APP_PATH/PlugIns/ShieldAction.appex"
+          codesign --force --sign "$SIGNING_IDENTITY" --entitlements "$SIGNING_PATH/tarannum-kids-shield-configuration.entitlements" "$APP_PATH/PlugIns/ShieldConfiguration.appex"
+          codesign --force --sign "$SIGNING_IDENTITY" --entitlements "$SIGNING_PATH/tarannum-kids.entitlements" "$APP_PATH"
 
           rm "$IPA_PATH"
           (cd "$SIGNING_PATH" && zip -qry "$IPA_PATH" Payload)
