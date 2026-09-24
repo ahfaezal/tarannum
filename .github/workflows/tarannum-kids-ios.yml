@@ -18,7 +18,7 @@ permissions:
 
 jobs:
   simulator-build:
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 20
     defaults:
       run:
@@ -48,7 +48,7 @@ jobs:
 
   testflight-upload:
     if: github.event_name == 'workflow_dispatch'
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 30
     defaults:
       run:

@@ -4,5 +4,14 @@
   <key>CFBundleDevelopmentRegion</key><string>ms</string>
   <key>CFBundleVersion</key><string>1</string>
   <key>CFBundleShortVersionString</key><string>1.0</string>
+  <key>CFBundleIconName</key><string>AppIcon</string>
+  <key>UISupportedInterfaceOrientations</key>
+  <array>
+    <string>UIInterfaceOrientationPortrait</string>
+    <string>UIInterfaceOrientationPortraitUpsideDown</string>
+    <string>UIInterfaceOrientationLandscapeLeft</string>
+    <string>UIInterfaceOrientationLandscapeRight</string>
+  </array>
+  <key>UILaunchScreen</key><dict/>
   <key>NSMicrophoneUsageDescription</key><string>Tarannum Kids memerlukan mikrofon untuk merekod latihan bacaan.</string>
 </dict></plist>
