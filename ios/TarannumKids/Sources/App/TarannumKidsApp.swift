@@ -33,6 +33,9 @@ final class KidsViewModel: NSObject, ObservableObject {
     @Published var isLoadingReferenceAudio = false
     @Published var referencePlaybackTime: TimeInterval = 0
     @Published var isSubmittingRecording = false
+    @Published var isWaitingForScore = false
+    @Published var scoringMessage = ""
+    @Published var latestScore: ScoringResultSummary?
     @Published var practiceMessage = "Pilih tugasan dan mulakan rakaman."
     private let api = KidsAPIClient()
     private var audioRecorder: AVAudioRecorder?
@@ -287,7 +290,11 @@ final class KidsViewModel: NSObject, ObservableObject {
             return
         }
         do {
-            try await api.submitRecording(fileURL: fileURL, referenceID: selectedReferenceID, sessionID: sessionID)
+            let jobID = try await api.submitRecording(
+                fileURL: fileURL,
+                referenceID: selectedReferenceID,
+                sessionID: sessionID
+            )
             try await api.sendPracticeEvent(
                 type: "practice_stopped",
                 referenceID: selectedReferenceID,
@@ -300,9 +307,51 @@ final class KidsViewModel: NSObject, ObservableObject {
             )
             practiceMessage = "Rakaman diterima. Kemajuan telah dikemas kini."
             await refreshAccess()
+            Task { await waitForScoringResult(jobID: jobID) }
         } catch {
             practiceMessage = "Rakaman tidak berjaya dihantar. Masa belum dikreditkan. Cuba semula."
         }
+    }
+
+    private func waitForScoringResult(jobID: String) async {
+        isWaitingForScore = true
+        latestScore = nil
+        scoringMessage = "Rakaman sedang menunggu penilaian AI…"
+        defer { isWaitingForScore = false }
+        var transientFailures = 0
+        for _ in 0..<75 {
+            do {
+                let update = try await api.fetchScoringJob(jobID: jobID)
+                transientFailures = 0
+                if update.status == "completed", let result = update.result {
+                    latestScore = result
+                    scoringMessage = "Penilaian selesai."
+                    return
+                }
+                if update.status == "failed" {
+                    if let error = update.error, !error.isEmpty {
+                        scoringMessage = "Penilaian tidak dapat diselesaikan: \(error)"
+                    } else {
+                        scoringMessage = "Penilaian tidak dapat diselesaikan. Rakaman latihan tetap dikreditkan."
+                    }
+                    return
+                }
+                if update.status == "processing" {
+                    scoringMessage = "AI sedang menganalisis bacaan…"
+                } else if let position = update.queuePosition {
+                    scoringMessage = "Menunggu giliran penilaian AI (nombor \(position))…"
+                } else {
+                    scoringMessage = "Rakaman sedang menunggu penilaian AI…"
+                }
+            } catch {
+                transientFailures += 1
+                scoringMessage = transientFailures >= 3
+                    ? "Sambungan penilaian terganggu. Sedang mencuba semula…"
+                    : "Menyemak status penilaian…"
+            }
+            try? await Task.sleep(nanoseconds: 8_000_000_000)
+        }
+        scoringMessage = "Penilaian masih diproses. Keputusan boleh disemak semula kemudian."
     }
 
     private func scheduleDailyBoundary() throws {
@@ -431,6 +480,46 @@ struct KidsHomeView: View {
                 .tint(model.isRecording ? .red : .green)
                 .disabled(model.isSubmittingRecording)
                 if model.isSubmittingRecording { ProgressView("Menghantar rakaman…") }
+                if model.isWaitingForScore {
+                    VStack(spacing: 8) {
+                        ProgressView()
+                        Text(model.scoringMessage)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .padding()
+                    .frame(maxWidth: .infinity)
+                    .background(.blue.opacity(0.07), in: RoundedRectangle(cornerRadius: 12))
+                } else if let score = model.latestScore {
+                    VStack(spacing: 10) {
+                        Text("Markah Penilaian")
+                            .font(.headline)
+                        Text("\(Int(score.score.rounded()))%")
+                            .font(.system(size: 44, weight: .bold, design: .rounded))
+                            .foregroundStyle(scoreColor(score.score))
+                        if let label = score.label, !label.isEmpty {
+                            Text(label).font(.title3.bold())
+                        }
+                        if let message = score.message, !message.isEmpty {
+                            Text(message).multilineTextAlignment(.center)
+                        }
+                        if !score.focusAreas.isEmpty {
+                            Divider()
+                            Text("Fokus latihan: \(score.focusAreas.prefix(3).joined(separator: " • "))")
+                                .font(.subheadline)
+                                .multilineTextAlignment(.center)
+                        }
+                    }
+                    .padding()
+                    .frame(maxWidth: .infinity)
+                    .background(scoreColor(score.score).opacity(0.09), in: RoundedRectangle(cornerRadius: 14))
+                } else if !model.scoringMessage.isEmpty {
+                    Text(model.scoringMessage)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
             }
             Button("Pilih aplikasi untuk dilindungi") { model.isPickerPresented = true }.buttonStyle(.bordered)
             Button("Log keluar", role: .destructive) { model.signOut() }.buttonStyle(.borderless)
@@ -451,5 +540,11 @@ struct KidsHomeView: View {
     private func formattedDuration(_ duration: TimeInterval) -> String {
         let totalSeconds = max(0, Int(duration))
         return String(format: "%02d:%02d", totalSeconds / 60, totalSeconds % 60)
+    }
+
+    private func scoreColor(_ score: Double) -> Color {
+        if score >= 80 { return .green }
+        if score >= 60 { return .orange }
+        return .indigo
     }
 }

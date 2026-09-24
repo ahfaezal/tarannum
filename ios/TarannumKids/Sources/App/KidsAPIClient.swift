@@ -26,6 +26,21 @@ struct PracticeTextSegment: Decodable, Hashable {
     let end: Double
 }
 
+struct ScoringResultSummary: Equatable {
+    let score: Double
+    let label: String?
+    let message: String?
+    let focusAreas: [String]
+}
+
+struct ScoringJobUpdate {
+    let status: String
+    let stage: String?
+    let queuePosition: Int?
+    let result: ScoringResultSummary?
+    let error: String?
+}
+
 enum KidsAPIError: LocalizedError {
     case invalidCredentials
     case accountNotReady(String)
@@ -144,7 +159,7 @@ struct KidsAPIClient {
         fileURL: URL,
         referenceID: String,
         sessionID: String
-    ) async throws {
+    ) async throws -> String {
         guard let session = savedSession else { throw KidsAPIError.sessionExpired }
         let boundary = "TarannumKids-\(UUID().uuidString)"
         var request = URLRequest(url: baseURL.appending(path: "/api/scoring/jobs"))
@@ -171,6 +186,47 @@ struct KidsAPIClient {
             let detail = (try? JSONDecoder().decode(ErrorResponse.self, from: data))?.detail
             throw KidsAPIError.server(detail ?? "Rakaman tidak dapat dihantar. Cuba semula.")
         }
+        guard let payload = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let jobID = payload["job_id"] as? String else {
+            throw KidsAPIError.server("Sistem pemarkahan tidak memulangkan ID kerja.")
+        }
+        return jobID
+    }
+
+    func fetchScoringJob(jobID: String) async throws -> ScoringJobUpdate {
+        guard let session = savedSession else { throw KidsAPIError.sessionExpired }
+        var request = URLRequest(url: baseURL.appending(path: "/api/scoring/jobs/\(jobID)"))
+        request.setValue("Bearer \(session.accessToken)", forHTTPHeaderField: "Authorization")
+        request.timeoutInterval = 20
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200,
+              let payload = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw KidsAPIError.server("Status pemarkahan tidak dapat disemak.")
+        }
+        return ScoringJobUpdate(
+            status: payload["status"] as? String ?? "queued",
+            stage: payload["stage"] as? String,
+            queuePosition: payload["queue_position"] as? Int,
+            result: Self.scoringSummary(from: payload["result"]),
+            error: payload["error"] as? String
+        )
+    }
+
+    private static func scoringSummary(from value: Any?) -> ScoringResultSummary? {
+        guard let result = value as? [String: Any] else { return nil }
+        let rawScore = result["normalizedScore"] ?? result["score"]
+        guard let score = (rawScore as? NSNumber)?.doubleValue else { return nil }
+        let feedback = result["feedback"]
+        let feedbackObject = feedback as? [String: Any]
+        let label = feedbackObject?["label"] as? String
+        let message = feedbackObject?["message"] as? String ?? feedback as? String
+        let focusAreas = feedbackObject?["focus_areas"] as? [String] ?? []
+        return ScoringResultSummary(
+            score: min(100, max(0, score)),
+            label: label,
+            message: message,
+            focusAreas: focusAreas
+        )
     }
 
     private func apiError(status: Int, data: Data) -> Error {
