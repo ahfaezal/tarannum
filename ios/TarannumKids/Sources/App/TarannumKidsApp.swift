@@ -183,7 +183,7 @@ final class KidsViewModel: NSObject, ObservableObject {
             recorder.prepareToRecord()
             guard recorder.record() else { throw KidsAPIError.server("Rakaman tidak dapat dimulakan.") }
             let sessionID = UUID().uuidString
-            try await api.sendPracticeEvent(type: "practice_started", referenceID: selectedReferenceID, sessionID: sessionID)
+            try await api.sendPracticeEvent(type: "practice_started", referenceID: selectedReferenceID)
             audioRecorder = recorder
             practiceSessionID = sessionID
             isRecording = true
@@ -217,13 +217,11 @@ final class KidsViewModel: NSObject, ObservableObject {
             try await api.sendPracticeEvent(
                 type: "practice_stopped",
                 referenceID: selectedReferenceID,
-                sessionID: sessionID,
                 duration: duration
             )
             try await api.sendPracticeEvent(
                 type: "recording_submitted",
                 referenceID: selectedReferenceID,
-                sessionID: sessionID,
                 duration: duration
             )
             practiceMessage = "Rakaman diterima. Kemajuan telah dikemas kini."

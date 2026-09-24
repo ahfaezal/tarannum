@@ -86,7 +86,6 @@ struct KidsAPIClient {
     func sendPracticeEvent(
         type: String,
         referenceID: String,
-        sessionID: String,
         duration: Double? = nil
     ) async throws {
         guard let session = savedSession else { throw KidsAPIError.sessionExpired }
@@ -98,7 +97,7 @@ struct KidsAPIClient {
         request.httpBody = try JSONEncoder().encode(ActivityEvent(
             eventType: type,
             referenceID: referenceID,
-            sessionID: sessionID,
+            sessionID: nil,
             durationSeconds: duration,
             occurredAt: ISO8601DateFormatter().string(from: Date())
         ))
@@ -158,7 +157,7 @@ private struct ReferenceListResponse: Decodable { let references: [PracticeRefer
 private struct ActivityEvent: Encodable {
     let eventType: String
     let referenceID: String
-    let sessionID: String
+    let sessionID: String?
     let durationSeconds: Double?
     let occurredAt: String
 

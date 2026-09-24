@@ -30,7 +30,7 @@ targets:
       path: Configuration/TarannumKids-Info.plist
       properties:
         CFBundleDevelopmentRegion: ms
-        CFBundleVersion: "8"
+        CFBundleVersion: "9"
         CFBundleShortVersionString: "1.0"
         CFBundleIconName: AppIcon
         ITSAppUsesNonExemptEncryption: false
