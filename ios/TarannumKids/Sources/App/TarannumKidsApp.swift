@@ -530,15 +530,13 @@ struct KidsHomeView: View {
                         Text("\(Int(score.score.rounded()))%")
                             .font(.system(size: 44, weight: .bold, design: .rounded))
                             .foregroundStyle(scoreColor(score.score))
-                        if let label = score.label, !label.isEmpty {
-                            Text(label).font(.title3.bold())
-                        }
-                        if let message = score.message, !message.isEmpty {
-                            Text(message).multilineTextAlignment(.center)
-                        }
+                        Text(localizedScoreLabel(score.score))
+                            .font(.title3.bold())
+                        Text(localizedScoreMessage(score.score))
+                            .multilineTextAlignment(.center)
                         if !score.focusAreas.isEmpty {
                             Divider()
-                            Text("Fokus latihan: \(score.focusAreas.prefix(3).joined(separator: " • "))")
+                            Text("Fokus latihan: \(score.focusAreas.prefix(3).map(localizedFocusArea).joined(separator: " • "))")
                                 .font(.subheadline)
                                 .multilineTextAlignment(.center)
                         }
@@ -578,5 +576,38 @@ struct KidsHomeView: View {
         if score >= 80 { return .green }
         if score >= 60 { return .orange }
         return .indigo
+    }
+
+    private func localizedScoreLabel(_ score: Double) -> String {
+        if score >= 85 { return "Sangat Baik" }
+        if score >= 70 { return "Kemajuan Baik" }
+        if score >= 50 { return "Teruskan Latihan" }
+        return "Sedang Membina Asas"
+    }
+
+    private func localizedScoreMessage(_ score: Double) -> String {
+        if score >= 85 { return "Bacaan sangat baik. Kekalkan sebutan, tempo dan alunan ini." }
+        if score >= 70 { return "Kemajuan yang baik. Teruskan latihan untuk memperhalusi bacaan." }
+        if score >= 50 { return "Asas bacaan semakin baik. Ulang latihan dengan memberi perhatian pada sebutan dan masa." }
+        return "Dengar audio contoh sekali lagi, kemudian ulang bacaan secara perlahan dan jelas." }
+    }
+
+    private func localizedFocusArea(_ value: String) -> String {
+        switch value.lowercased() {
+        case let text where text.contains("pronunciation") && text.contains("timing"):
+            return "Fokus pada sebutan dan tempo"
+        case let text where text.contains("pronunciation"):
+            return "Perkemas sebutan"
+        case let text where text.contains("timing"):
+            return "Perkemas tempo bacaan"
+        case let text where text.contains("pitch") || text.contains("melody"):
+            return "Perkemas alunan dan nada"
+        case let text where text.contains("listen") || text.contains("reference"):
+            return "Dengar dan ikuti audio contoh"
+        case let text where text.contains("continue practicing"):
+            return "Teruskan latihan secara konsisten"
+        default:
+            return value
+        }
     }
 }
