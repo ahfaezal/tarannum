@@ -605,6 +605,8 @@ final class KidsViewModel: NSObject, ObservableObject {
 struct KidsHomeView: View {
     @EnvironmentObject private var model: KidsViewModel
     @State private var graphZoom = 1.0
+    @State private var graphAutoFollow = true
+    @State private var isGraphFullScreen = false
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -621,6 +623,14 @@ struct KidsHomeView: View {
             }
             .familyActivityPicker(isPresented: $model.isPickerPresented, selection: $model.selection)
             .onChange(of: model.selection) { _, value in model.saveSelection(value) }
+            .fullScreenCover(isPresented: $isGraphFullScreen) {
+                PitchFullScreenView(
+                    zoom: $graphZoom,
+                    autoFollow: $graphAutoFollow,
+                    isPresented: $isGraphFullScreen
+                )
+                .environmentObject(model)
+            }
         }
     }
 
@@ -688,7 +698,7 @@ struct KidsHomeView: View {
                 } else if !model.referencePitch.isEmpty {
                     VStack(spacing: 8) {
                         graphStatusHeader
-                        HStack {
+                        HStack(spacing: 10) {
                             Text("Panduan Nada Langsung").font(.headline)
                             Spacer()
                             Button { graphZoom = max(0.5, graphZoom - 0.25) } label: {
@@ -701,6 +711,29 @@ struct KidsHomeView: View {
                                 Image(systemName: "plus.magnifyingglass")
                             }
                             .disabled(graphZoom >= 4)
+                            Button {
+                                graphZoom = 1
+                                graphAutoFollow = true
+                            } label: {
+                                Image(systemName: "arrow.counterclockwise")
+                            }
+                            .accessibilityLabel("Tetapkan semula graf")
+                            Button {
+                                graphZoom = 1
+                                graphAutoFollow = true
+                            } label: {
+                                Image(systemName: "arrow.down.right.and.arrow.up.left")
+                            }
+                            .accessibilityLabel("Muatkan semua data")
+                            Button { graphAutoFollow.toggle() } label: {
+                                Image(systemName: graphAutoFollow ? "location.fill" : "location")
+                                    .foregroundStyle(graphAutoFollow ? Color.green : Color.secondary)
+                            }
+                            .accessibilityLabel(graphAutoFollow ? "Matikan auto-follow" : "Aktifkan auto-follow")
+                            Button { isGraphFullScreen = true } label: {
+                                Image(systemName: "arrow.up.left.and.arrow.down.right")
+                            }
+                            .accessibilityLabel("Paparkan graf skrin penuh")
                         }
                         PitchComparisonGraph(
                             reference: model.referencePitch,
@@ -708,6 +741,7 @@ struct KidsHomeView: View {
                             progressTime: model.graphTimelineTime,
                             duration: model.graphDuration,
                             zoom: graphZoom,
+                            autoFollow: graphAutoFollow,
                             segments: selectedReference?.textSegments ?? [],
                             referenceMarkerPitch: model.referenceMarkerPitch,
                             studentMarkerPitch: model.trainingMode == .listen ? nil : model.liveStudentPitch
@@ -719,7 +753,8 @@ struct KidsHomeView: View {
                             Label("Kedudukan", systemImage: "line.diagonal").foregroundStyle(.blue)
                         }
                         .font(.caption)
-                        ayahTimeline
+                        AyahWindow(segments: selectedReference?.textSegments ?? [],
+                                   currentTime: model.graphTimelineTime ?? 0)
                     }
                     .padding()
                     .frame(maxWidth: .infinity)
@@ -852,34 +887,6 @@ struct KidsHomeView: View {
         .background(.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
     }
 
-    @ViewBuilder private var ayahTimeline: some View {
-        let segments = selectedReference?.textSegments ?? []
-        let time = model.graphTimelineTime ?? 0
-        if !segments.isEmpty {
-            VStack(spacing: 6) {
-                ForEach(Array(segments.enumerated()), id: \.offset) { index, segment in
-                    let isActive = time >= segment.start && time < segment.end
-                    HStack(alignment: .top, spacing: 10) {
-                        Text("\(index + 1)")
-                            .font(.caption.bold())
-                            .foregroundStyle(isActive ? .white : .secondary)
-                            .frame(width: 24, height: 24)
-                            .background(isActive ? Color.green : Color.secondary.opacity(0.12), in: Circle())
-                        Text(segment.text)
-                            .font(.title3)
-                            .multilineTextAlignment(.trailing)
-                            .frame(maxWidth: .infinity, alignment: .trailing)
-                    }
-                    .padding(10)
-                    .background(isActive ? Color.green.opacity(0.10) : Color.secondary.opacity(0.05),
-                                in: RoundedRectangle(cornerRadius: 10))
-                    .overlay(RoundedRectangle(cornerRadius: 10)
-                        .stroke(isActive ? Color.green : Color.clear, lineWidth: 1.5))
-                }
-            }
-        }
-    }
-
     private func midiToHz(_ midi: Double) -> Double {
         440 * pow(2, (midi - 69) / 12)
     }
@@ -940,12 +947,128 @@ struct KidsHomeView: View {
     }
 }
 
+private struct AyahWindow: View {
+    let segments: [PracticeTextSegment]
+    let currentTime: TimeInterval
+
+    private var visibleIndices: [Int] {
+        guard !segments.isEmpty else { return [] }
+        let activeIndex = segments.lastIndex(where: { currentTime >= $0.start }) ?? 0
+        let end = min(segments.count, activeIndex + 2)
+        return Array(activeIndex..<end)
+    }
+
+    var body: some View {
+        VStack(spacing: 6) {
+            ForEach(visibleIndices, id: \.self) { index in
+                let segment = segments[index]
+                let isActive = currentTime >= segment.start && currentTime < segment.end
+                    || (index == segments.count - 1 && currentTime >= segment.start)
+                HStack(alignment: .top, spacing: 10) {
+                    Text("\(index + 1)")
+                        .font(.caption.bold())
+                        .foregroundStyle(isActive ? .white : .secondary)
+                        .frame(width: 24, height: 24)
+                        .background(isActive ? Color.green : Color.secondary.opacity(0.12), in: Circle())
+                    Text(segment.text)
+                        .font(.title3)
+                        .multilineTextAlignment(.trailing)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                }
+                .padding(10)
+                .background(isActive ? Color.green.opacity(0.10) : Color.secondary.opacity(0.05),
+                            in: RoundedRectangle(cornerRadius: 10))
+                .overlay(RoundedRectangle(cornerRadius: 10)
+                    .stroke(isActive ? Color.green : Color.clear, lineWidth: 1.5))
+            }
+        }
+    }
+}
+
+private struct PitchFullScreenView: View {
+    @EnvironmentObject private var model: KidsViewModel
+    @Binding var zoom: Double
+    @Binding var autoFollow: Bool
+    @Binding var isPresented: Bool
+
+    private var reference: PracticeReference? {
+        model.references.first(where: { $0.id == model.selectedReferenceID })
+    }
+
+    var body: some View {
+        GeometryReader { proxy in
+            VStack(spacing: 12) {
+                HStack(spacing: 14) {
+                    Button { isPresented = false } label: {
+                        Label("Tutup", systemImage: "xmark")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    Text("Panduan Nada Langsung").font(.title2.bold())
+                    Spacer()
+                    Button { zoom = max(0.5, zoom - 0.25) } label: {
+                        Image(systemName: "minus.magnifyingglass")
+                    }
+                    .disabled(zoom <= 0.5)
+                    Text("\(Int(zoom * 100))%").font(.subheadline.monospacedDigit()).frame(minWidth: 50)
+                    Button { zoom = min(4, zoom + 0.25) } label: {
+                        Image(systemName: "plus.magnifyingglass")
+                    }
+                    .disabled(zoom >= 4)
+                    Button { zoom = 1; autoFollow = true } label: {
+                        Image(systemName: "arrow.counterclockwise")
+                    }
+                    Button { zoom = 1; autoFollow = true } label: {
+                        Image(systemName: "arrow.down.right.and.arrow.up.left")
+                    }
+                    Button { autoFollow.toggle() } label: {
+                        Image(systemName: autoFollow ? "location.fill" : "location")
+                            .foregroundStyle(autoFollow ? Color.green : Color.secondary)
+                    }
+                }
+                .font(.title3)
+
+                PitchComparisonGraph(
+                    reference: model.referencePitch,
+                    student: model.liveStudentPitchPoints,
+                    progressTime: model.graphTimelineTime,
+                    duration: model.graphDuration,
+                    zoom: zoom,
+                    autoFollow: autoFollow,
+                    segments: reference?.textSegments ?? [],
+                    referenceMarkerPitch: model.referenceMarkerPitch,
+                    studentMarkerPitch: model.trainingMode == .listen ? nil : model.liveStudentPitch
+                )
+                .frame(height: max(300, proxy.size.height * 0.62))
+
+                HStack(spacing: 22) {
+                    Label("Qari", systemImage: "minus").foregroundStyle(.green)
+                    Label("Pelajar", systemImage: "minus").foregroundStyle(.red)
+                    Label("Kedudukan", systemImage: "line.diagonal").foregroundStyle(.blue)
+                    Spacer()
+                    Text("\(format(model.graphTimelineTime ?? 0)) / \(format(model.graphDuration))")
+                        .monospacedDigit()
+                }
+                AyahWindow(segments: reference?.textSegments ?? [], currentTime: model.graphTimelineTime ?? 0)
+                Spacer(minLength: 0)
+            }
+            .padding(20)
+            .background(Color(.systemBackground).ignoresSafeArea())
+        }
+    }
+
+    private func format(_ duration: TimeInterval) -> String {
+        let total = max(0, Int(duration))
+        return String(format: "%02d:%02d", total / 60, total % 60)
+    }
+}
+
 private struct PitchComparisonGraph: View {
     let reference: [ScoringPitchPoint]
     let student: [ScoringPitchPoint]
     var progressTime: TimeInterval? = nil
     let duration: TimeInterval
     let zoom: Double
+    let autoFollow: Bool
     let segments: [PracticeTextSegment]
     var referenceMarkerPitch: Double? = nil
     var studentMarkerPitch: Double? = nil
@@ -956,7 +1079,7 @@ private struct PitchComparisonGraph: View {
             let plot = CGRect(x: left, y: top, width: max(1, size.width - left - right), height: max(1, size.height - top - bottom))
             let fullDuration = max(1, max(duration, reference.map(\.time).max() ?? 0))
             let visibleDuration = fullDuration / max(0.5, zoom)
-            let desiredStart = (progressTime ?? 0) - visibleDuration * 0.42
+            let desiredStart = autoFollow ? (progressTime ?? 0) - visibleDuration * 0.42 : 0
             let startTime = min(max(0, desiredStart), max(0, fullDuration - visibleDuration))
             let endTime = startTime + visibleDuration
             let minPitch = midi(forHz: 60), maxPitch = midi(forHz: 600)
@@ -993,9 +1116,11 @@ private struct PitchComparisonGraph: View {
                 var marker = Path()
                 marker.move(to: CGPoint(x: markerX, y: plot.minY))
                 marker.addLine(to: CGPoint(x: markerX, y: plot.maxY))
-                let active = (progressTime ?? -1) >= segment.start && (progressTime ?? -1) < segment.end
-                context.stroke(marker, with: .color(active ? .green : .teal.opacity(0.55)),
-                               style: StrokeStyle(lineWidth: active ? 2 : 1, dash: [5, 4]))
+                let time = progressTime ?? -1
+                let active = time >= segment.start && time < segment.end
+                let markerColor: Color = active ? .green : (segment.start > time ? .orange : .teal)
+                context.stroke(marker, with: .color(markerColor.opacity(active ? 0.9 : 0.65)),
+                               style: StrokeStyle(lineWidth: active ? 2 : 1.5, dash: [5, 4]))
             }
 
             func draw(_ points: [ScoringPitchPoint], color: Color) {
