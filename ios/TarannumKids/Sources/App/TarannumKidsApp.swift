@@ -1044,26 +1044,65 @@ private struct AyahWindow: View {
                 let segment = segments[index]
                 let isActive = currentTime >= segment.start && currentTime < segment.end
                     || (index == segments.count - 1 && currentTime >= segment.start)
-                HStack(alignment: .top, spacing: 10) {
-                    Text("\(index + 1)")
-                        .font(.caption.bold())
-                        .foregroundStyle(isActive ? .white : .secondary)
-                        .frame(width: 24, height: 24)
-                        .background(isActive ? Color.green : Color.secondary.opacity(0.12), in: Circle())
-                    Text(segment.text)
-                        .font(.title3)
-                        .foregroundStyle(darkStyle ? (isActive ? Color.white : Color.white.opacity(0.58)) : Color.primary)
-                        .multilineTextAlignment(.trailing)
-                        .frame(maxWidth: .infinity, alignment: .trailing)
-                }
-                .padding(10)
-                .background(isActive
-                            ? (darkStyle ? Color.teal.opacity(0.22) : Color.green.opacity(0.10))
-                            : (darkStyle ? Color.white.opacity(0.035) : Color.secondary.opacity(0.05)),
-                            in: RoundedRectangle(cornerRadius: 10))
-                .overlay(RoundedRectangle(cornerRadius: 10)
-                    .stroke(isActive ? Color.green : (darkStyle ? Color.white.opacity(0.10) : Color.clear), lineWidth: 1.5))
+                AyahWindowRow(
+                    number: index + 1,
+                    text: segment.text,
+                    isActive: isActive,
+                    darkStyle: darkStyle
+                )
             }
+        }
+    }
+}
+
+private struct AyahWindowRow: View {
+    let number: Int
+    let text: String
+    let isActive: Bool
+    let darkStyle: Bool
+
+    private var numberColor: Color {
+        isActive ? .white : .secondary
+    }
+
+    private var numberBackground: Color {
+        isActive ? .green : Color.secondary.opacity(0.12)
+    }
+
+    private var textColor: Color {
+        guard darkStyle else { return .primary }
+        return isActive ? .white : Color.white.opacity(0.58)
+    }
+
+    private var rowBackground: Color {
+        if isActive {
+            return darkStyle ? Color.teal.opacity(0.22) : Color.green.opacity(0.10)
+        }
+        return darkStyle ? Color.white.opacity(0.035) : Color.secondary.opacity(0.05)
+    }
+
+    private var borderColor: Color {
+        isActive ? .green : (darkStyle ? Color.white.opacity(0.10) : .clear)
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Text("\(number)")
+                .font(.caption.bold())
+                .foregroundStyle(numberColor)
+                .frame(width: 24, height: 24)
+                .background(numberBackground, in: Circle())
+            Text(text)
+                .font(.title3)
+                .foregroundStyle(textColor)
+                .multilineTextAlignment(.trailing)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+        }
+        .padding(10)
+        .background(rowBackground, in: RoundedRectangle(cornerRadius: 10))
+        .overlay {
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(borderColor, lineWidth: 1.5)
         }
     }
 }
