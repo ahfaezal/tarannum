@@ -108,6 +108,8 @@ final class KidsViewModel: NSObject, ObservableObject {
     @Published var liveStudentPitch: Double?
     @Published var liveStudentPitchPoints: [ScoringPitchPoint] = []
     @Published var practiceMessage = "Pilih tugasan dan mulakan rakaman."
+    @Published var countdownValue: Int?
+    @Published var countdownTitle = ""
     private let api = KidsAPIClient()
     private var audioRecorder: AVAudioRecorder?
     private var audioPlayer: AVAudioPlayer?
@@ -286,6 +288,12 @@ final class KidsViewModel: NSObject, ObservableObject {
         else { await startRecording() }
     }
 
+    func toggleRecordingWithCountdown() async {
+        if isRecording { await finishRecording(); return }
+        guard await runCountdown(title: "Rakaman bermula dalam") else { return }
+        await startRecording()
+    }
+
     private func startRecording() async {
         guard !selectedReferenceID.isEmpty else { practiceMessage = "Pilih tugasan latihan dahulu."; return }
         stopReferencePlayback()
@@ -437,7 +445,33 @@ final class KidsViewModel: NSObject, ObservableObject {
         }
     }
 
+    func togglePracticeWithCountdown() async {
+        if isPracticingWithQari { await togglePracticeWithQari(); return }
+        guard await runCountdown(title: "Latihan bermula dalam") else { return }
+        await togglePracticeWithQari()
+    }
+
+    private func runCountdown(title: String) async -> Bool {
+        let expectedMode = trainingMode
+        countdownTitle = title
+        for value in stride(from: 5, through: 1, by: -1) {
+            guard !Task.isCancelled, trainingMode == expectedMode else {
+                countdownValue = nil
+                return false
+            }
+            countdownValue = value
+            do { try await Task.sleep(nanoseconds: 1_000_000_000) }
+            catch { countdownValue = nil; return false }
+        }
+        countdownValue = 0
+        do { try await Task.sleep(nanoseconds: 450_000_000) }
+        catch { countdownValue = nil; return false }
+        countdownValue = nil
+        return true
+    }
+
     func changeTrainingMode(_ mode: KidsTrainingMode) {
+        countdownValue = nil
         stopReferencePlayback()
         livePitchMonitor.stop()
         isPracticingWithQari = false
@@ -452,6 +486,7 @@ final class KidsViewModel: NSObject, ObservableObject {
         latestScore = nil
         scoringMessage = ""
         trainingMode = .record
+        guard await runCountdown(title: "Rakaman bermula dalam") else { return }
         await startRecording()
     }
 
@@ -631,6 +666,11 @@ struct KidsHomeView: View {
                 )
                 .environmentObject(model)
             }
+            .overlay {
+                if let value = model.countdownValue {
+                    CountdownOverlay(value: value, title: model.countdownTitle)
+                }
+            }
         }
     }
 
@@ -735,6 +775,8 @@ struct KidsHomeView: View {
                             }
                             .accessibilityLabel("Paparkan graf skrin penuh")
                         }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
                         PitchComparisonGraph(
                             reference: model.referencePitch,
                             student: model.liveStudentPitchPoints,
@@ -765,14 +807,14 @@ struct KidsHomeView: View {
                         Task { await model.toggleReferencePlayback() }
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(model.isLoadingReferenceAudio || model.isRecording || model.isSubmittingRecording)
+                    .disabled(model.isLoadingReferenceAudio || model.isRecording || model.isSubmittingRecording || model.countdownValue != nil)
                 } else if model.trainingMode == .practice {
                     Button(model.isPracticingWithQari ? "Henti Latihan" : "Mula Latih Bersama Qari") {
-                        Task { await model.togglePracticeWithQari() }
+                        Task { await model.togglePracticeWithCountdown() }
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(model.isPracticingWithQari ? .red : .indigo)
-                    .disabled(model.isLoadingReferenceAudio)
+                    .disabled(model.isLoadingReferenceAudio || model.countdownValue != nil)
                 }
                 if model.isLoadingReferenceAudio {
                     ProgressView("Memuatkan audio contoh…")
@@ -794,11 +836,11 @@ struct KidsHomeView: View {
                 }
                 if model.trainingMode == .record, model.latestScore == nil {
                     Button(model.isRecording ? "Selesai Rakaman" : "Mula Rakaman") {
-                        Task { await model.toggleRecording() }
+                        Task { await model.toggleRecordingWithCountdown() }
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(model.isRecording ? .red : .green)
-                    .disabled(model.isSubmittingRecording)
+                    .disabled(model.isSubmittingRecording || model.countdownValue != nil)
                 }
                 if model.isSubmittingRecording { ProgressView("Menghantar rakaman…") }
                 if model.isWaitingForScore {
@@ -947,6 +989,34 @@ struct KidsHomeView: View {
     }
 }
 
+private struct CountdownOverlay: View {
+    let value: Int
+    let title: String
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.72).ignoresSafeArea()
+            VStack(spacing: 18) {
+                Text(title)
+                    .font(.title.bold())
+                    .foregroundStyle(.white.opacity(0.9))
+                Text(value > 0 ? "\(value)" : "MULA!")
+                    .font(.system(size: 112, weight: .heavy, design: .rounded))
+                    .foregroundStyle(value > 0 ? .white : .green)
+                    .contentTransition(.numericText())
+                Text("Bersedia dan mula membaca apabila kiraan tamat.")
+                    .font(.headline)
+                    .foregroundStyle(.white.opacity(0.8))
+            }
+            .padding(40)
+        }
+        .transition(.opacity)
+        .zIndex(100)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(value > 0 ? "\(title) \(value)" : "Mula")
+    }
+}
+
 private struct AyahWindow: View {
     let segments: [PracticeTextSegment]
     let currentTime: TimeInterval
@@ -1026,6 +1096,8 @@ private struct PitchFullScreenView: View {
                     }
                 }
                 .font(.title3)
+                .buttonStyle(.bordered)
+                .controlSize(.regular)
 
                 PitchComparisonGraph(
                     reference: model.referencePitch,
@@ -1049,10 +1121,43 @@ private struct PitchFullScreenView: View {
                         .monospacedDigit()
                 }
                 AyahWindow(segments: reference?.textSegments ?? [], currentTime: model.graphTimelineTime ?? 0)
+                sessionActionButton
                 Spacer(minLength: 0)
             }
             .padding(20)
             .background(Color(.systemBackground).ignoresSafeArea())
+            .overlay {
+                if let value = model.countdownValue {
+                    CountdownOverlay(value: value, title: model.countdownTitle)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder private var sessionActionButton: some View {
+        switch model.trainingMode {
+        case .listen:
+            Button(model.isPlayingReference ? "Henti Audio Contoh" : "Dengar Audio Contoh") {
+                Task { await model.toggleReferencePlayback() }
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(model.isLoadingReferenceAudio || model.countdownValue != nil)
+        case .practice:
+            Button(model.isPracticingWithQari ? "Henti Latihan" : "Mula Latih Bersama Qari") {
+                Task { await model.togglePracticeWithCountdown() }
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(model.isPracticingWithQari ? .red : .indigo)
+            .disabled(model.isLoadingReferenceAudio || model.countdownValue != nil)
+        case .record:
+            if model.latestScore == nil {
+                Button(model.isRecording ? "Selesai Rakaman" : "Mula Rakaman") {
+                    Task { await model.toggleRecordingWithCountdown() }
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(model.isRecording ? .red : .green)
+                .disabled(model.isSubmittingRecording || model.countdownValue != nil)
+            }
         }
     }
 
