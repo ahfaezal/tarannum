@@ -1,6 +1,7 @@
 import DeviceActivity
 import FamilyControls
 import AVFoundation
+import AudioToolbox
 import SwiftUI
 
 enum KidsTrainingMode: String, CaseIterable, Identifiable {
@@ -471,10 +472,12 @@ final class KidsViewModel: NSObject, ObservableObject {
                 return false
             }
             countdownValue = value
+            AudioServicesPlaySystemSound(1104)
             do { try await Task.sleep(nanoseconds: 1_000_000_000) }
             catch { countdownValue = nil; return false }
         }
         countdownValue = nil
+        AudioServicesPlaySystemSound(1111)
         return true
     }
 
@@ -1393,7 +1396,7 @@ private struct PitchComparisonGraph: View {
                 var path = Path()
                 path.move(to: position(first))
                 for point in sampled.dropFirst() { path.addLine(to: position(point)) }
-                context.stroke(path, with: .color(color), style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                context.stroke(path, with: .color(color), style: StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
             }
 
             let stableStudent = smoothedStudentPoints(student)
