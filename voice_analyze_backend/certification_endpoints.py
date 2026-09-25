@@ -332,7 +332,13 @@ def managed_course_performance(course_id: UUID, user: User = Depends(get_current
     student_ids = [enrollment.student_id for enrollment, _ in enrollments]
 
     completion_end = course.starts_at + timedelta(days=course.completion_window_days)
+    malaysia_offset = timedelta(hours=8)
+    local_course_date = (course.starts_at + malaysia_offset).date()
+    next_local_midnight_utc = datetime.combine(
+        local_course_date + timedelta(days=1), datetime.min.time()
+    ) - malaysia_offset
     scored_rows = []
+    recording_rows = []
     if student_ids:
         scored_rows = db.query(UserSession, AnalysisResult).join(
             AnalysisResult, AnalysisResult.user_session_id == UserSession.id
@@ -341,6 +347,13 @@ def managed_course_performance(course_id: UUID, user: User = Depends(get_current
             UserSession.reference_id == course.reference_id,
             UserSession.created_at >= course.starts_at,
             UserSession.created_at <= completion_end,
+        ).all()
+        recording_rows = db.query(UserSession).filter(
+            UserSession.user_id.in_(student_ids),
+            UserSession.reference_id == course.reference_id,
+            UserSession.created_at >= course.starts_at,
+            UserSession.created_at <= completion_end,
+            or_(UserSession.file_path.isnot(None), UserSession.cloud_storage_path.isnot(None)),
         ).all()
 
     applications = db.query(CertificateApplication).filter(
@@ -354,11 +367,21 @@ def managed_course_performance(course_id: UUID, user: User = Depends(get_current
     recordings_by_student: Dict[UUID, list] = {student_id: [] for student_id in student_ids}
     for session, analysis in scored_rows:
         recordings_by_student.setdefault(session.user_id, []).append((session, analysis))
+    all_recordings_by_student: Dict[UUID, list] = {student_id: [] for student_id in student_ids}
+    for session in recording_rows:
+        all_recordings_by_student.setdefault(session.user_id, []).append(session)
 
     participant_rows = []
     best_scores = []
     for enrollment, student in enrollments:
         recordings = recordings_by_student.get(enrollment.student_id, [])
+        all_recordings = all_recordings_by_student.get(enrollment.student_id, [])
+        course_date_recordings = sum(
+            session.created_at < next_local_midnight_utc for session in all_recordings
+        )
+        post_course_date_recordings = sum(
+            session.created_at >= next_local_midnight_utc for session in all_recordings
+        )
         scores = [float(analysis.score) for _, analysis in recordings]
         best_score = max(scores) if scores else None
         if best_score is not None:
@@ -371,7 +394,9 @@ def managed_course_performance(course_id: UUID, user: User = Depends(get_current
             'valid_recording_count': enrollment.valid_recording_count,
             'required_recording_count': enrollment.required_recording_count,
             'credited_practice_minutes': round((enrollment.credited_practice_seconds or 0) / 60, 1),
-            'recording_count': len(recordings),
+            'recording_count': len(all_recordings),
+            'course_date_recording_count': course_date_recordings,
+            'post_course_recording_count': post_course_date_recordings,
             'average_score': round(sum(scores) / len(scores), 1) if scores else None,
             'best_score': round(best_score, 1) if best_score is not None else None,
             'ai_qualified': bool(best_score is not None and best_score >= 75),
