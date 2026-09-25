@@ -26,15 +26,27 @@ export default function CoursePerformanceDashboard({courseId}: {courseId: string
   const [data, setData] = useState<Performance | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [reloadKey, setReloadKey] = useState(0);
   useEffect(() => {
     let active = true;
     setLoading(true); setError(''); setData(null);
-    api<Performance>(`/managed/courses/${courseId}/performance`)
-      .then(result => { if (active) setData(result); })
-      .catch((reason: Error) => { if (active) setError(reason.message || 'Gagal memuatkan prestasi kursus.'); })
-      .finally(() => { if (active) setLoading(false); });
+    const load = async () => {
+      let lastError: Error | null = null;
+      for (let attempt = 0; attempt < 3 && active; attempt += 1) {
+        try {
+          const result = await api<Performance>(`/managed/courses/${courseId}/performance`);
+          if (active) setData(result);
+          return;
+        } catch (reason) {
+          lastError = reason instanceof Error ? reason : new Error('Gagal memuatkan prestasi kursus.');
+          if (attempt < 2) await new Promise(resolve => window.setTimeout(resolve, 900 * (attempt + 1)));
+        }
+      }
+      if (active) setError(lastError?.message || 'Gagal memuatkan prestasi kursus.');
+    };
+    void load().finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [courseId]);
+  }, [courseId, reloadKey]);
 
   const insights = useMemo(() => {
     if (!data) return [];
@@ -49,7 +61,7 @@ export default function CoursePerformanceDashboard({courseId}: {courseId: string
   }, [data]);
 
   if (loading) return <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5" role="status">Menjana infografik prestasi kursus…</div>;
-  if (error) return <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-700" role="alert">Dashboard prestasi tidak dapat dimuatkan: {error}</div>;
+  if (error) return <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-red-700" role="alert"><span>Dashboard prestasi tidak dapat dimuatkan: {error}</span><button type="button" className="rounded-lg border border-red-300 bg-white px-3 py-2 font-semibold hover:bg-red-100" onClick={() => setReloadKey(value => value + 1)}>Cuba semula</button></div>;
   if (!data) return null;
   const maximumFunnel = Math.max(1, ...data.funnel.map(item => item.count));
   const totalScored = data.overview.scored_recordings;
