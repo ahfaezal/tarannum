@@ -407,6 +407,10 @@ final class KidsViewModel: NSObject, ObservableObject {
             practiceMessage = "Latihan bersama qari dihentikan."
             return
         }
+        await startPracticeWithQari(useCountdown: false)
+    }
+
+    private func startPracticeWithQari(useCountdown: Bool) async {
         guard !selectedReferenceID.isEmpty else { return }
         isLoadingReferenceAudio = true
         practiceMessage = "Menyediakan latihan bersama qari…"
@@ -420,10 +424,18 @@ final class KidsViewModel: NSObject, ObservableObject {
             try audioSession.setActive(true)
             try livePitchMonitor.start()
             let player = try AVAudioPlayer(contentsOf: fileURL)
-            guard player.prepareToPlay(), player.play() else { throw KidsAPIError.server("Audio tidak dapat dimainkan.") }
+            guard player.prepareToPlay() else { throw KidsAPIError.server("Audio tidak dapat disediakan.") }
             audioPlayer = player
             referenceAudioURL = fileURL
             referencePlaybackTime = 0
+            if useCountdown {
+                guard await runCountdown(title: "Latihan bermula dalam") else {
+                    stopReferencePlayback()
+                    livePitchMonitor.stop()
+                    return
+                }
+            }
+            guard player.play() else { throw KidsAPIError.server("Audio tidak dapat dimainkan.") }
             isPlayingReference = true
             isPracticingWithQari = true
             practiceMessage = "Ikuti bacaan qari. Bola jingga menunjukkan nada suara anda."
@@ -447,8 +459,7 @@ final class KidsViewModel: NSObject, ObservableObject {
 
     func togglePracticeWithCountdown() async {
         if isPracticingWithQari { await togglePracticeWithQari(); return }
-        guard await runCountdown(title: "Latihan bermula dalam") else { return }
-        await togglePracticeWithQari()
+        await startPracticeWithQari(useCountdown: true)
     }
 
     private func runCountdown(title: String) async -> Bool {
@@ -463,9 +474,6 @@ final class KidsViewModel: NSObject, ObservableObject {
             do { try await Task.sleep(nanoseconds: 1_000_000_000) }
             catch { countdownValue = nil; return false }
         }
-        countdownValue = 0
-        do { try await Task.sleep(nanoseconds: 450_000_000) }
-        catch { countdownValue = nil; return false }
         countdownValue = nil
         return true
     }
@@ -1086,17 +1094,21 @@ private struct AyahWindowRow: View {
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
+        ZStack {
+            Text(text)
+                .font(.title3)
+                .foregroundStyle(textColor)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.horizontal, 40)
+            HStack {
             Text("\(number)")
                 .font(.caption.bold())
                 .foregroundStyle(numberColor)
                 .frame(width: 24, height: 24)
                 .background(numberBackground, in: Circle())
-            Text(text)
-                .font(.title3)
-                .foregroundStyle(textColor)
-                .multilineTextAlignment(.trailing)
-                .frame(maxWidth: .infinity, alignment: .trailing)
+                Spacer()
+            }
         }
         .padding(10)
         .background(rowBackground, in: RoundedRectangle(cornerRadius: 10))
@@ -1169,10 +1181,15 @@ private struct PitchFullScreenView: View {
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 18).padding(.top, 12).padding(.bottom, 8)
-            .background(Color(red: 0.045, green: 0.075, blue: 0.14).ignoresSafeArea())
+            .background(Color(red: 0.055, green: 0.080, blue: 0.145).ignoresSafeArea())
             .overlay {
                 if let value = model.countdownValue {
                     CountdownOverlay(value: value, title: model.countdownTitle)
+                }
+            }
+            .onChange(of: model.isRecording) { wasRecording, isRecording in
+                if wasRecording && !isRecording && model.trainingMode == .record {
+                    isPresented = false
                 }
             }
         }
@@ -1318,8 +1335,9 @@ private struct PitchComparisonGraph: View {
             let left: CGFloat = 46, right: CGFloat = 10, top: CGFloat = 10, bottom: CGFloat = 27
             let plot = CGRect(x: left, y: top, width: max(1, size.width - left - right), height: max(1, size.height - top - bottom))
             let fullDuration = max(1, max(duration, reference.map(\.time).max() ?? 0))
-            let visibleDuration = fullDuration / max(0.5, zoom)
-            let desiredStart = autoFollow ? (progressTime ?? 0) - visibleDuration * 0.42 : 0
+            let followScale = autoFollow && progressTime != nil ? max(2, zoom) : max(0.5, zoom)
+            let visibleDuration = fullDuration / followScale
+            let desiredStart = autoFollow ? (progressTime ?? 0) - visibleDuration * 0.5 : 0
             let startTime = min(max(0, desiredStart), max(0, fullDuration - visibleDuration))
             let endTime = startTime + visibleDuration
             let minPitch = midi(forHz: 60), maxPitch = midi(forHz: 600)
@@ -1394,7 +1412,7 @@ private struct PitchComparisonGraph: View {
                 ball(studentMarkerPitch, color: .red, radius: 6)
             }
         }
-        .background(.white.opacity(0.75), in: RoundedRectangle(cornerRadius: 10))
+        .background(.white, in: RoundedRectangle(cornerRadius: 10))
         .accessibilityLabel("Graf perbandingan nada audio contoh dan bacaan pelajar")
     }
 
