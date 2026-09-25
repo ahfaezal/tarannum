@@ -26,6 +26,7 @@ export default function CourseManager({admin = false, defaultExpanded = false}: 
   const [certificateError, setCertificateError] = useState('');
   const [certificateLoading, setCertificateLoading] = useState(false);
   const [certificatePreviewUrl, setCertificatePreviewUrl] = useState<string | null>(null);
+  const [showPerformance, setShowPerformance] = useState(false);
   const certificateRequest = useRef(0);
   useEffect(() => () => { if (certificatePreviewUrl) URL.revokeObjectURL(certificatePreviewUrl); }, [certificatePreviewUrl]);
   const closeCertificates = () => { certificateRequest.current += 1; setCertificateStudent(null); setCertificates([]); setCertificateError(''); setCertificatePreviewUrl(null); };
@@ -54,7 +55,7 @@ export default function CourseManager({admin = false, defaultExpanded = false}: 
   useEffect(() => {if (opened) void run(async () => {await Promise.all([loadCourses(), loadContext()]);});}, [opened]);
   const selectCourse = async (id: string) => {
     const token = ++version.current;
-    setSelected(id); setEnrollments([]); setChosen([]);
+    setSelected(id); setEnrollments([]); setChosen([]); setShowPerformance(false);
     setAppliedFilters({search, ...filters});
     await run(async () => {
       const rows = await api<Enrollment[]>(`/managed/courses/${id}/enrollments`);
@@ -73,7 +74,7 @@ export default function CourseManager({admin = false, defaultExpanded = false}: 
       <p className="text-sm text-slate-600">Satu senarai peserta untuk kursus dan Live Scoring. Sijil Kehadiran memerlukan hadir + 60 minit latihan; Sijil Kompetensi turut memerlukan skor ≥75 dan kelulusan qari.</p>
       {error && <p role="alert" className="text-red-700">{error}</p>}
       {success && <p role="status" aria-live="polite" className="rounded-lg bg-emerald-50 p-3 font-semibold text-emerald-800">{success}</p>}
-      <label className="block font-semibold">Pilih kursus<select className="ml-3 max-w-full rounded border p-2" value={selected} disabled={busy} onChange={e => {if(e.target.value) void selectCourse(e.target.value); else {setSelected('');setEnrollments([]);}}}><option value="">Pilih kursus untuk pemantauan</option>{courses.map(c => <option key={c.id} value={c.id}>{c.title} · {new Date(c.starts_at).toLocaleDateString('ms-MY')}</option>)}</select></label>
+      <label className="block font-semibold">Pilih kursus<select className="ml-3 max-w-full rounded border p-2" value={selected} disabled={busy} onChange={e => {if(e.target.value) void selectCourse(e.target.value); else {setSelected('');setEnrollments([]);setShowPerformance(false);}}}><option value="">Pilih kursus untuk pemantauan</option>{courses.map(c => <option key={c.id} value={c.id}>{c.title} · {new Date(c.starts_at).toLocaleDateString('ms-MY')}</option>)}</select></label>
       <details className="rounded-xl border p-4"><summary className="cursor-pointer font-bold text-emerald-800">Cipta Kursus Baharu</summary>
       <form className="mt-4 grid gap-3 md:grid-cols-2" onSubmit={e => {e.preventDefault(); setSuccess(''); void run(async () => {await api('/managed/courses', post({...form, starts_at: new Date(form.starts_at).toISOString()})); setSuccess('Kursus Telah Berjaya Dicipta'); setForm(f => ({...f, title: '', certificate_course_title: '', competency_name: '', starts_at: '', location: ''})); await loadCourses();});}}>
         <label>Nama pengurusan kursus<span className="block text-xs font-normal text-slate-500">Untuk dashboard dan pemantauan dalaman</span><input required minLength={3} className="block w-full rounded border p-2" value={form.title} onChange={e => setForm({...form, title: e.target.value})} /></label>
@@ -93,7 +94,7 @@ export default function CourseManager({admin = false, defaultExpanded = false}: 
       </details>
       {course && <div className="space-y-4">
         <h3 className="font-bold">{course.title} · {course.reference_title} · {course.required_recording_count} rakaman sah untuk 60 minit</h3>
-        {admin && <CoursePerformanceDashboard courseId={course.id} />}
+        {admin && <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="font-bold text-emerald-950">Infografik Prestasi Kursus</p><p className="text-sm text-emerald-800">Analisis lengkap dimuatkan hanya apabila diperlukan.</p></div><button type="button" className="rounded-lg bg-emerald-700 px-4 py-2 font-bold text-white hover:bg-emerald-800" onClick={() => setShowPerformance(value => !value)}>{showPerformance ? 'Tutup Infografik' : 'Buka Infografik Prestasi'}</button></div>{showPerformance && <div className="mt-4"><CoursePerformanceDashboard key={course.id} courseId={course.id} /></div>}</div>}
         <form className="grid gap-3 md:grid-cols-4" onSubmit={e => {e.preventDefault(); setAppliedFilters({search, ...filters}); void run(() => loadContext(course.qari_id, search, {...filters, offset: 0}));}}>
           <label>Nama atau e-mel<input className="block w-full rounded border p-2" placeholder="Cari calon peserta" value={search} onChange={e => setSearch(e.target.value)} /></label>
           <label>Tarikh daftar dari<input type="date" className="block w-full rounded border p-2" value={filters.registered_from} onChange={e => setFilters({...filters, registered_from:e.target.value})} /></label>
