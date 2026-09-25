@@ -140,13 +140,25 @@ final class KidsViewModel: NSObject, ObservableObject {
         }
     }
 
-    var graphMarkerPitch: Double? {
-        if trainingMode == .listen, isPlayingReference {
-            return referencePitch.min(by: {
-                abs($0.time - referencePlaybackTime) < abs($1.time - referencePlaybackTime)
-            })?.value
-        }
-        return liveStudentPitch
+    var graphTimelineTime: TimeInterval? {
+        if isRecording { return recordingDuration }
+        if isPlayingReference || isPracticingWithQari { return referencePlaybackTime }
+        return nil
+    }
+
+    var referenceMarkerPitch: Double? {
+        guard let time = graphTimelineTime else { return nil }
+        return referencePitch.min(by: {
+            abs($0.time - time) < abs($1.time - time)
+        })?.value
+    }
+
+    var graphDuration: TimeInterval {
+        max(
+            max(references.first(where: { $0.id == selectedReferenceID })?.duration ?? 0,
+                referencePitch.map(\.time).max() ?? 0),
+            recordingTargetDuration
+        )
     }
 
     func start() async {
@@ -592,6 +604,7 @@ final class KidsViewModel: NSObject, ObservableObject {
 
 struct KidsHomeView: View {
     @EnvironmentObject private var model: KidsViewModel
+    @State private var graphZoom = 1.0
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -670,38 +683,43 @@ struct KidsHomeView: View {
                 }
                 .pickerStyle(.segmented)
                 .onChange(of: model.trainingMode) { _, mode in model.changeTrainingMode(mode) }
-                if let reference = model.references.first(where: { $0.id == model.selectedReferenceID }),
-                   let text = reference.textSegments?
-                    .map(\.text)
-                    .filter({ !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
-                    .joined(separator: " "),
-                   !text.isEmpty {
-                    Text(text)
-                        .font(.title3)
-                        .multilineTextAlignment(.center)
-                        .padding()
-                        .frame(maxWidth: .infinity)
-                        .background(.indigo.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
-                }
                 if model.isLoadingReferencePitch {
                     ProgressView("Memuatkan graf nada qari…")
                 } else if !model.referencePitch.isEmpty {
                     VStack(spacing: 8) {
-                        Text("Panduan Nada Qari")
-                            .font(.headline)
+                        graphStatusHeader
+                        HStack {
+                            Text("Panduan Nada Langsung").font(.headline)
+                            Spacer()
+                            Button { graphZoom = max(0.5, graphZoom - 0.25) } label: {
+                                Image(systemName: "minus.magnifyingglass")
+                            }
+                            .disabled(graphZoom <= 0.5)
+                            Text("\(Int(graphZoom * 100))%")
+                                .font(.caption.monospacedDigit()).frame(minWidth: 42)
+                            Button { graphZoom = min(4, graphZoom + 0.25) } label: {
+                                Image(systemName: "plus.magnifyingglass")
+                            }
+                            .disabled(graphZoom >= 4)
+                        }
                         PitchComparisonGraph(
                             reference: model.referencePitch,
                             student: model.liveStudentPitchPoints,
-                            progressTime: model.isRecording
-                                ? model.recordingDuration
-                                : (model.isPlayingReference ? model.referencePlaybackTime : nil),
-                            livePitch: model.graphMarkerPitch,
-                            markerColor: model.trainingMode == .listen ? .indigo : .orange
+                            progressTime: model.graphTimelineTime,
+                            duration: model.graphDuration,
+                            zoom: graphZoom,
+                            segments: selectedReference?.textSegments ?? [],
+                            referenceMarkerPitch: model.referenceMarkerPitch,
+                            studentMarkerPitch: model.trainingMode == .listen ? nil : model.liveStudentPitch
                         )
-                        .frame(height: 180)
-                        Label("Ikuti bentuk alunan ungu semasa berlatih", systemImage: "waveform.path")
-                            .font(.caption)
-                            .foregroundStyle(.indigo)
+                        .frame(height: 250)
+                        HStack(spacing: 18) {
+                            Label("Qari", systemImage: "minus").foregroundStyle(.green)
+                            Label("Pelajar", systemImage: "minus").foregroundStyle(.red)
+                            Label("Kedudukan", systemImage: "line.diagonal").foregroundStyle(.blue)
+                        }
+                        .font(.caption)
+                        ayahTimeline
                     }
                     .padding()
                     .frame(maxWidth: .infinity)
@@ -800,6 +818,71 @@ struct KidsHomeView: View {
         }
     }
 
+    private var selectedReference: PracticeReference? {
+        model.references.first(where: { $0.id == model.selectedReferenceID })
+    }
+
+    private var graphStatusHeader: some View {
+        HStack(spacing: 14) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("NADA LANGSUNG").font(.caption2.bold()).foregroundStyle(.secondary)
+                if let pitch = model.liveStudentPitch, model.trainingMode != .listen {
+                    Text("\(Int(midiToHz(pitch).rounded())) Hz")
+                        .font(.title2.monospacedDigit().bold()).foregroundStyle(.blue)
+                } else if let pitch = model.referenceMarkerPitch {
+                    Text("\(Int(midiToHz(pitch).rounded())) Hz")
+                        .font(.title2.monospacedDigit().bold()).foregroundStyle(.blue)
+                } else {
+                    Text("— Hz").font(.title2.monospacedDigit().bold()).foregroundStyle(.secondary)
+                }
+            }
+            Spacer()
+            VStack(alignment: .trailing, spacing: 5) {
+                Text("\(formattedDuration(model.graphTimelineTime ?? 0)) / \(formattedDuration(model.graphDuration))")
+                    .font(.subheadline.monospacedDigit())
+                ProgressView(value: model.graphTimelineTime ?? 0, total: max(1, model.graphDuration))
+                    .frame(width: 150)
+                Label(model.graphTimelineTime == nil ? "Menunggu sesi" : "Nada dikesan",
+                      systemImage: model.graphTimelineTime == nil ? "circle" : "circle.fill")
+                    .font(.caption2).foregroundStyle(model.graphTimelineTime == nil ? .secondary : .green)
+            }
+        }
+        .padding(12)
+        .background(.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    @ViewBuilder private var ayahTimeline: some View {
+        let segments = selectedReference?.textSegments ?? []
+        let time = model.graphTimelineTime ?? 0
+        if !segments.isEmpty {
+            VStack(spacing: 6) {
+                ForEach(Array(segments.enumerated()), id: \.offset) { index, segment in
+                    let isActive = time >= segment.start && time < segment.end
+                    HStack(alignment: .top, spacing: 10) {
+                        Text("\(index + 1)")
+                            .font(.caption.bold())
+                            .foregroundStyle(isActive ? .white : .secondary)
+                            .frame(width: 24, height: 24)
+                            .background(isActive ? Color.green : Color.secondary.opacity(0.12), in: Circle())
+                        Text(segment.text)
+                            .font(.title3)
+                            .multilineTextAlignment(.trailing)
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+                    }
+                    .padding(10)
+                    .background(isActive ? Color.green.opacity(0.10) : Color.secondary.opacity(0.05),
+                                in: RoundedRectangle(cornerRadius: 10))
+                    .overlay(RoundedRectangle(cornerRadius: 10)
+                        .stroke(isActive ? Color.green : Color.clear, lineWidth: 1.5))
+                }
+            }
+        }
+    }
+
+    private func midiToHz(_ midi: Double) -> Double {
+        440 * pow(2, (midi - 69) / 12)
+    }
+
     private func progressText(_ access: DailyAccessState) -> String {
         if access.creditedSeconds < 60 {
             return "\(access.creditedSeconds) saat daripada \(access.requiredSeconds / 60) minit selesai"
@@ -860,35 +943,65 @@ private struct PitchComparisonGraph: View {
     let reference: [ScoringPitchPoint]
     let student: [ScoringPitchPoint]
     var progressTime: TimeInterval? = nil
-    var livePitch: Double? = nil
-    var markerColor: Color = .orange
+    let duration: TimeInterval
+    let zoom: Double
+    let segments: [PracticeTextSegment]
+    var referenceMarkerPitch: Double? = nil
+    var studentMarkerPitch: Double? = nil
 
     var body: some View {
         Canvas { context, size in
-            let all = reference + student
-            guard let minTime = all.map(\.time).min(),
-                  let maxTime = all.map(\.time).max(),
-                  let minPitch = all.map(\.value).min(),
-                  let maxPitch = all.map(\.value).max() else { return }
-            let timeRange = max(0.001, maxTime - minTime)
-            let pitchRange = max(0.001, maxPitch - minPitch)
+            let left: CGFloat = 46, right: CGFloat = 10, top: CGFloat = 10, bottom: CGFloat = 27
+            let plot = CGRect(x: left, y: top, width: max(1, size.width - left - right), height: max(1, size.height - top - bottom))
+            let fullDuration = max(1, max(duration, reference.map(\.time).max() ?? 0))
+            let visibleDuration = fullDuration / max(0.5, zoom)
+            let desiredStart = (progressTime ?? 0) - visibleDuration * 0.42
+            let startTime = min(max(0, desiredStart), max(0, fullDuration - visibleDuration))
+            let endTime = startTime + visibleDuration
+            let minPitch = midi(forHz: 60), maxPitch = midi(forHz: 600)
+            let pitchRange = maxPitch - minPitch
 
-            for fraction in [0.25, 0.5, 0.75] {
+            func x(_ time: Double) -> CGFloat {
+                plot.minX + CGFloat((time - startTime) / visibleDuration) * plot.width
+            }
+            func y(_ pitch: Double) -> CGFloat {
+                plot.maxY - CGFloat((pitch - minPitch) / pitchRange) * plot.height
+            }
+
+            for hz in [60.0, 168, 276, 384, 492, 600] {
+                let gridY = y(midi(forHz: hz))
                 var grid = Path()
-                let y = size.height * fraction
-                grid.move(to: CGPoint(x: 0, y: y))
-                grid.addLine(to: CGPoint(x: size.width, y: y))
+                grid.move(to: CGPoint(x: plot.minX, y: gridY))
+                grid.addLine(to: CGPoint(x: plot.maxX, y: gridY))
                 context.stroke(grid, with: .color(.secondary.opacity(0.16)), lineWidth: 1)
+                context.draw(Text("\(Int(hz)) Hz").font(.system(size: 9)).foregroundStyle(.secondary),
+                             at: CGPoint(x: 2, y: gridY), anchor: .leading)
+            }
+            for tick in 0...5 {
+                let tickTime = startTime + visibleDuration * Double(tick) / 5
+                let tickX = x(tickTime)
+                var grid = Path()
+                grid.move(to: CGPoint(x: tickX, y: plot.minY))
+                grid.addLine(to: CGPoint(x: tickX, y: plot.maxY))
+                context.stroke(grid, with: .color(.secondary.opacity(0.10)), lineWidth: 1)
+                context.draw(Text(formatSeconds(tickTime)).font(.system(size: 9)).foregroundStyle(.secondary),
+                             at: CGPoint(x: tickX, y: plot.maxY + 13), anchor: .center)
+            }
+            for segment in segments where segment.start >= startTime && segment.start <= endTime {
+                let markerX = x(segment.start)
+                var marker = Path()
+                marker.move(to: CGPoint(x: markerX, y: plot.minY))
+                marker.addLine(to: CGPoint(x: markerX, y: plot.maxY))
+                let active = (progressTime ?? -1) >= segment.start && (progressTime ?? -1) < segment.end
+                context.stroke(marker, with: .color(active ? .green : .teal.opacity(0.55)),
+                               style: StrokeStyle(lineWidth: active ? 2 : 1, dash: [5, 4]))
             }
 
             func draw(_ points: [ScoringPitchPoint], color: Color) {
-                let sampled = downsample(points, maximumCount: 700)
+                let sampled = downsample(points.filter { $0.time >= startTime && $0.time <= endTime }, maximumCount: 700)
                 guard let first = sampled.first else { return }
                 func position(_ point: ScoringPitchPoint) -> CGPoint {
-                    CGPoint(
-                        x: (point.time - minTime) / timeRange * size.width,
-                        y: size.height - ((point.value - minPitch) / pitchRange * size.height)
-                    )
+                    CGPoint(x: x(point.time), y: y(point.value))
                 }
                 var path = Path()
                 path.move(to: position(first))
@@ -896,25 +1009,34 @@ private struct PitchComparisonGraph: View {
                 context.stroke(path, with: .color(color), style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
             }
 
-            draw(reference, color: .indigo)
-            draw(student, color: .orange)
+            draw(reference, color: .green)
+            draw(student, color: .red)
             if let progressTime {
-                let x = min(size.width, max(0, (progressTime - minTime) / timeRange * size.width))
+                let cursorX = min(plot.maxX, max(plot.minX, x(progressTime)))
                 var playhead = Path()
-                playhead.move(to: CGPoint(x: x, y: 0))
-                playhead.addLine(to: CGPoint(x: x, y: size.height))
-                context.stroke(playhead, with: .color(.red.opacity(0.85)), lineWidth: 2)
-                if let livePitch {
-                    let y = min(size.height, max(0, size.height - ((livePitch - minPitch) / pitchRange * size.height)))
-                    let ball = CGRect(x: x - 7, y: y - 7, width: 14, height: 14)
-                    context.fill(Path(ellipseIn: ball), with: .color(markerColor))
+                playhead.move(to: CGPoint(x: cursorX, y: plot.minY))
+                playhead.addLine(to: CGPoint(x: cursorX, y: plot.maxY))
+                context.stroke(playhead, with: .color(.blue.opacity(0.85)), lineWidth: 2)
+                func ball(_ pitch: Double?, color: Color, radius: CGFloat) {
+                    guard let pitch else { return }
+                    let markerY = min(plot.maxY, max(plot.minY, y(pitch)))
+                    let ball = CGRect(x: cursorX - radius, y: markerY - radius, width: radius * 2, height: radius * 2)
+                    context.fill(Path(ellipseIn: ball), with: .color(color))
                     context.stroke(Path(ellipseIn: ball), with: .color(.white), lineWidth: 2)
                 }
+                ball(referenceMarkerPitch, color: .cyan, radius: 7)
+                ball(studentMarkerPitch, color: .red, radius: 6)
             }
         }
-        .padding(10)
         .background(.white.opacity(0.75), in: RoundedRectangle(cornerRadius: 10))
         .accessibilityLabel("Graf perbandingan nada audio contoh dan bacaan pelajar")
+    }
+
+    private func midi(forHz hz: Double) -> Double { 69 + 12 * log2(hz / 440) }
+
+    private func formatSeconds(_ seconds: Double) -> String {
+        let total = max(0, Int(seconds.rounded()))
+        return String(format: "%d:%02d", total / 60, total % 60)
     }
 
     private func downsample(_ points: [ScoringPitchPoint], maximumCount: Int) -> [ScoringPitchPoint] {
