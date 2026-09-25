@@ -1338,7 +1338,10 @@ private struct PitchComparisonGraph: View {
             let followScale = autoFollow && progressTime != nil ? max(2, zoom) : max(0.5, zoom)
             let visibleDuration = fullDuration / followScale
             let desiredStart = autoFollow ? (progressTime ?? 0) - visibleDuration * 0.5 : 0
-            let startTime = min(max(0, desiredStart), max(0, fullDuration - visibleDuration))
+            // Keep the playhead centred after it reaches the middle. Near the
+            // end, allow empty future space so the graph continues travelling
+            // towards the fixed playhead instead of pushing it to the edge.
+            let startTime = max(0, desiredStart)
             let endTime = startTime + visibleDuration
             let minPitch = midi(forHz: 60), maxPitch = midi(forHz: 600)
             let pitchRange = maxPitch - minPitch
@@ -1393,8 +1396,9 @@ private struct PitchComparisonGraph: View {
                 context.stroke(path, with: .color(color), style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
             }
 
+            let stableStudent = smoothedStudentPoints(student)
             draw(reference, color: .green)
-            draw(student, color: .red)
+            draw(stableStudent, color: .red)
             if let progressTime {
                 let cursorX = min(plot.maxX, max(plot.minX, x(progressTime)))
                 var playhead = Path()
@@ -1409,7 +1413,8 @@ private struct PitchComparisonGraph: View {
                     context.stroke(Path(ellipseIn: ball), with: .color(.white), lineWidth: 2)
                 }
                 ball(referenceMarkerPitch, color: .cyan, radius: 7)
-                ball(studentMarkerPitch, color: .red, radius: 6)
+                let stableStudentMarker = studentMarkerPitch == nil ? nil : stableStudent.last?.value
+                ball(stableStudentMarker, color: .red, radius: 6)
             }
         }
         .background(.white, in: RoundedRectangle(cornerRadius: 10))
@@ -1421,6 +1426,29 @@ private struct PitchComparisonGraph: View {
     private func formatSeconds(_ seconds: Double) -> String {
         let total = max(0, Int(seconds.rounded()))
         return String(format: "%d:%02d", total / 60, total % 60)
+    }
+
+    private func smoothedStudentPoints(_ points: [ScoringPitchPoint]) -> [ScoringPitchPoint] {
+        guard let first = points.first else { return [] }
+        var output = [first]
+        var previous = first.value
+
+        for point in points.dropFirst() {
+            var corrected = point.value
+
+            // Pitch trackers commonly report the same note one or more
+            // octaves too high/low. Fold those jumps back near the preceding
+            // note before applying a light exponential smoothing pass.
+            while corrected - previous > 7 { corrected -= 12 }
+            while previous - corrected > 7 { corrected += 12 }
+
+            let limitedDelta = min(3.5, max(-3.5, corrected - previous))
+            let stableCandidate = previous + limitedDelta
+            let smoothed = previous * 0.72 + stableCandidate * 0.28
+            output.append(ScoringPitchPoint(time: point.time, value: smoothed))
+            previous = smoothed
+        }
+        return output
     }
 
     private func downsample(_ points: [ScoringPitchPoint], maximumCount: Int) -> [ScoringPitchPoint] {
