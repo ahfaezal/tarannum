@@ -844,7 +844,8 @@ struct KidsHomeView: View {
                     .frame(width: 150)
                 Label(model.graphTimelineTime == nil ? "Menunggu sesi" : "Nada dikesan",
                       systemImage: model.graphTimelineTime == nil ? "circle" : "circle.fill")
-                    .font(.caption2).foregroundStyle(model.graphTimelineTime == nil ? .secondary : .green)
+                    .font(.caption2)
+                    .foregroundStyle(model.graphTimelineTime == nil ? Color.secondary : Color.green)
             }
         }
         .padding(12)
