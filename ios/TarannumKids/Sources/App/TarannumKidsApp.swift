@@ -739,7 +739,7 @@ struct KidsHomeView: View {
                     VStack(spacing: 8) {
                         graphStatusHeader
                         HStack(spacing: 10) {
-                            Text("Panduan Nada Langsung").font(.headline)
+                            Text("Panduan Nada Langsung").font(.headline).foregroundStyle(.white)
                             Spacer()
                             Button { graphZoom = max(0.5, graphZoom - 0.25) } label: {
                                 Image(systemName: "minus.magnifyingglass")
@@ -777,6 +777,7 @@ struct KidsHomeView: View {
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
+                        .tint(.cyan)
                         PitchComparisonGraph(
                             reference: model.referencePitch,
                             student: model.liveStudentPitchPoints,
@@ -796,11 +797,12 @@ struct KidsHomeView: View {
                         }
                         .font(.caption)
                         AyahWindow(segments: selectedReference?.textSegments ?? [],
-                                   currentTime: model.graphTimelineTime ?? 0)
+                                   currentTime: model.graphTimelineTime ?? 0,
+                                   darkStyle: true)
                     }
                     .padding()
                     .frame(maxWidth: .infinity)
-                    .background(.indigo.opacity(0.06), in: RoundedRectangle(cornerRadius: 14))
+                    .background(Color(red: 0.055, green: 0.09, blue: 0.17), in: RoundedRectangle(cornerRadius: 14))
                 }
                 if model.trainingMode == .listen {
                     Button(model.isPlayingReference ? "Henti Audio Contoh" : "Dengar Audio Contoh") {
@@ -902,7 +904,7 @@ struct KidsHomeView: View {
     private var graphStatusHeader: some View {
         HStack(spacing: 14) {
             VStack(alignment: .leading, spacing: 3) {
-                Text("NADA LANGSUNG").font(.caption2.bold()).foregroundStyle(.secondary)
+                Text("LIVE PITCH · NADA LANGSUNG").font(.caption2.bold()).foregroundStyle(.white.opacity(0.65))
                 if let pitch = model.liveStudentPitch, model.trainingMode != .listen {
                     Text("\(Int(midiToHz(pitch).rounded())) Hz")
                         .font(.title2.monospacedDigit().bold()).foregroundStyle(.blue)
@@ -910,23 +912,30 @@ struct KidsHomeView: View {
                     Text("\(Int(midiToHz(pitch).rounded())) Hz")
                         .font(.title2.monospacedDigit().bold()).foregroundStyle(.blue)
                 } else {
-                    Text("— Hz").font(.title2.monospacedDigit().bold()).foregroundStyle(.secondary)
+                    Text("— Hz").font(.title2.monospacedDigit().bold()).foregroundStyle(.white.opacity(0.65))
                 }
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 5) {
                 Text("\(formattedDuration(model.graphTimelineTime ?? 0)) / \(formattedDuration(model.graphDuration))")
-                    .font(.subheadline.monospacedDigit())
+                    .font(.subheadline.monospacedDigit()).foregroundStyle(.white)
                 ProgressView(value: model.graphTimelineTime ?? 0, total: max(1, model.graphDuration))
                     .frame(width: 150)
+                    .tint(.blue)
                 Label(model.graphTimelineTime == nil ? "Menunggu sesi" : "Nada dikesan",
                       systemImage: model.graphTimelineTime == nil ? "circle" : "circle.fill")
                     .font(.caption2)
-                    .foregroundStyle(model.graphTimelineTime == nil ? Color.secondary : Color.green)
+                    .foregroundStyle(model.graphTimelineTime == nil ? Color.white.opacity(0.55) : Color.green)
             }
         }
         .padding(12)
-        .background(.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+        .background(
+            LinearGradient(colors: [Color(red: 0.08, green: 0.18, blue: 0.38),
+                                    Color(red: 0.16, green: 0.08, blue: 0.30)],
+                           startPoint: .leading, endPoint: .trailing),
+            in: RoundedRectangle(cornerRadius: 12)
+        )
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.blue.opacity(0.65), lineWidth: 1))
     }
 
     private func midiToHz(_ midi: Double) -> Double {
@@ -1020,6 +1029,7 @@ private struct CountdownOverlay: View {
 private struct AyahWindow: View {
     let segments: [PracticeTextSegment]
     let currentTime: TimeInterval
+    var darkStyle = false
 
     private var visibleIndices: [Int] {
         guard !segments.isEmpty else { return [] }
@@ -1042,14 +1052,17 @@ private struct AyahWindow: View {
                         .background(isActive ? Color.green : Color.secondary.opacity(0.12), in: Circle())
                     Text(segment.text)
                         .font(.title3)
+                        .foregroundStyle(darkStyle ? (isActive ? Color.white : Color.white.opacity(0.58)) : Color.primary)
                         .multilineTextAlignment(.trailing)
                         .frame(maxWidth: .infinity, alignment: .trailing)
                 }
                 .padding(10)
-                .background(isActive ? Color.green.opacity(0.10) : Color.secondary.opacity(0.05),
+                .background(isActive
+                            ? (darkStyle ? Color.teal.opacity(0.22) : Color.green.opacity(0.10))
+                            : (darkStyle ? Color.white.opacity(0.035) : Color.secondary.opacity(0.05)),
                             in: RoundedRectangle(cornerRadius: 10))
                 .overlay(RoundedRectangle(cornerRadius: 10)
-                    .stroke(isActive ? Color.green : Color.clear, lineWidth: 1.5))
+                    .stroke(isActive ? Color.green : (darkStyle ? Color.white.opacity(0.10) : Color.clear), lineWidth: 1.5))
             }
         }
     }
@@ -1067,37 +1080,19 @@ private struct PitchFullScreenView: View {
 
     var body: some View {
         GeometryReader { proxy in
-            VStack(spacing: 12) {
-                HStack(spacing: 14) {
-                    Button { isPresented = false } label: {
-                        Label("Tutup", systemImage: "xmark")
-                    }
-                    .buttonStyle(.borderedProminent)
-                    Text("Panduan Nada Langsung").font(.title2.bold())
+            VStack(spacing: 14) {
+                HStack {
+                    Text(modeTitle).font(.title2.bold()).foregroundStyle(.white)
                     Spacer()
-                    Button { zoom = max(0.5, zoom - 0.25) } label: {
-                        Image(systemName: "minus.magnifyingglass")
-                    }
-                    .disabled(zoom <= 0.5)
-                    Text("\(Int(zoom * 100))%").font(.subheadline.monospacedDigit()).frame(minWidth: 50)
-                    Button { zoom = min(4, zoom + 0.25) } label: {
-                        Image(systemName: "plus.magnifyingglass")
-                    }
-                    .disabled(zoom >= 4)
-                    Button { zoom = 1; autoFollow = true } label: {
-                        Image(systemName: "arrow.counterclockwise")
-                    }
-                    Button { zoom = 1; autoFollow = true } label: {
-                        Image(systemName: "arrow.down.right.and.arrow.up.left")
-                    }
-                    Button { autoFollow.toggle() } label: {
-                        Image(systemName: autoFollow ? "location.fill" : "location")
-                            .foregroundStyle(autoFollow ? Color.green : Color.secondary)
-                    }
+                    Text("Zoom: \(Int(zoom * 100))%")
+                        .font(.subheadline.bold().monospacedDigit())
+                        .foregroundStyle(.white.opacity(0.78))
+                        .padding(.horizontal, 13).padding(.vertical, 9)
+                        .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 6))
+                        .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.white.opacity(0.18)))
                 }
-                .font(.title3)
-                .buttonStyle(.bordered)
-                .controlSize(.regular)
+
+                livePitchBanner
 
                 PitchComparisonGraph(
                     reference: model.referencePitch,
@@ -1110,7 +1105,14 @@ private struct PitchFullScreenView: View {
                     referenceMarkerPitch: model.referenceMarkerPitch,
                     studentMarkerPitch: model.trainingMode == .listen ? nil : model.liveStudentPitch
                 )
-                .frame(height: max(300, proxy.size.height * 0.62))
+                .frame(height: max(280, proxy.size.height * 0.49))
+                .overlay(alignment: .topTrailing) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Rujukan (Hijau)").foregroundStyle(.green)
+                        Text("Pelajar (Merah)").foregroundStyle(.red)
+                    }
+                    .font(.caption.bold()).padding(12)
+                }
 
                 HStack(spacing: 22) {
                     Label("Qari", systemImage: "minus").foregroundStyle(.green)
@@ -1118,14 +1120,17 @@ private struct PitchFullScreenView: View {
                     Label("Kedudukan", systemImage: "line.diagonal").foregroundStyle(.blue)
                     Spacer()
                     Text("\(format(model.graphTimelineTime ?? 0)) / \(format(model.graphDuration))")
-                        .monospacedDigit()
+                        .monospacedDigit().foregroundStyle(.white)
                 }
-                AyahWindow(segments: reference?.textSegments ?? [], currentTime: model.graphTimelineTime ?? 0)
-                sessionActionButton
+                AyahWindow(segments: reference?.textSegments ?? [],
+                           currentTime: model.graphTimelineTime ?? 0,
+                           darkStyle: true)
+                Spacer(minLength: 0)
+                bottomControlBar
                 Spacer(minLength: 0)
             }
-            .padding(20)
-            .background(Color(.systemBackground).ignoresSafeArea())
+            .padding(.horizontal, 18).padding(.top, 12).padding(.bottom, 8)
+            .background(Color(red: 0.045, green: 0.075, blue: 0.14).ignoresSafeArea())
             .overlay {
                 if let value = model.countdownValue {
                     CountdownOverlay(value: value, title: model.countdownTitle)
@@ -1134,30 +1139,121 @@ private struct PitchFullScreenView: View {
         }
     }
 
-    @ViewBuilder private var sessionActionButton: some View {
+    private var modeTitle: String {
+        switch model.trainingMode {
+        case .listen: return "Studio Dengar Qari"
+        case .practice: return "Studio Latih Bersama Qari"
+        case .record: return "Studio Rakaman"
+        }
+    }
+
+    private var livePitchBanner: some View {
+        HStack(spacing: 24) {
+            VStack(alignment: .leading, spacing: 5) {
+                Text("LIVE PITCH").font(.caption.bold()).foregroundStyle(.white.opacity(0.62))
+                let pitch = model.trainingMode == .listen ? model.referenceMarkerPitch : model.liveStudentPitch
+                Text(pitch.map { "\(Int((440 * pow(2, ($0 - 69) / 12)).rounded())) Hz" } ?? "--- Hz")
+                    .font(.system(size: 30, weight: .bold, design: .rounded))
+                    .foregroundStyle(.blue)
+            }
+            Spacer()
+            Text("\(format(model.graphTimelineTime ?? 0)) / \(format(model.graphDuration))")
+                .font(.headline.monospacedDigit()).foregroundStyle(.white)
+            ProgressView(value: model.graphTimelineTime ?? 0, total: max(1, model.graphDuration))
+                .tint(.blue).frame(width: 180)
+        }
+        .padding(.horizontal, 24).padding(.vertical, 14)
+        .background(
+            LinearGradient(colors: [Color(red: 0.06, green: 0.18, blue: 0.38),
+                                    Color(red: 0.17, green: 0.07, blue: 0.29)],
+                           startPoint: .leading, endPoint: .trailing),
+            in: RoundedRectangle(cornerRadius: 9)
+        )
+        .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.blue.opacity(0.7)))
+    }
+
+    private var bottomControlBar: some View {
+        HStack(spacing: 12) {
+            primarySessionButton
+            Divider().frame(height: 38).overlay(Color.white.opacity(0.15))
+            Button("Rujukan") { Task { await model.toggleReferencePlayback() } }
+                .buttonStyle(.borderedProminent).tint(.blue.opacity(0.48))
+            Button { Task { await model.toggleReferencePlayback() } } label: {
+                Image(systemName: model.isPlayingReference ? "pause.fill" : "play.fill")
+                    .frame(width: 28, height: 28)
+            }
+            .buttonStyle(.borderedProminent).buttonBorderShape(.circle).tint(.blue)
+            Button { Task { await stopCurrentSession() } } label: {
+                Image(systemName: "stop.fill").frame(width: 24, height: 24)
+            }
+            .buttonStyle(.borderedProminent).buttonBorderShape(.circle).tint(.gray)
+            Button { zoom = 1; autoFollow = true } label: {
+                Image(systemName: "arrow.clockwise").frame(width: 24, height: 24)
+            }
+            .buttonStyle(.borderedProminent).buttonBorderShape(.circle).tint(.gray)
+            Button { Task { await restartCurrentSession() } } label: {
+                Label("Ulang", systemImage: "repeat")
+            }
+            .buttonStyle(.bordered).tint(.white)
+            Spacer()
+            Button { zoom = max(0.5, zoom - 0.25) } label: { Image(systemName: "minus.magnifyingglass") }
+                .disabled(zoom <= 0.5)
+            Button { zoom = min(4, zoom + 0.25) } label: { Image(systemName: "plus.magnifyingglass") }
+                .disabled(zoom >= 4)
+            Button { autoFollow.toggle() } label: {
+                Image(systemName: autoFollow ? "location.fill" : "location")
+            }
+            .foregroundStyle(autoFollow ? Color.green : Color.white)
+            Button { isPresented = false } label: {
+                Image(systemName: "xmark").frame(width: 28, height: 28)
+            }
+            .buttonStyle(.borderedProminent).buttonBorderShape(.circle).tint(.red)
+        }
+        .buttonStyle(.bordered)
+        .tint(.white)
+        .padding(.horizontal, 16).padding(.vertical, 10)
+        .background(Color(red: 0.075, green: 0.12, blue: 0.21), in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.12)))
+    }
+
+    @ViewBuilder private var primarySessionButton: some View {
         switch model.trainingMode {
         case .listen:
-            Button(model.isPlayingReference ? "Henti Audio Contoh" : "Dengar Audio Contoh") {
-                Task { await model.toggleReferencePlayback() }
+            Button { Task { await model.toggleReferencePlayback() } } label: {
+                Label(model.isPlayingReference ? "Henti Dengar" : "Dengar Qari", systemImage: "headphones")
             }
-            .buttonStyle(.borderedProminent)
-            .disabled(model.isLoadingReferenceAudio || model.countdownValue != nil)
+            .buttonStyle(.borderedProminent).tint(.green)
         case .practice:
-            Button(model.isPracticingWithQari ? "Henti Latihan" : "Mula Latih Bersama Qari") {
-                Task { await model.togglePracticeWithCountdown() }
+            Button { Task { await model.togglePracticeWithCountdown() } } label: {
+                Label(model.isPracticingWithQari ? "Henti Latihan" : "Mula Latihan", systemImage: "mic.fill")
             }
-            .buttonStyle(.borderedProminent)
-            .tint(model.isPracticingWithQari ? .red : .indigo)
-            .disabled(model.isLoadingReferenceAudio || model.countdownValue != nil)
+            .buttonStyle(.borderedProminent).tint(model.isPracticingWithQari ? .red : .green)
         case .record:
-            if model.latestScore == nil {
-                Button(model.isRecording ? "Selesai Rakaman" : "Mula Rakaman") {
-                    Task { await model.toggleRecordingWithCountdown() }
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(model.isRecording ? .red : .green)
-                .disabled(model.isSubmittingRecording || model.countdownValue != nil)
+            Button { Task { await model.toggleRecordingWithCountdown() } } label: {
+                Label(model.isRecording ? "Selesai Rakaman" : "Mula Rakaman", systemImage: "record.circle")
             }
+            .buttonStyle(.borderedProminent).tint(model.isRecording ? .red : .green)
+        }
+    }
+
+    private func stopCurrentSession() async {
+        if model.isRecording { await model.toggleRecordingWithCountdown() }
+        else if model.isPracticingWithQari { await model.togglePracticeWithCountdown() }
+        else if model.isPlayingReference { await model.toggleReferencePlayback() }
+    }
+
+    private func restartCurrentSession() async {
+        zoom = 1
+        autoFollow = true
+        switch model.trainingMode {
+        case .listen:
+            if model.isPlayingReference { await model.toggleReferencePlayback() }
+            await model.toggleReferencePlayback()
+        case .practice:
+            if model.isPracticingWithQari { await model.togglePracticeWithQari() }
+            await model.togglePracticeWithCountdown()
+        case .record:
+            if !model.isRecording { await model.toggleRecordingWithCountdown() }
         }
     }
 
