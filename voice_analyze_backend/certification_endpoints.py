@@ -261,16 +261,52 @@ def managed_enroll(course_id: UUID, payload: EnrollStudents,
 
 @router.get('/managed/courses/{course_id}/enrollments')
 def managed_enrollments(course_id: UUID, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    _managed_course(db, course_id, user)
+    course = _managed_course(db, course_id, user)
     rows = course_enrollments(course_id, user, db)
+    # Course dates are displayed and managed in Malaysia time (UTC+8), while
+    # database timestamps are stored as naive UTC values.
+    malaysia_offset = timedelta(hours=8)
+    local_course_date = (course.starts_at + malaysia_offset).date()
+    next_local_midnight_utc = datetime.combine(
+        local_course_date + timedelta(days=1), datetime.min.time()
+    ) - malaysia_offset
+    completion_end = course.starts_at + timedelta(days=course.completion_window_days)
     for row in rows:
         enrollment = db.query(CourseEnrollment).filter(CourseEnrollment.id == row['id']).first()
         progress = recalculate_enrollment(db, enrollment, actor_id=user.id)
         row.update(valid_recording_count=enrollment.valid_recording_count,
             required_recording_count=enrollment.required_recording_count, eligible=progress['eligible'])
+        recording_query = db.query(UserSession).filter(
+            UserSession.user_id == enrollment.student_id,
+            UserSession.reference_id == course.reference_id,
+            UserSession.created_at >= course.starts_at,
+            UserSession.created_at <= completion_end,
+            (UserSession.file_path.isnot(None) | UserSession.cloud_storage_path.isnot(None)),
+        )
+        on_course_date = recording_query.filter(
+            UserSession.created_at < next_local_midnight_utc
+        ).count()
+        after_course_date = recording_query.filter(
+            UserSession.created_at >= next_local_midnight_utc
+        ).count()
         application = db.query(CertificateApplication).filter(CertificateApplication.course_id == course_id,
             CertificateApplication.student_id == enrollment.student_id).order_by(CertificateApplication.submitted_at.desc()).first()
         row['competency_status'] = application.status if application else 'not_applied'
+        valid_certificates = db.query(Certificate.certificate_type).filter(
+            Certificate.course_id == course_id,
+            Certificate.student_id == enrollment.student_id,
+            Certificate.status == 'valid',
+        ).all()
+        certificate_types = {certificate_type for certificate_type, in valid_certificates}
+        row.update(
+            total_recording_count=on_course_date + after_course_date,
+            course_date_recording_count=on_course_date,
+            post_course_recording_count=after_course_date,
+            attendance_certificate_status='issued' if 'attendance' in certificate_types else 'not_issued',
+            competency_certificate_status='issued' if certificate_types.intersection(
+                {'competency_azan', 'competency_tarannum'}
+            ) else 'not_issued',
+        )
     db.commit()
     return rows
 
