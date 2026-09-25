@@ -49,7 +49,7 @@ final class LivePitchMonitor: @unchecked Sendable {
         guard count >= 512 else { return nil }
         var energy: Float = 0
         for index in 0..<count { energy += channel[index] * channel[index] }
-        guard sqrt(energy / Float(count)) > 0.012 else { return nil }
+        guard sqrt(energy / Float(count)) > 0.004 else { return nil }
         let minLag = max(2, Int(sampleRate / 500))
         let maxLag = min(count / 2, Int(sampleRate / 60))
         guard minLag < maxLag else { return nil }
@@ -106,6 +106,7 @@ final class KidsViewModel: NSObject, ObservableObject {
     @Published var trainingMode: KidsTrainingMode = .listen
     @Published var isPracticingWithQari = false
     @Published var liveStudentPitch: Double?
+    @Published var liveStudentPitchPoints: [ScoringPitchPoint] = []
     @Published var practiceMessage = "Pilih tugasan dan mulakan rakaman."
     private let api = KidsAPIClient()
     private var audioRecorder: AVAudioRecorder?
@@ -121,7 +122,31 @@ final class KidsViewModel: NSObject, ObservableObject {
 
     override init() {
         super.init()
-        livePitchMonitor.onPitch = { [weak self] pitch in self?.liveStudentPitch = pitch }
+        livePitchMonitor.onPitch = { [weak self] pitch in
+            guard let self else { return }
+            self.liveStudentPitch = pitch
+            guard let pitch else { return }
+            let time: TimeInterval?
+            if self.isRecording { time = self.recordingDuration }
+            else if self.isPracticingWithQari { time = self.referencePlaybackTime }
+            else { time = nil }
+            guard let time else { return }
+            if let previous = self.liveStudentPitchPoints.last,
+               time - previous.time < 0.06 { return }
+            self.liveStudentPitchPoints.append(ScoringPitchPoint(time: time, value: pitch))
+            if self.liveStudentPitchPoints.count > 1_200 {
+                self.liveStudentPitchPoints.removeFirst(self.liveStudentPitchPoints.count - 1_200)
+            }
+        }
+    }
+
+    var graphMarkerPitch: Double? {
+        if trainingMode == .listen, isPlayingReference {
+            return referencePitch.min(by: {
+                abs($0.time - referencePlaybackTime) < abs($1.time - referencePlaybackTime)
+            })?.value
+        }
+        return liveStudentPitch
     }
 
     func start() async {
@@ -259,6 +284,7 @@ final class KidsViewModel: NSObject, ObservableObject {
         let permitted = await AVAudioApplication.requestRecordPermission()
         guard permitted else { practiceMessage = "Benarkan akses mikrofon dalam Settings untuk membuat rakaman."; return }
         do {
+            liveStudentPitchPoints = []
             let audioSession = AVAudioSession.sharedInstance()
             try audioSession.setCategory(
                 .playAndRecord,
@@ -366,10 +392,11 @@ final class KidsViewModel: NSObject, ObservableObject {
         practiceMessage = "Menyediakan latihan bersama qari…"
         defer { isLoadingReferenceAudio = false }
         do {
+            liveStudentPitchPoints = []
             stopReferencePlayback()
             let fileURL = try await api.downloadReferenceAudio(referenceID: selectedReferenceID)
             let audioSession = AVAudioSession.sharedInstance()
-            try audioSession.setCategory(.playAndRecord, mode: .voiceChat, options: [.defaultToSpeaker, .allowBluetoothHFP])
+            try audioSession.setCategory(.playAndRecord, mode: .measurement, options: [.defaultToSpeaker, .allowBluetoothHFP])
             try audioSession.setActive(true)
             try livePitchMonitor.start()
             let player = try AVAudioPlayer(contentsOf: fileURL)
@@ -402,6 +429,7 @@ final class KidsViewModel: NSObject, ObservableObject {
         stopReferencePlayback()
         livePitchMonitor.stop()
         isPracticingWithQari = false
+        liveStudentPitchPoints = []
         trainingMode = mode
         practiceMessage = mode == .record
             ? "Tekan Mula Rakaman untuk mendapatkan markah."
@@ -424,6 +452,7 @@ final class KidsViewModel: NSObject, ObservableObject {
     func selectedReferenceChanged() {
         stopReferencePlayback()
         referencePitch = []
+        liveStudentPitchPoints = []
         latestScore = nil
         practiceMessage = "Dengar audio contoh atau mulakan rakaman."
         Task { await loadReferencePitch() }
@@ -662,11 +691,12 @@ struct KidsHomeView: View {
                             .font(.headline)
                         PitchComparisonGraph(
                             reference: model.referencePitch,
-                            student: [],
+                            student: model.liveStudentPitchPoints,
                             progressTime: model.isRecording
                                 ? model.recordingDuration
                                 : (model.isPlayingReference ? model.referencePlaybackTime : nil),
-                            livePitch: model.liveStudentPitch
+                            livePitch: model.graphMarkerPitch,
+                            markerColor: model.trainingMode == .listen ? .indigo : .orange
                         )
                         .frame(height: 180)
                         Label("Ikuti bentuk alunan ungu semasa berlatih", systemImage: "waveform.path")
@@ -831,6 +861,7 @@ private struct PitchComparisonGraph: View {
     let student: [ScoringPitchPoint]
     var progressTime: TimeInterval? = nil
     var livePitch: Double? = nil
+    var markerColor: Color = .orange
 
     var body: some View {
         Canvas { context, size in
@@ -876,7 +907,7 @@ private struct PitchComparisonGraph: View {
                 if let livePitch {
                     let y = min(size.height, max(0, size.height - ((livePitch - minPitch) / pitchRange * size.height)))
                     let ball = CGRect(x: x - 7, y: y - 7, width: 14, height: 14)
-                    context.fill(Path(ellipseIn: ball), with: .color(.orange))
+                    context.fill(Path(ellipseIn: ball), with: .color(markerColor))
                     context.stroke(Path(ellipseIn: ball), with: .color(.white), lineWidth: 2)
                 }
             }
