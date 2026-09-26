@@ -1655,7 +1655,10 @@ private struct PitchComparisonGraph: View {
             // The stored qari contour is intentionally continuous. Only the
             // live student line breaks at silence/unvoiced regions.
             draw(reference, color: .green)
-            draw(stableStudent, color: .red, breakAtVoiceGaps: true)
+            // Keep the student's guide visually continuous across breathing
+            // pauses and transitions between ayat. Missing detector frames are
+            // still excluded from the data; the graph only joins both sides.
+            draw(stableStudent, color: .red)
             if let progressTime {
                 let cursorX = min(plot.maxX, max(plot.minX, x(progressTime)))
                 var playhead = Path()
@@ -1689,10 +1692,12 @@ private struct PitchComparisonGraph: View {
         guard let first = points.first else { return [] }
         func octaveCorrected(_ value: Double, at time: Double) -> Double {
             guard let target = reference.min(by: { abs($0.time - time) < abs($1.time - time) })?.value else { return value }
-            var candidate = value
-            while candidate - target > 6 { candidate -= 12 }
-            while target - candidate > 6 { candidate += 12 }
-            return candidate
+            // Live autocorrelation may lock onto a harmonic above or below
+            // the sung note. Select the octave-equivalent candidate nearest
+            // the reference contour used by the authoritative backend score.
+            return (-3...3)
+                .map { value + Double($0 * 12) }
+                .min(by: { abs($0 - target) < abs($1 - target) }) ?? value
         }
         let correctedFirst = ScoringPitchPoint(time: first.time, value: octaveCorrected(first.value, at: first.time))
         var output = [correctedFirst]
@@ -1701,6 +1706,16 @@ private struct PitchComparisonGraph: View {
 
         for point in points.dropFirst() {
             var corrected = octaveCorrected(point.value, at: point.time)
+
+            // A breath or ayat boundary starts a new phrase. Reset the
+            // smoothing history so the previous phrase cannot pull the next
+            // detected note towards an obsolete pitch.
+            if let lastPoint = output.last, point.time - lastPoint.time > 0.70 {
+                previous = corrected
+                recent = [corrected]
+                output.append(ScoringPitchPoint(time: point.time, value: corrected))
+                continue
+            }
 
             // Pitch trackers commonly report the same note one or more
             // octaves too high/low. Fold those jumps back near the preceding
