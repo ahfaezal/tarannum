@@ -131,6 +131,8 @@ final class KidsViewModel: NSObject, ObservableObject {
     @Published var practiceMessage = "Pilih tugasan dan mulakan rakaman."
     @Published var countdownValue: Int?
     @Published var countdownTitle = ""
+    @Published var microphoneStatus = "Mikrofon belum diperiksa"
+    @Published var isMicrophoneReady = false
     private let api = KidsAPIClient()
     private var audioRecorder: AVAudioRecorder?
     private var referencePlayer: AVPlayer?
@@ -143,6 +145,50 @@ final class KidsViewModel: NSObject, ObservableObject {
     private let livePitchMonitor = LivePitchMonitor()
 
     var isSignedIn: Bool { session != nil }
+
+    func auditMicrophone() async {
+        let permitted = await AVAudioApplication.requestRecordPermission()
+        guard permitted else {
+            isMicrophoneReady = false
+            microphoneStatus = "Akses mikrofon belum dibenarkan"
+            return
+        }
+        do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.playAndRecord, mode: .measurement,
+                                    options: [.defaultToSpeaker, .allowBluetoothHFP])
+            try session.setActive(true)
+            if let preferred = preferredMicrophone(from: session.availableInputs ?? []),
+               session.currentRoute.inputs.first?.uid != preferred.uid {
+                try session.setPreferredInput(preferred)
+            }
+            refreshMicrophoneStatus()
+        } catch {
+            isMicrophoneReady = false
+            microphoneStatus = "Mikrofon tidak tersedia: \(error.localizedDescription)"
+        }
+    }
+
+    func refreshMicrophoneStatus() {
+        let session = AVAudioSession.sharedInstance()
+        guard let input = session.currentRoute.inputs.first else {
+            isMicrophoneReady = false
+            microphoneStatus = "Tiada mikrofon dikesan"
+            return
+        }
+        isMicrophoneReady = true
+        let externalTypes: Set<AVAudioSession.Port> = [.usbAudio, .headsetMic, .bluetoothHFP]
+        microphoneStatus = externalTypes.contains(input.portType)
+            ? "Mikrofon luaran sedia: \(input.portName)"
+            : "Mikrofon iPad sedia: \(input.portName)"
+    }
+
+    private func preferredMicrophone(from inputs: [AVAudioSessionPortDescription]) -> AVAudioSessionPortDescription? {
+        for type in [AVAudioSession.Port.usbAudio, .headsetMic, .bluetoothHFP] {
+            if let input = inputs.first(where: { $0.portType == type }) { return input }
+        }
+        return inputs.first(where: { $0.portType == .builtInMic }) ?? inputs.first
+    }
 
     override init() {
         super.init()
@@ -334,6 +380,11 @@ final class KidsViewModel: NSObject, ObservableObject {
                 options: [.defaultToSpeaker, .allowBluetoothHFP]
             )
             try audioSession.setActive(true)
+            if let preferred = preferredMicrophone(from: audioSession.availableInputs ?? []),
+               audioSession.currentRoute.inputs.first?.uid != preferred.uid {
+                try audioSession.setPreferredInput(preferred)
+            }
+            refreshMicrophoneStatus()
             try livePitchMonitor.start()
             let fileURL = FileManager.default.temporaryDirectory.appending(path: "tarannum-\(UUID().uuidString).m4a")
             let settings: [String: Any] = [
@@ -444,6 +495,13 @@ final class KidsViewModel: NSObject, ObservableObject {
     private func startPracticeWithQari(useCountdown: Bool) async {
         guard !isLoadingReferenceAudio else { return }
         guard !selectedReferenceID.isEmpty else { return }
+        let permitted = await AVAudioApplication.requestRecordPermission()
+        guard permitted else {
+            isMicrophoneReady = false
+            microphoneStatus = "Akses mikrofon belum dibenarkan"
+            practiceMessage = "Benarkan akses mikrofon dalam Settings sebelum memulakan latihan."
+            return
+        }
         isLoadingReferenceAudio = true
         practiceMessage = "Menyediakan latihan bersama qari…"
         defer { isLoadingReferenceAudio = false }
@@ -454,9 +512,16 @@ final class KidsViewModel: NSObject, ObservableObject {
             let audioSession = AVAudioSession.sharedInstance()
             try audioSession.setCategory(.playAndRecord, mode: .measurement, options: [.defaultToSpeaker, .allowBluetoothHFP])
             try audioSession.setActive(true)
+            if let preferred = preferredMicrophone(from: audioSession.availableInputs ?? []),
+               audioSession.currentRoute.inputs.first?.uid != preferred.uid {
+                try audioSession.setPreferredInput(preferred)
+            }
+            refreshMicrophoneStatus()
             try livePitchMonitor.start()
             let player = AVPlayer(url: fileURL)
-            player.volume = 1
+            // Keep the qari audible as a guide without overpowering the
+            // student's voice at the selected microphone.
+            player.volume = 0.45
             player.automaticallyWaitsToMinimizeStalling = true
             referencePlayer = player
             referenceAudioURL = fileURL
@@ -1262,6 +1327,19 @@ private struct PitchFullScreenView: View {
             VStack(spacing: 14) {
                 HStack {
                     Text(modeTitle).font(.title2.bold()).foregroundStyle(.white)
+                    if model.trainingMode != .listen {
+                        Label(model.microphoneStatus,
+                              systemImage: model.isMicrophoneReady ? "mic.circle.fill" : "mic.slash.circle.fill")
+                            .font(.caption.bold())
+                            .foregroundStyle(model.isMicrophoneReady ? Color.green : Color.orange)
+                            .padding(.horizontal, 10).padding(.vertical, 7)
+                            .background(Color.white.opacity(0.07), in: Capsule())
+                        Button { Task { await model.auditMicrophone() } } label: {
+                            Image(systemName: "arrow.clockwise")
+                        }
+                        .buttonStyle(.bordered).tint(.white)
+                        .accessibilityLabel("Periksa semula mikrofon")
+                    }
                     Spacer()
                     Text("Zoom: \(Int(zoom * 100))%")
                         .font(.subheadline.bold().monospacedDigit())
@@ -1339,6 +1417,13 @@ private struct PitchFullScreenView: View {
                 if wasRecording && !isRecording && model.trainingMode == .record {
                     isPresented = false
                 }
+            }
+            .task {
+                if model.trainingMode != .listen { await model.auditMicrophone() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: AVAudioSession.routeChangeNotification)) { _ in
+                guard model.trainingMode != .listen else { return }
+                Task { await model.auditMicrophone() }
             }
         }
     }
