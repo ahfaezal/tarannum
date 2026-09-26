@@ -218,9 +218,28 @@ final class KidsViewModel: NSObject, ObservableObject {
 
     var referenceMarkerPitch: Double? {
         guard let time = graphTimelineTime else { return nil }
-        return referencePitch.min(by: {
-            abs($0.time - time) < abs($1.time - time)
-        })?.value
+        guard !referencePitch.isEmpty else { return nil }
+
+        // Binary-search the two surrounding samples and interpolate the
+        // marker between them. This avoids scanning the full contour on every
+        // frame and removes the visible vertical stepping of the qari ball.
+        var low = 0
+        var high = referencePitch.count
+        while low < high {
+            let middle = (low + high) / 2
+            if referencePitch[middle].time < time { low = middle + 1 }
+            else { high = middle }
+        }
+        if low == 0 { return referencePitch[0].value }
+        if low >= referencePitch.count { return referencePitch.last?.value }
+        let before = referencePitch[low - 1]
+        let after = referencePitch[low]
+        let span = after.time - before.time
+        guard span > 0, span <= 0.30 else {
+            return abs(time - before.time) <= abs(after.time - time) ? before.value : after.value
+        }
+        let fraction = min(1, max(0, (time - before.time) / span))
+        return before.value + (after.value - before.value) * fraction
     }
 
     var graphDuration: TimeInterval {
@@ -410,7 +429,7 @@ final class KidsViewModel: NSObject, ObservableObject {
             recordingTargetDuration = targetDuration ?? 0
             isRecording = true
             recordingTimer?.invalidate()
-            recordingTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
+            let timer = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
                 guard let self, let recorder = self.audioRecorder else { return }
                 // AVAudioRecorder resets currentTime when a timed recording
                 // stops. Preserve the highest observed value so auto-submit
@@ -422,6 +441,9 @@ final class KidsViewModel: NSObject, ObservableObject {
                     Task { await self.finishRecording() }
                 }
             }
+            timer.tolerance = 0.005
+            RunLoop.main.add(timer, forMode: .common)
+            recordingTimer = timer
             practiceMessage = targetDuration == nil
                 ? "Rakaman sedang berjalan. Baca tugasan dengan jelas, kemudian tekan Selesai Rakaman."
                 : "Rakaman akan berhenti dan dihantar secara automatik apabila tempoh tugasan tamat."
@@ -462,7 +484,7 @@ final class KidsViewModel: NSObject, ObservableObject {
             isPlayingReference = true
             player.play()
             practiceMessage = "Dengar audio contoh, kemudian tekan Henti apabila bersedia untuk merakam."
-            playbackTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] timer in
+            let timer = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self] timer in
                 guard let self, let player = self.referencePlayer else { timer.invalidate(); return }
                 let current = player.currentTime().seconds
                 if current.isFinite { self.referencePlaybackTime = current }
@@ -475,6 +497,9 @@ final class KidsViewModel: NSObject, ObservableObject {
                     self.practiceMessage = "Audio contoh selesai. Anda boleh mula merakam."
                 }
             }
+            timer.tolerance = 0.005
+            RunLoop.main.add(timer, forMode: .common)
+            playbackTimer = timer
         } catch {
             stopReferencePlayback()
             practiceMessage = "Audio contoh tidak dapat dimainkan: \(error.localizedDescription)"
@@ -537,7 +562,7 @@ final class KidsViewModel: NSObject, ObservableObject {
             isPlayingReference = true
             isPracticingWithQari = true
             practiceMessage = "Ikuti bacaan qari. Bola jingga menunjukkan nada suara anda."
-            playbackTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] timer in
+            let timer = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self] timer in
                 guard let self, let player = self.referencePlayer else { timer.invalidate(); return }
                 let current = player.currentTime().seconds
                 if current.isFinite { self.referencePlaybackTime = current }
@@ -554,6 +579,9 @@ final class KidsViewModel: NSObject, ObservableObject {
                     self.practiceMessage = "Latihan bersama qari selesai. Anda boleh ulang atau pergi ke sesi rakaman."
                 }
             }
+            timer.tolerance = 0.005
+            RunLoop.main.add(timer, forMode: .common)
+            playbackTimer = timer
         } catch {
             stopReferencePlayback()
             livePitchMonitor.stop()
@@ -1652,8 +1680,8 @@ private struct PitchComparisonGraph: View {
             }
 
             let stableStudent = smoothedStudentPoints(student, reference: reference)
-            // The stored qari contour is intentionally continuous. Only the
-            // live student line breaks at silence/unvoiced regions.
+            // Both contours stay visually continuous across short detector
+            // gaps so the guide remains easy for children to follow.
             draw(reference, color: .green)
             // Keep the student's guide visually continuous across breathing
             // pauses and transitions between ayat. Missing detector frames are
@@ -1690,8 +1718,23 @@ private struct PitchComparisonGraph: View {
 
     private func smoothedStudentPoints(_ points: [ScoringPitchPoint], reference: [ScoringPitchPoint]) -> [ScoringPitchPoint] {
         guard let first = points.first else { return [] }
+        func nearestReferenceValue(at time: Double) -> Double? {
+            guard !reference.isEmpty else { return nil }
+            var low = 0
+            var high = reference.count
+            while low < high {
+                let middle = (low + high) / 2
+                if reference[middle].time < time { low = middle + 1 }
+                else { high = middle }
+            }
+            if low == 0 { return reference[0].value }
+            if low >= reference.count { return reference.last?.value }
+            let before = reference[low - 1]
+            let after = reference[low]
+            return abs(time - before.time) <= abs(after.time - time) ? before.value : after.value
+        }
         func octaveCorrected(_ value: Double, at time: Double) -> Double {
-            guard let target = reference.min(by: { abs($0.time - time) < abs($1.time - time) })?.value else { return value }
+            guard let target = nearestReferenceValue(at: time) else { return value }
             // Live autocorrelation may lock onto a harmonic above or below
             // the sung note. Select the octave-equivalent candidate nearest
             // the reference contour used by the authoritative backend score.
