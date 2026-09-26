@@ -98,6 +98,7 @@ struct TarannumKidsApp: App {
 
 @MainActor
 final class KidsViewModel: NSObject, ObservableObject {
+    private static let practiceStudentGraphWarmup: TimeInterval = 1.5
     @Published var access: DailyAccessState?
     @Published var selection = SharedState.familySelection
     @Published var isPickerPresented = false
@@ -198,7 +199,13 @@ final class KidsViewModel: NSObject, ObservableObject {
             guard let pitch else { return }
             let time: TimeInterval?
             if self.isRecording { time = self.recordingDuration }
-            else if self.isPracticingWithQari { time = self.referencePlaybackTime }
+            else if self.isPracticingWithQari {
+                time = self.referencePlaybackTime
+                // Ignore the short start-up transient from the audio route,
+                // breath and speaker bleed. The microphone remains active;
+                // only the initial unstable guide points are withheld.
+                guard self.referencePlaybackTime >= Self.practiceStudentGraphWarmup else { return }
+            }
             else { time = nil }
             guard let time else { return }
             if let previous = self.liveStudentPitchPoints.last,
