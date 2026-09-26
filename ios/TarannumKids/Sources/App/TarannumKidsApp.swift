@@ -1638,7 +1638,10 @@ private struct PitchComparisonGraph: View {
                     // Do not draw a diagonal bridge through pauses or
                     // unvoiced consonants. The web graph also leaves these
                     // short silence regions open.
-                    if breakAtVoiceGaps && point.time - previous.time > 0.32 {
+                    // The live detector can miss a few frames on soft vowels.
+                    // Preserve real pauses, but bridge short detection dropouts
+                    // so a sustained recitation does not look fragmented.
+                    if breakAtVoiceGaps && point.time - previous.time > 0.70 {
                         path.move(to: position(point))
                     } else {
                         path.addLine(to: position(point))
@@ -1705,18 +1708,22 @@ private struct PitchComparisonGraph: View {
             while corrected - previous > 7 { corrected -= 12 }
             while previous - corrected > 7 { corrected += 12 }
 
-            let limitedDelta = min(3.0, max(-3.0, corrected - previous))
+            // Allow genuine melodic movement to appear promptly. Five
+            // semitones per sample still rejects implausible tracker spikes,
+            // while being noticeably more responsive than the old 3-semitone
+            // cap for children's voices.
+            let limitedDelta = min(5.0, max(-5.0, corrected - previous))
             recent.append(previous + limitedDelta)
-            if recent.count > 7 { recent.removeFirst() }
+            if recent.count > 5 { recent.removeFirst() }
 
-            // Match the web guide: discard the outer quartiles in the latest
-            // seven detections, average the middle values, then apply an EMA.
+            // Use a short robust window to reject isolated octave errors
+            // without flattening valid changes in the student's melody.
             let sorted = recent.sorted()
             let lower = Int(floor(Double(sorted.count) * 0.25))
             let upper = max(lower + 1, Int(ceil(Double(sorted.count) * 0.75)))
             let middle = sorted[lower..<min(sorted.count, upper)]
             let trimmedMean = middle.reduce(0, +) / Double(middle.count)
-            let smoothed = previous + (trimmedMean - previous) * 0.35
+            let smoothed = previous + (trimmedMean - previous) * 0.58
             output.append(ScoringPitchPoint(time: point.time, value: smoothed))
             previous = smoothed
         }
