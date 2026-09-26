@@ -133,7 +133,7 @@ final class KidsViewModel: NSObject, ObservableObject {
     @Published var countdownTitle = ""
     private let api = KidsAPIClient()
     private var audioRecorder: AVAudioRecorder?
-    private var audioPlayer: AVAudioPlayer?
+    private var referencePlayer: AVPlayer?
     private var countdownAudioPlayer: AVAudioPlayer?
     private var recordingTimer: Timer?
     private var playbackTimer: Timer?
@@ -402,26 +402,31 @@ final class KidsViewModel: NSObject, ObservableObject {
             let audioSession = AVAudioSession.sharedInstance()
             try audioSession.setCategory(.playback, mode: .default)
             try audioSession.setActive(true)
-            let player = try AVAudioPlayer(contentsOf: fileURL)
-            guard player.prepareToPlay(), player.play() else {
-                throw KidsAPIError.server("Audio contoh tidak dapat dimainkan.")
-            }
-            audioPlayer = player
+            let player = AVPlayer(url: fileURL)
+            player.volume = 1
+            player.automaticallyWaitsToMinimizeStalling = true
+            referencePlayer = player
             referenceAudioURL = fileURL
             referencePlaybackTime = 0
             isPlayingReference = true
+            player.play()
             practiceMessage = "Dengar audio contoh, kemudian tekan Henti apabila bersedia untuk merakam."
             playbackTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] timer in
-                guard let self, let player = self.audioPlayer else { timer.invalidate(); return }
-                self.referencePlaybackTime = player.currentTime
-                if !player.isPlaying {
+                guard let self, let player = self.referencePlayer else { timer.invalidate(); return }
+                let current = player.currentTime().seconds
+                if current.isFinite { self.referencePlaybackTime = current }
+                if player.currentItem?.status == .failed {
+                    self.practiceMessage = "Audio contoh gagal dimainkan: \(player.currentItem?.error?.localizedDescription ?? "format audio tidak disokong")"
+                    self.stopReferencePlayback()
+                } else if let duration = player.currentItem?.duration.seconds,
+                          duration.isFinite, duration > 0, current >= duration - 0.12 {
                     self.stopReferencePlayback()
                     self.practiceMessage = "Audio contoh selesai. Anda boleh mula merakam."
                 }
             }
         } catch {
             stopReferencePlayback()
-            practiceMessage = "Audio contoh tidak dapat dimainkan. Cuba semula."
+            practiceMessage = "Audio contoh tidak dapat dimainkan: \(error.localizedDescription)"
         }
     }
 
@@ -450,9 +455,10 @@ final class KidsViewModel: NSObject, ObservableObject {
             try audioSession.setCategory(.playAndRecord, mode: .measurement, options: [.defaultToSpeaker, .allowBluetoothHFP])
             try audioSession.setActive(true)
             try livePitchMonitor.start()
-            let player = try AVAudioPlayer(contentsOf: fileURL)
-            guard player.prepareToPlay() else { throw KidsAPIError.server("Audio tidak dapat disediakan.") }
-            audioPlayer = player
+            let player = AVPlayer(url: fileURL)
+            player.volume = 1
+            player.automaticallyWaitsToMinimizeStalling = true
+            referencePlayer = player
             referenceAudioURL = fileURL
             referencePlaybackTime = 0
             if useCountdown {
@@ -462,14 +468,21 @@ final class KidsViewModel: NSObject, ObservableObject {
                     return
                 }
             }
-            guard player.play() else { throw KidsAPIError.server("Audio tidak dapat dimainkan.") }
+            player.play()
             isPlayingReference = true
             isPracticingWithQari = true
             practiceMessage = "Ikuti bacaan qari. Bola jingga menunjukkan nada suara anda."
             playbackTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] timer in
-                guard let self, let player = self.audioPlayer else { timer.invalidate(); return }
-                self.referencePlaybackTime = player.currentTime
-                if !player.isPlaying {
+                guard let self, let player = self.referencePlayer else { timer.invalidate(); return }
+                let current = player.currentTime().seconds
+                if current.isFinite { self.referencePlaybackTime = current }
+                if player.currentItem?.status == .failed {
+                    self.practiceMessage = "Audio latihan gagal dimainkan: \(player.currentItem?.error?.localizedDescription ?? "format audio tidak disokong")"
+                    self.stopReferencePlayback()
+                    self.livePitchMonitor.stop()
+                    self.isPracticingWithQari = false
+                } else if let duration = player.currentItem?.duration.seconds,
+                          duration.isFinite, duration > 0, current >= duration - 0.12 {
                     self.stopReferencePlayback()
                     self.livePitchMonitor.stop()
                     self.isPracticingWithQari = false
@@ -593,8 +606,8 @@ final class KidsViewModel: NSObject, ObservableObject {
     private func stopReferencePlayback() {
         playbackTimer?.invalidate()
         playbackTimer = nil
-        audioPlayer?.stop()
-        audioPlayer = nil
+        referencePlayer?.pause()
+        referencePlayer = nil
         isPlayingReference = false
         referencePlaybackTime = 0
         if let referenceAudioURL {
@@ -928,19 +941,6 @@ struct KidsHomeView: View {
             graphZoom = 1
             graphAutoFollow = true
             isGraphFullScreen = true
-            Task {
-                // Allow the full-screen studio to finish its presentation so
-                // the countdown and playback state are immediately visible.
-                try? await Task.sleep(nanoseconds: 220_000_000)
-                switch model.trainingMode {
-                case .listen:
-                    if !model.isPlayingReference { await model.toggleReferencePlayback() }
-                case .practice:
-                    if !model.isPracticingWithQari { await model.togglePracticeWithCountdown() }
-                case .record:
-                    if !model.isRecording { await model.toggleRecordingWithCountdown() }
-                }
-            }
         } label: {
             Label(primaryActivityTitle, systemImage: "play.fill")
                 .font(.title3.bold()).frame(maxWidth: .infinity).padding(.vertical, 15)
@@ -1014,9 +1014,9 @@ struct KidsHomeView: View {
 
     private var primaryActivityTitle: String {
         switch model.trainingMode {
-        case .listen: return "Dengar Qari"
-        case .practice: return "Mulakan Latihan"
-        case .record: return "Mula Rakaman"
+        case .listen: return "Buka Studio Dengar"
+        case .practice: return "Buka Studio Latihan"
+        case .record: return "Buka Studio Rakaman"
         }
     }
 
@@ -1250,6 +1250,8 @@ private struct PitchFullScreenView: View {
     @Binding var zoom: Double
     @Binding var autoFollow: Bool
     @Binding var isPresented: Bool
+    @State private var manualStartTime: Double = 0
+    @State private var dragStartTime: Double?
 
     private var reference: PracticeReference? {
         model.references.first(where: { $0.id == model.selectedReferenceID })
@@ -1278,11 +1280,31 @@ private struct PitchFullScreenView: View {
                     duration: model.graphDuration,
                     zoom: zoom,
                     autoFollow: autoFollow,
+                    manualStartTime: manualStartTime,
                     segments: reference?.textSegments ?? [],
                     referenceMarkerPitch: model.referenceMarkerPitch,
                     studentMarkerPitch: model.trainingMode == .listen ? nil : model.liveStudentPitch
                 )
                 .frame(height: max(280, proxy.size.height * 0.49))
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 8)
+                        .onChanged { value in
+                            let fullDuration = max(1, model.graphDuration)
+                            let visibleDuration = fullDuration / max(0.5, zoom)
+                            if dragStartTime == nil {
+                                dragStartTime = autoFollow
+                                    ? max(0, (model.graphTimelineTime ?? 0) - visibleDuration * 0.5)
+                                    : manualStartTime
+                                autoFollow = false
+                            }
+                            let width = max(1, proxy.size.width - 36)
+                            let delta = Double(value.translation.width / width) * visibleDuration
+                            let maximumStart = max(0, fullDuration - visibleDuration)
+                            manualStartTime = min(maximumStart, max(0, (dragStartTime ?? 0) - delta))
+                        }
+                        .onEnded { _ in dragStartTime = nil }
+                )
                 .overlay(alignment: .topTrailing) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Rujukan (Hijau)").foregroundStyle(.green)
@@ -1371,7 +1393,7 @@ private struct PitchFullScreenView: View {
                 Image(systemName: "stop.fill").frame(width: 24, height: 24)
             }
             .buttonStyle(.borderedProminent).buttonBorderShape(.circle).tint(.gray)
-            Button { zoom = 1; autoFollow = true } label: {
+            Button { zoom = 1; manualStartTime = 0; autoFollow = true } label: {
                 Image(systemName: "arrow.clockwise").frame(width: 24, height: 24)
             }
             .buttonStyle(.borderedProminent).buttonBorderShape(.circle).tint(.gray)
@@ -1458,6 +1480,7 @@ private struct PitchComparisonGraph: View {
     let duration: TimeInterval
     let zoom: Double
     let autoFollow: Bool
+    var manualStartTime: Double = 0
     let segments: [PracticeTextSegment]
     var referenceMarkerPitch: Double? = nil
     var studentMarkerPitch: Double? = nil
@@ -1469,11 +1492,12 @@ private struct PitchComparisonGraph: View {
             let fullDuration = max(1, max(duration, reference.map(\.time).max() ?? 0))
             let followScale = autoFollow && progressTime != nil ? max(2, zoom) : max(0.5, zoom)
             let visibleDuration = fullDuration / followScale
-            let desiredStart = autoFollow ? (progressTime ?? 0) - visibleDuration * 0.5 : 0
+            let desiredStart = autoFollow ? (progressTime ?? 0) - visibleDuration * 0.5 : manualStartTime
             // Keep the playhead centred after it reaches the middle. Near the
             // end, allow empty future space so the graph continues travelling
             // towards the fixed playhead instead of pushing it to the edge.
-            let startTime = max(0, desiredStart)
+            let maximumStart = max(0, fullDuration - visibleDuration)
+            let startTime = autoFollow ? max(0, desiredStart) : min(maximumStart, max(0, desiredStart))
             let endTime = startTime + visibleDuration
             let minPitch = midi(forHz: 60), maxPitch = midi(forHz: 600)
             let pitchRange = maxPitch - minPitch
