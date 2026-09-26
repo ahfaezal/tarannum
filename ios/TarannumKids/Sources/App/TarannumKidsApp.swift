@@ -48,20 +48,38 @@ final class LivePitchMonitor: @unchecked Sendable {
         guard let channel = buffer.floatChannelData?[0] else { return nil }
         let count = Int(buffer.frameLength)
         guard count >= 512 else { return nil }
+        var mean: Float = 0
+        for index in 0..<count { mean += channel[index] }
+        mean /= Float(count)
         var energy: Float = 0
-        for index in 0..<count { energy += channel[index] * channel[index] }
+        for index in 0..<count {
+            let sample = channel[index] - mean
+            energy += sample * sample
+        }
         guard sqrt(energy / Float(count)) > 0.004 else { return nil }
         let minLag = max(2, Int(sampleRate / 500))
         let maxLag = min(count / 2, Int(sampleRate / 60))
         guard minLag < maxLag else { return nil }
         var bestLag = 0
-        var bestCorrelation: Float = 0
+        var bestCorrelation: Float = -1
         for lag in minLag...maxLag {
             var correlation: Float = 0
-            for index in 0..<(count - lag) { correlation += channel[index] * channel[index + lag] }
-            if correlation > bestCorrelation { bestCorrelation = correlation; bestLag = lag }
+            var firstEnergy: Float = 0
+            var secondEnergy: Float = 0
+            for index in 0..<(count - lag) {
+                let first = channel[index] - mean
+                let second = channel[index + lag] - mean
+                correlation += first * second
+                firstEnergy += first * first
+                secondEnergy += second * second
+            }
+            let denominator = sqrt(firstEnergy * secondEnergy)
+            let normalized = denominator > 0 ? correlation / denominator : 0
+            if normalized > bestCorrelation { bestCorrelation = normalized; bestLag = lag }
         }
-        guard bestLag > 0 else { return nil }
+        guard bestLag > 0, bestCorrelation > 0.42 else { return nil }
+        // Normalising both windows removes the short-lag bias that commonly
+        // reports a child's fundamental frequency one octave too high.
         let frequency = sampleRate / Double(bestLag)
         guard frequency >= 60, frequency <= 500 else { return nil }
         return 69 + 12 * log2(frequency / 440)
@@ -114,6 +132,7 @@ final class KidsViewModel: NSObject, ObservableObject {
     private let api = KidsAPIClient()
     private var audioRecorder: AVAudioRecorder?
     private var audioPlayer: AVAudioPlayer?
+    private var countdownAudioPlayer: AVAudioPlayer?
     private var recordingTimer: Timer?
     private var playbackTimer: Timer?
     private var referenceAudioURL: URL?
@@ -472,13 +491,44 @@ final class KidsViewModel: NSObject, ObservableObject {
                 return false
             }
             countdownValue = value
-            AudioServicesPlaySystemSound(1104)
+            playCountdownTone(frequency: value == 1 ? 1_050 : 820, duration: 0.24)
             do { try await Task.sleep(nanoseconds: 1_000_000_000) }
             catch { countdownValue = nil; return false }
         }
         countdownValue = nil
-        AudioServicesPlaySystemSound(1111)
+        playCountdownTone(frequency: 1_320, duration: 0.42)
         return true
+    }
+
+    private func playCountdownTone(frequency: Double, duration: Double) {
+        let sampleRate = 44_100
+        let sampleCount = max(1, Int(Double(sampleRate) * duration))
+        var pcm = Data(capacity: sampleCount * 2)
+        for index in 0..<sampleCount {
+            let progress = Double(index) / Double(sampleCount)
+            let envelope = min(1, progress * 18) * min(1, (1 - progress) * 14)
+            let wave = sin(2 * .pi * frequency * Double(index) / Double(sampleRate))
+            var sample = Int16(max(-1, min(1, wave * envelope * 0.72)) * Double(Int16.max)).littleEndian
+            Swift.withUnsafeBytes(of: &sample) { pcm.append(contentsOf: $0) }
+        }
+        var wav = Data()
+        func appendASCII(_ text: String) { wav.append(text.data(using: .ascii)!) }
+        func append16(_ value: UInt16) { var value = value.littleEndian; Swift.withUnsafeBytes(of: &value) { wav.append(contentsOf: $0) } }
+        func append32(_ value: UInt32) { var value = value.littleEndian; Swift.withUnsafeBytes(of: &value) { wav.append(contentsOf: $0) } }
+        appendASCII("RIFF"); append32(UInt32(36 + pcm.count)); appendASCII("WAVE")
+        appendASCII("fmt "); append32(16); append16(1); append16(1); append32(UInt32(sampleRate))
+        append32(UInt32(sampleRate * 2)); append16(2); append16(16)
+        appendASCII("data"); append32(UInt32(pcm.count)); wav.append(pcm)
+        do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setActive(true)
+            countdownAudioPlayer = try AVAudioPlayer(data: wav)
+            countdownAudioPlayer?.volume = 1
+            countdownAudioPlayer?.prepareToPlay()
+            countdownAudioPlayer?.play()
+        } catch {
+            AudioServicesPlaySystemSound(1104)
+        }
     }
 
     func changeTrainingMode(_ mode: KidsTrainingMode) {
@@ -824,25 +874,26 @@ struct KidsHomeView: View {
             Text("PILIH AKTIVITI").font(.title3.bold())
                 .foregroundStyle(Color(red: 0.04, green: 0.10, blue: 0.28))
             HStack(spacing: 14) {
-                activityCard(mode: .listen, icon: "headphones", title: "Dengar",
+                activityCard(mode: .listen, artwork: "KidsListen", title: "Dengar",
                              subtitle: "Dengar dan perhatikan alunan qari", color: .blue)
-                activityCard(mode: .practice, icon: "mic.fill", title: "Latih",
+                activityCard(mode: .practice, artwork: "KidsPractice", title: "Latih",
                              subtitle: "Ikuti bacaan qari sambil melihat nada", color: kidsTeal)
-                activityCard(mode: .record, icon: "star.fill", title: "Rakam & Nilai",
+                activityCard(mode: .record, artwork: "KidsRecord", title: "Rakam & Nilai",
                              subtitle: "Rakam bacaan untuk mendapatkan markah", color: .orange)
             }
         }
     }
 
-    private func activityCard(mode: KidsTrainingMode, icon: String, title: String,
+    private func activityCard(mode: KidsTrainingMode, artwork: String, title: String,
                               subtitle: String, color: Color) -> some View {
         let selected = model.trainingMode == mode
         return Button {
             model.changeTrainingMode(mode)
         } label: {
             HStack(spacing: 14) {
-                Image(systemName: icon).font(.system(size: 38)).foregroundStyle(color)
-                    .frame(width: 64, height: 64).background(color.opacity(0.12), in: Circle())
+                Image(artwork).resizable().scaledToFit()
+                    .frame(width: 76, height: 76)
+                    .background(color.opacity(0.09), in: Circle())
                 VStack(alignment: .leading, spacing: 5) {
                     Text(title).font(.title3.bold()).foregroundStyle(color)
                     Text(subtitle).font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.leading)
@@ -1451,7 +1502,7 @@ private struct PitchComparisonGraph: View {
                 context.stroke(path, with: .color(color), style: StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
             }
 
-            let stableStudent = smoothedStudentPoints(student)
+            let stableStudent = smoothedStudentPoints(student, reference: reference)
             draw(reference, color: .green)
             draw(stableStudent, color: .red)
             if let progressTime {
@@ -1483,13 +1534,21 @@ private struct PitchComparisonGraph: View {
         return String(format: "%d:%02d", total / 60, total % 60)
     }
 
-    private func smoothedStudentPoints(_ points: [ScoringPitchPoint]) -> [ScoringPitchPoint] {
+    private func smoothedStudentPoints(_ points: [ScoringPitchPoint], reference: [ScoringPitchPoint]) -> [ScoringPitchPoint] {
         guard let first = points.first else { return [] }
-        var output = [first]
-        var previous = first.value
+        func octaveCorrected(_ value: Double, at time: Double) -> Double {
+            guard let target = reference.min(by: { abs($0.time - time) < abs($1.time - time) })?.value else { return value }
+            var candidate = value
+            while candidate - target > 6 { candidate -= 12 }
+            while target - candidate > 6 { candidate += 12 }
+            return candidate
+        }
+        let correctedFirst = ScoringPitchPoint(time: first.time, value: octaveCorrected(first.value, at: first.time))
+        var output = [correctedFirst]
+        var previous = correctedFirst.value
 
         for point in points.dropFirst() {
-            var corrected = point.value
+            var corrected = octaveCorrected(point.value, at: point.time)
 
             // Pitch trackers commonly report the same note one or more
             // octaves too high/low. Fold those jumps back near the preceding
