@@ -22,7 +22,7 @@ final class LivePitchMonitor: @unchecked Sendable {
         let input = engine.inputNode
         let format = input.outputFormat(forBus: 0)
         guard format.sampleRate > 0, format.channelCount > 0 else { return }
-        input.installTap(onBus: 0, bufferSize: 2048, format: format) { [weak self] buffer, _ in
+        input.installTap(onBus: 0, bufferSize: 4096, format: format) { [weak self] buffer, _ in
             guard let self, Date().timeIntervalSince(self.lastUpdate) >= 0.08 else { return }
             self.lastUpdate = Date()
             let midi = Self.detectMIDI(buffer: buffer, sampleRate: format.sampleRate)
@@ -921,6 +921,19 @@ struct KidsHomeView: View {
             graphZoom = 1
             graphAutoFollow = true
             isGraphFullScreen = true
+            Task {
+                // Allow the full-screen studio to finish its presentation so
+                // the countdown and playback state are immediately visible.
+                try? await Task.sleep(nanoseconds: 220_000_000)
+                switch model.trainingMode {
+                case .listen:
+                    if !model.isPlayingReference { await model.toggleReferencePlayback() }
+                case .practice:
+                    if !model.isPracticingWithQari { await model.togglePracticeWithCountdown() }
+                case .record:
+                    if !model.isRecording { await model.toggleRecordingWithCountdown() }
+                }
+            }
         } label: {
             Label(primaryActivityTitle, systemImage: "play.fill")
                 .font(.title3.bold()).frame(maxWidth: .infinity).padding(.vertical, 15)
@@ -1498,7 +1511,18 @@ private struct PitchComparisonGraph: View {
                 }
                 var path = Path()
                 path.move(to: position(first))
-                for point in sampled.dropFirst() { path.addLine(to: position(point)) }
+                var previous = first
+                for point in sampled.dropFirst() {
+                    // Do not draw a diagonal bridge through pauses or
+                    // unvoiced consonants. The web graph also leaves these
+                    // short silence regions open.
+                    if point.time - previous.time > 0.32 {
+                        path.move(to: position(point))
+                    } else {
+                        path.addLine(to: position(point))
+                    }
+                    previous = point
+                }
                 context.stroke(path, with: .color(color), style: StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
             }
 
@@ -1546,6 +1570,7 @@ private struct PitchComparisonGraph: View {
         let correctedFirst = ScoringPitchPoint(time: first.time, value: octaveCorrected(first.value, at: first.time))
         var output = [correctedFirst]
         var previous = correctedFirst.value
+        var recent = [correctedFirst.value]
 
         for point in points.dropFirst() {
             var corrected = octaveCorrected(point.value, at: point.time)
@@ -1556,9 +1581,18 @@ private struct PitchComparisonGraph: View {
             while corrected - previous > 7 { corrected -= 12 }
             while previous - corrected > 7 { corrected += 12 }
 
-            let limitedDelta = min(3.5, max(-3.5, corrected - previous))
-            let stableCandidate = previous + limitedDelta
-            let smoothed = previous * 0.72 + stableCandidate * 0.28
+            let limitedDelta = min(3.0, max(-3.0, corrected - previous))
+            recent.append(previous + limitedDelta)
+            if recent.count > 7 { recent.removeFirst() }
+
+            // Match the web guide: discard the outer quartiles in the latest
+            // seven detections, average the middle values, then apply an EMA.
+            let sorted = recent.sorted()
+            let lower = Int(floor(Double(sorted.count) * 0.25))
+            let upper = max(lower + 1, Int(ceil(Double(sorted.count) * 0.75)))
+            let middle = sorted[lower..<min(sorted.count, upper)]
+            let trimmedMean = middle.reduce(0, +) / Double(middle.count)
+            let smoothed = previous + (trimmedMean - previous) * 0.35
             output.append(ScoringPitchPoint(time: point.time, value: smoothed))
             previous = smoothed
         }
