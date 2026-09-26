@@ -656,17 +656,26 @@ struct KidsHomeView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 24) {
-                    Image(systemName: model.access?.unlockGranted == true ? "lock.open.fill" : "lock.fill")
-                        .font(.system(size: 64)).foregroundStyle(model.access?.unlockGranted == true ? .green : .indigo)
-                    Text("Tarannum Kids").font(.largeTitle.bold())
-                    Text(model.message).multilineTextAlignment(.center)
-                    if !model.isAuthorized { authorizationView }
-                    else if !model.isSignedIn { loginView }
-                    else { progressView }
+                Group {
+                    if !model.isAuthorized {
+                        onboardingHeader
+                        authorizationView
+                    } else if !model.isSignedIn {
+                        onboardingHeader
+                        loginView
+                    } else {
+                        progressView
+                    }
                 }
-                .frame(maxWidth: 620).padding(32).frame(maxWidth: .infinity)
+                .padding(.horizontal, 32).padding(.vertical, 20)
+                .frame(maxWidth: model.isSignedIn ? 1180 : 620)
+                .frame(maxWidth: .infinity)
             }
+            .background(
+                LinearGradient(colors: [Color(red: 0.95, green: 1.0, blue: 0.985), .white],
+                               startPoint: .top, endPoint: .bottom)
+                    .ignoresSafeArea()
+            )
             .familyActivityPicker(isPresented: $model.isPickerPresented, selection: $model.selection)
             .onChange(of: model.selection) { _, value in model.saveSelection(value) }
             .fullScreenCover(isPresented: $isGraphFullScreen) {
@@ -683,6 +692,17 @@ struct KidsHomeView: View {
                 }
             }
         }
+    }
+
+    private var onboardingHeader: some View {
+        VStack(spacing: 10) {
+            Image("TarannumKidsLogo")
+                .resizable().scaledToFit().frame(width: 104, height: 104)
+                .clipShape(Circle())
+            Text("Tarannum Kids").font(.largeTitle.bold()).foregroundStyle(kidsTeal)
+            Text(model.message).multilineTextAlignment(.center)
+        }
+        .padding(.bottom, 22)
     }
 
     private var authorizationView: some View {
@@ -708,203 +728,224 @@ struct KidsHomeView: View {
     }
 
     private var progressView: some View {
-        VStack(spacing: 16) {
-            if let session = model.session { Text(session.fullName ?? session.email).font(.headline) }
-            ProgressView(value: Double(model.access?.creditedSeconds ?? 0),
-                         total: Double(model.access?.requiredSeconds ?? KidsConstants.requiredPracticeSeconds))
-            if let access = model.access {
-                Text(progressText(access))
-                    .font(.subheadline).foregroundStyle(.secondary)
+        VStack(spacing: 18) {
+            dashboardHeader
+            studentProgressCard
+            taskCard
+            activitySelection
+            guidanceBanner
+            primaryActivityButton
+            scoringDashboardCard
+        }
+    }
+
+    private var kidsTeal: Color { Color(red: 0.0, green: 0.48, blue: 0.40) }
+    private var kidsEmerald: Color { Color(red: 0.0, green: 0.67, blue: 0.43) }
+
+    private var dashboardHeader: some View {
+        HStack(spacing: 14) {
+            Image("TarannumKidsLogo")
+                .resizable().scaledToFit().frame(width: 70, height: 70).clipShape(Circle())
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Tarannum Kids").font(.system(size: 34, weight: .bold, design: .rounded)).foregroundStyle(kidsTeal)
+                Text("Mencintai Al-Quran, Melahirkan Generasi Mulia")
+                    .font(.subheadline).foregroundStyle(kidsTeal.opacity(0.8))
             }
-            Button(model.isRefreshing ? "Sedang menyemak…" : "Semak kemajuan") {
+            Spacer()
+            Menu {
+                Button("Pilih aplikasi untuk dilindungi", systemImage: "shield.lefthalf.filled") {
+                    model.isPickerPresented = true
+                }
+                Button("Log keluar", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) {
+                    model.signOut()
+                }
+            } label: {
+                Image(systemName: "person.crop.circle.fill")
+                    .font(.system(size: 42)).foregroundStyle(kidsTeal)
+            }
+        }
+    }
+
+    private var studentProgressCard: some View {
+        HStack(spacing: 18) {
+            Image(systemName: "person.crop.circle.fill")
+                .font(.system(size: 62)).foregroundStyle(kidsTeal)
+                .frame(width: 82, height: 82)
+                .background(Color.green.opacity(0.10), in: Circle())
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Assalamualaikum, \(studentFirstName)").font(.title2.bold())
+                    .foregroundStyle(Color(red: 0.04, green: 0.10, blue: 0.28))
+                Text("Baki latihan: \(remainingMinutes) minit").font(.headline).foregroundStyle(.secondary)
+                ProgressView(value: Double(model.access?.creditedSeconds ?? 0),
+                             total: Double(model.access?.requiredSeconds ?? KidsConstants.requiredPracticeSeconds))
+                    .tint(kidsEmerald)
+                if let access = model.access {
+                    Text(progressText(access)).font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            Spacer()
+            Button(model.isRefreshing ? "Sedang menyemak…" : "Semak Kemajuan") {
                 Task { await model.refreshAccess() }
             }
-            .buttonStyle(.borderedProminent)
-            .disabled(model.isRefreshing)
-            if model.isRefreshing { ProgressView() }
-            if let checkedAt = model.lastCheckedAt {
-                Text("Semakan terakhir: \(checkedAt.formatted(date: .omitted, time: .shortened))")
-                    .font(.caption).foregroundStyle(.secondary)
+            .buttonStyle(.bordered).tint(kidsTeal).controlSize(.large).disabled(model.isRefreshing)
+        }
+        .dashboardCard()
+    }
+
+    private var taskCard: some View {
+        HStack(spacing: 18) {
+            Image(systemName: "book.closed.fill")
+                .font(.system(size: 38)).foregroundStyle(kidsEmerald)
+                .frame(width: 72, height: 72).background(Color.green.opacity(0.10), in: Circle())
+            VStack(alignment: .leading, spacing: 4) {
+                Text("TUGASAN HARI INI").font(.caption.bold()).foregroundStyle(.secondary)
+                Text(selectedReferenceTitle).font(.title2.bold())
+                    .foregroundStyle(Color(red: 0.04, green: 0.10, blue: 0.28))
+                Text("Qari: Custom Upload").font(.subheadline).foregroundStyle(.secondary)
             }
-            Divider().padding(.vertical, 4)
-            Text("Latihan Hari Ini").font(.title2.bold())
-            if model.references.isEmpty {
-                ProgressView("Memuatkan tugasan…")
-            } else {
-                Picker("Tugasan", selection: $model.selectedReferenceID) {
-                    ForEach(model.references) { reference in
-                        Text(reference.maqam?.isEmpty == false ? "\(reference.title) · \(reference.maqam!)" : reference.title)
-                            .tag(reference.id)
+            Spacer()
+            Menu {
+                ForEach(model.references) { reference in
+                    Button(reference.maqam?.isEmpty == false ? "\(reference.title) · \(reference.maqam!)" : reference.title) {
+                        model.selectedReferenceID = reference.id
+                        model.selectedReferenceChanged()
                     }
                 }
-                .pickerStyle(.menu)
-                .onChange(of: model.selectedReferenceID) { _, _ in model.selectedReferenceChanged() }
-                Picker("Sesi", selection: $model.trainingMode) {
-                    ForEach(KidsTrainingMode.allCases) { mode in Text(mode.rawValue).tag(mode) }
-                }
-                .pickerStyle(.segmented)
-                .onChange(of: model.trainingMode) { _, mode in model.changeTrainingMode(mode) }
-                if model.isLoadingReferencePitch {
-                    ProgressView("Memuatkan graf nada qari…")
-                } else if !model.referencePitch.isEmpty {
-                    VStack(spacing: 8) {
-                        graphStatusHeader
-                        HStack(spacing: 10) {
-                            Text("Panduan Nada Langsung").font(.headline).foregroundStyle(.white)
-                            Spacer()
-                            Button { graphZoom = max(0.5, graphZoom - 0.25) } label: {
-                                Image(systemName: "minus.magnifyingglass")
-                            }
-                            .disabled(graphZoom <= 0.5)
-                            Text("\(Int(graphZoom * 100))%")
-                                .font(.caption.monospacedDigit()).frame(minWidth: 42)
-                            Button { graphZoom = min(4, graphZoom + 0.25) } label: {
-                                Image(systemName: "plus.magnifyingglass")
-                            }
-                            .disabled(graphZoom >= 4)
-                            Button {
-                                graphZoom = 1
-                                graphAutoFollow = true
-                            } label: {
-                                Image(systemName: "arrow.counterclockwise")
-                            }
-                            .accessibilityLabel("Tetapkan semula graf")
-                            Button {
-                                graphZoom = 1
-                                graphAutoFollow = true
-                            } label: {
-                                Image(systemName: "arrow.down.right.and.arrow.up.left")
-                            }
-                            .accessibilityLabel("Muatkan semua data")
-                            Button { graphAutoFollow.toggle() } label: {
-                                Image(systemName: graphAutoFollow ? "location.fill" : "location")
-                                    .foregroundStyle(graphAutoFollow ? Color.green : Color.secondary)
-                            }
-                            .accessibilityLabel(graphAutoFollow ? "Matikan auto-follow" : "Aktifkan auto-follow")
-                            Button { isGraphFullScreen = true } label: {
-                                Image(systemName: "arrow.up.left.and.arrow.down.right")
-                            }
-                            .accessibilityLabel("Paparkan graf skrin penuh")
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                        .tint(.cyan)
-                        PitchComparisonGraph(
-                            reference: model.referencePitch,
-                            student: model.liveStudentPitchPoints,
-                            progressTime: model.graphTimelineTime,
-                            duration: model.graphDuration,
-                            zoom: graphZoom,
-                            autoFollow: graphAutoFollow,
-                            segments: selectedReference?.textSegments ?? [],
-                            referenceMarkerPitch: model.referenceMarkerPitch,
-                            studentMarkerPitch: model.trainingMode == .listen ? nil : model.liveStudentPitch
-                        )
-                        .frame(height: 250)
-                        HStack(spacing: 18) {
-                            Label("Qari", systemImage: "minus").foregroundStyle(.green)
-                            Label("Pelajar", systemImage: "minus").foregroundStyle(.red)
-                            Label("Kedudukan", systemImage: "line.diagonal").foregroundStyle(.blue)
-                        }
-                        .font(.caption)
-                        AyahWindow(segments: selectedReference?.textSegments ?? [],
-                                   currentTime: model.graphTimelineTime ?? 0,
-                                   darkStyle: true)
-                    }
-                    .padding()
-                    .frame(maxWidth: .infinity)
-                    .background(Color(red: 0.055, green: 0.09, blue: 0.17), in: RoundedRectangle(cornerRadius: 14))
-                }
-                if model.trainingMode == .listen {
-                    Button(model.isPlayingReference ? "Henti Audio Contoh" : "Dengar Audio Contoh") {
-                        Task { await model.toggleReferencePlayback() }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(model.isLoadingReferenceAudio || model.isRecording || model.isSubmittingRecording || model.countdownValue != nil)
-                } else if model.trainingMode == .practice {
-                    Button(model.isPracticingWithQari ? "Henti Latihan" : "Mula Latih Bersama Qari") {
-                        Task { await model.togglePracticeWithCountdown() }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(model.isPracticingWithQari ? .red : .indigo)
-                    .disabled(model.isLoadingReferenceAudio || model.countdownValue != nil)
-                }
-                if model.isLoadingReferenceAudio {
-                    ProgressView("Memuatkan audio contoh…")
-                } else if model.isPlayingReference {
-                    Text("Audio contoh: \(formattedDuration(model.referencePlaybackTime))")
-                        .font(.subheadline.monospacedDigit())
-                        .foregroundStyle(.indigo)
-                }
-                Text(model.practiceMessage).font(.subheadline).multilineTextAlignment(.center)
-                if model.trainingMode == .record, model.isRecording {
-                    Text("Masa rakaman: \(formattedDuration(model.recordingDuration))")
-                        .font(.title3.monospacedDigit().bold())
-                        .foregroundStyle(.red)
-                    if model.recordingTargetDuration > 0 {
-                        Text("Berhenti automatik pada \(formattedDuration(model.recordingTargetDuration))")
-                            .font(.caption.monospacedDigit())
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                if model.trainingMode == .record, model.latestScore == nil {
-                    Button(model.isRecording ? "Selesai Rakaman" : "Mula Rakaman") {
-                        Task { await model.toggleRecordingWithCountdown() }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(model.isRecording ? .red : .green)
-                    .disabled(model.isSubmittingRecording || model.countdownValue != nil)
-                }
-                if model.isSubmittingRecording { ProgressView("Menghantar rakaman…") }
-                if model.isWaitingForScore {
-                    VStack(spacing: 8) {
-                        ProgressView()
-                        Text(model.scoringMessage)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
-                    }
-                    .padding()
-                    .frame(maxWidth: .infinity)
-                    .background(.blue.opacity(0.07), in: RoundedRectangle(cornerRadius: 12))
-                } else if let score = model.latestScore {
-                    VStack(spacing: 10) {
-                        Text("Markah Penilaian")
-                            .font(.headline)
-                        Text("\(Int(score.score.rounded()))%")
-                            .font(.system(size: 44, weight: .bold, design: .rounded))
-                            .foregroundStyle(scoreColor(score.score))
-                        Text(localizedScoreLabel(score.score))
-                            .font(.title3.bold())
-                        Text(localizedScoreMessage(score.score))
-                            .multilineTextAlignment(.center)
-                        if !score.focusAreas.isEmpty {
-                            Divider()
-                            Text("Fokus latihan: \(score.focusAreas.prefix(3).map(localizedFocusArea).joined(separator: " • "))")
-                                .font(.subheadline)
-                                .multilineTextAlignment(.center)
-                        }
-                        Divider()
-                        HStack(spacing: 12) {
-                            Button("Rakam Semula") { Task { await model.retakeRecording() } }
-                                .buttonStyle(.borderedProminent)
-                                .tint(.green)
-                            Button("Latih Semula") { model.practiceAgain() }
-                                .buttonStyle(.bordered)
-                        }
-                    }
-                    .padding()
-                    .frame(maxWidth: .infinity)
-                    .background(scoreColor(score.score).opacity(0.09), in: RoundedRectangle(cornerRadius: 14))
-                } else if !model.scoringMessage.isEmpty {
-                    Text(model.scoringMessage)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                }
+            } label: {
+                Label("Tukar", systemImage: "arrow.triangle.2.circlepath")
             }
-            Button("Pilih aplikasi untuk dilindungi") { model.isPickerPresented = true }.buttonStyle(.bordered)
-            Button("Log keluar", role: .destructive) { model.signOut() }.buttonStyle(.borderless)
+            .buttonStyle(.bordered).tint(kidsTeal).controlSize(.large)
+        }
+        .dashboardCard()
+    }
+
+    private var activitySelection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("PILIH AKTIVITI").font(.title3.bold())
+                .foregroundStyle(Color(red: 0.04, green: 0.10, blue: 0.28))
+            HStack(spacing: 14) {
+                activityCard(mode: .listen, icon: "headphones", title: "Dengar",
+                             subtitle: "Dengar dan perhatikan alunan qari", color: .blue)
+                activityCard(mode: .practice, icon: "mic.fill", title: "Latih",
+                             subtitle: "Ikuti bacaan qari sambil melihat nada", color: kidsTeal)
+                activityCard(mode: .record, icon: "star.fill", title: "Rakam & Nilai",
+                             subtitle: "Rakam bacaan untuk mendapatkan markah", color: .orange)
+            }
+        }
+    }
+
+    private func activityCard(mode: KidsTrainingMode, icon: String, title: String,
+                              subtitle: String, color: Color) -> some View {
+        let selected = model.trainingMode == mode
+        return Button {
+            model.changeTrainingMode(mode)
+        } label: {
+            HStack(spacing: 14) {
+                Image(systemName: icon).font(.system(size: 38)).foregroundStyle(color)
+                    .frame(width: 64, height: 64).background(color.opacity(0.12), in: Circle())
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(title).font(.title3.bold()).foregroundStyle(color)
+                    Text(subtitle).font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.leading)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: selected ? "checkmark.circle.fill" : "chevron.right.circle.fill")
+                    .font(.title2).foregroundStyle(color)
+            }
+            .padding(18).frame(maxWidth: .infinity, minHeight: 118)
+            .background(selected ? color.opacity(0.10) : Color.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 18))
+            .overlay(RoundedRectangle(cornerRadius: 18).stroke(color.opacity(selected ? 1 : 0.22), lineWidth: selected ? 2.5 : 1))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var guidanceBanner: some View {
+        Label(activityGuidance, systemImage: guidanceIcon)
+            .font(.headline).foregroundStyle(kidsTeal)
+            .frame(maxWidth: .infinity).padding(.vertical, 13)
+            .background(Color.green.opacity(0.09), in: RoundedRectangle(cornerRadius: 14))
+    }
+
+    private var primaryActivityButton: some View {
+        Button {
+            graphZoom = 1
+            graphAutoFollow = true
+            isGraphFullScreen = true
+        } label: {
+            Label(primaryActivityTitle, systemImage: "play.fill")
+                .font(.title3.bold()).frame(maxWidth: .infinity).padding(.vertical, 15)
+        }
+        .buttonStyle(.plain).foregroundStyle(.white)
+        .background(LinearGradient(colors: [kidsEmerald, kidsTeal], startPoint: .leading, endPoint: .trailing),
+                    in: RoundedRectangle(cornerRadius: 20))
+        .shadow(color: kidsTeal.opacity(0.20), radius: 10, y: 5)
+        .disabled(model.references.isEmpty || model.isLoadingReferencePitch)
+    }
+
+    @ViewBuilder private var scoringDashboardCard: some View {
+        if model.isSubmittingRecording || model.isWaitingForScore {
+            HStack(spacing: 14) {
+                ProgressView()
+                VStack(alignment: .leading) {
+                    Text("Menganalisis bacaan…").font(.headline)
+                    Text(model.scoringMessage).font(.subheadline).foregroundStyle(.secondary)
+                }
+                Spacer()
+            }.dashboardCard()
+        } else if let score = model.latestScore {
+            HStack(spacing: 18) {
+                Image(systemName: "trophy.fill").font(.system(size: 32)).foregroundStyle(.green)
+                    .frame(width: 64, height: 64).background(Color.green.opacity(0.12), in: Circle())
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("KEPUTUSAN TERAKHIR").font(.caption.bold()).foregroundStyle(.secondary)
+                    Text("\(Int(score.score.rounded()))%").font(.system(size: 36, weight: .bold, design: .rounded)).foregroundStyle(scoreColor(score.score))
+                }
+                Divider().frame(height: 42)
+                Text(localizedScoreLabel(score.score)).font(.headline)
+                Spacer()
+                Button("Rakam Semula") { Task { await model.retakeRecording(); isGraphFullScreen = true } }
+                    .buttonStyle(.borderedProminent).tint(kidsEmerald)
+                Button("Latih Semula") { model.practiceAgain(); isGraphFullScreen = true }
+                    .buttonStyle(.bordered).tint(kidsTeal)
+            }.dashboardCard()
+        }
+    }
+
+    private var studentFirstName: String {
+        let name = model.session?.fullName ?? model.session?.email ?? "Pelajar"
+        return name.split(separator: " ").first.map(String.init) ?? name
+    }
+
+    private var remainingMinutes: Int {
+        Int(ceil(Double(model.access?.remainingSeconds ?? KidsConstants.requiredPracticeSeconds) / 60))
+    }
+
+    private var selectedReferenceTitle: String {
+        guard let reference = selectedReference else { return "Memuatkan tugasan…" }
+        if let maqam = reference.maqam, !maqam.isEmpty { return "\(reference.title) • \(maqam)" }
+        return reference.title
+    }
+
+    private var activityGuidance: String {
+        switch model.trainingMode {
+        case .listen: return "Dengar dan perhatikan pergerakan nada qari."
+        case .practice: return "Gunakan fon kepala dan ikuti bacaan qari."
+        case .record: return "Rakam bacaan penuh untuk mendapatkan markah."
+        }
+    }
+
+    private var guidanceIcon: String {
+        switch model.trainingMode {
+        case .listen: return "headphones"
+        case .practice: return "mic.fill"
+        case .record: return "record.circle"
+        }
+    }
+
+    private var primaryActivityTitle: String {
+        switch model.trainingMode {
+        case .listen: return "Dengar Qari"
+        case .practice: return "Mulakan Latihan"
+        case .record: return "Mula Rakaman"
         }
     }
 
@@ -1006,6 +1047,17 @@ struct KidsHomeView: View {
         default:
             return value
         }
+    }
+}
+
+private extension View {
+    func dashboardCard() -> some View {
+        self
+            .padding(20)
+            .frame(maxWidth: .infinity)
+            .background(Color.white.opacity(0.94), in: RoundedRectangle(cornerRadius: 20))
+            .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.green.opacity(0.10)))
+            .shadow(color: Color.black.opacity(0.055), radius: 12, y: 5)
     }
 }
 
