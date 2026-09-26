@@ -56,7 +56,9 @@ final class LivePitchMonitor: @unchecked Sendable {
             let sample = channel[index] - mean
             energy += sample * sample
         }
-        guard sqrt(energy / Float(count)) > 0.004 else { return nil }
+        // Keep the guide responsive to softer children's voices. Downstream
+        // confidence, octave correction and smoothing still reject noise.
+        guard sqrt(energy / Float(count)) > 0.001 else { return nil }
         let minLag = max(2, Int(sampleRate / 500))
         let maxLag = min(count / 2, Int(sampleRate / 60))
         guard minLag < maxLag else { return nil }
@@ -77,7 +79,7 @@ final class LivePitchMonitor: @unchecked Sendable {
             let normalized = denominator > 0 ? correlation / denominator : 0
             if normalized > bestCorrelation { bestCorrelation = normalized; bestLag = lag }
         }
-        guard bestLag > 0, bestCorrelation > 0.42 else { return nil }
+        guard bestLag > 0, bestCorrelation > 0.18 else { return nil }
         // Normalising both windows removes the short-lag bias that commonly
         // reports a child's fundamental frequency one octave too high.
         let frequency = sampleRate / Double(bestLag)
@@ -386,11 +388,15 @@ final class KidsViewModel: NSObject, ObservableObject {
             practiceMessage = "Audio contoh dihentikan."
             return
         }
+        guard !isLoadingReferenceAudio else { return }
         guard !selectedReferenceID.isEmpty else { practiceMessage = "Pilih tugasan latihan dahulu."; return }
         isLoadingReferenceAudio = true
         practiceMessage = "Memuatkan audio contoh…"
         defer { isLoadingReferenceAudio = false }
         do {
+            // Stop and remove an earlier cached player before writing the new
+            // deterministic reference URL. Doing this after the download can
+            // delete the newly downloaded file during a rapid second tap.
             stopReferencePlayback()
             let fileURL = try await api.downloadReferenceAudio(referenceID: selectedReferenceID)
             let audioSession = AVAudioSession.sharedInstance()
@@ -431,6 +437,7 @@ final class KidsViewModel: NSObject, ObservableObject {
     }
 
     private func startPracticeWithQari(useCountdown: Bool) async {
+        guard !isLoadingReferenceAudio else { return }
         guard !selectedReferenceID.isEmpty else { return }
         isLoadingReferenceAudio = true
         practiceMessage = "Menyediakan latihan bersama qari…"
@@ -1353,11 +1360,13 @@ private struct PitchFullScreenView: View {
             Divider().frame(height: 38).overlay(Color.white.opacity(0.15))
             Button("Rujukan") { Task { await model.toggleReferencePlayback() } }
                 .buttonStyle(.borderedProminent).tint(.blue.opacity(0.48))
+                .disabled(model.isLoadingReferenceAudio)
             Button { Task { await model.toggleReferencePlayback() } } label: {
                 Image(systemName: model.isPlayingReference ? "pause.fill" : "play.fill")
                     .frame(width: 28, height: 28)
             }
             .buttonStyle(.borderedProminent).buttonBorderShape(.circle).tint(.blue)
+            .disabled(model.isLoadingReferenceAudio)
             Button { Task { await stopCurrentSession() } } label: {
                 Image(systemName: "stop.fill").frame(width: 24, height: 24)
             }
@@ -1395,14 +1404,18 @@ private struct PitchFullScreenView: View {
         switch model.trainingMode {
         case .listen:
             Button { Task { await model.toggleReferencePlayback() } } label: {
-                Label(model.isPlayingReference ? "Henti Dengar" : "Dengar Qari", systemImage: "headphones")
+                Label(model.isLoadingReferenceAudio ? "Menyediakan…" : (model.isPlayingReference ? "Henti Dengar" : "Dengar Qari"),
+                      systemImage: model.isLoadingReferenceAudio ? "hourglass" : "headphones")
             }
             .buttonStyle(.borderedProminent).tint(.green)
+            .disabled(model.isLoadingReferenceAudio)
         case .practice:
             Button { Task { await model.togglePracticeWithCountdown() } } label: {
-                Label(model.isPracticingWithQari ? "Henti Latihan" : "Mula Latihan", systemImage: "mic.fill")
+                Label(model.isLoadingReferenceAudio ? "Menyediakan…" : (model.isPracticingWithQari ? "Henti Latihan" : "Mula Latihan"),
+                      systemImage: model.isLoadingReferenceAudio ? "hourglass" : "mic.fill")
             }
             .buttonStyle(.borderedProminent).tint(model.isPracticingWithQari ? .red : .green)
+            .disabled(model.isLoadingReferenceAudio)
         case .record:
             Button { Task { await model.toggleRecordingWithCountdown() } } label: {
                 Label(model.isRecording ? "Selesai Rakaman" : "Mula Rakaman", systemImage: "record.circle")
@@ -1503,7 +1516,7 @@ private struct PitchComparisonGraph: View {
                                style: StrokeStyle(lineWidth: active ? 2 : 1.5, dash: [5, 4]))
             }
 
-            func draw(_ points: [ScoringPitchPoint], color: Color) {
+            func draw(_ points: [ScoringPitchPoint], color: Color, breakAtVoiceGaps: Bool = false) {
                 let sampled = downsample(points.filter { $0.time >= startTime && $0.time <= endTime }, maximumCount: 700)
                 guard let first = sampled.first else { return }
                 func position(_ point: ScoringPitchPoint) -> CGPoint {
@@ -1516,7 +1529,7 @@ private struct PitchComparisonGraph: View {
                     // Do not draw a diagonal bridge through pauses or
                     // unvoiced consonants. The web graph also leaves these
                     // short silence regions open.
-                    if point.time - previous.time > 0.32 {
+                    if breakAtVoiceGaps && point.time - previous.time > 0.32 {
                         path.move(to: position(point))
                     } else {
                         path.addLine(to: position(point))
@@ -1527,8 +1540,10 @@ private struct PitchComparisonGraph: View {
             }
 
             let stableStudent = smoothedStudentPoints(student, reference: reference)
+            // The stored qari contour is intentionally continuous. Only the
+            // live student line breaks at silence/unvoiced regions.
             draw(reference, color: .green)
-            draw(stableStudent, color: .red)
+            draw(stableStudent, color: .red, breakAtVoiceGaps: true)
             if let progressTime {
                 let cursorX = min(plot.maxX, max(plot.minX, x(progressTime)))
                 var playhead = Path()
