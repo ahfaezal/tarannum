@@ -113,7 +113,7 @@ const ProfessionalAzanCoursePage: React.FC = () => {
       content_type: "product",
       value: 200,
       currency: "MYR",
-    })) window.localStorage.setItem(purchaseKey, "sent");
+    }, `professional-azan-purchase-${registrationToken}`)) window.localStorage.setItem(purchaseKey, "sent");
   }, [analyticsConsent, paymentStatus?.paid, registrationToken]);
 
   useEffect(() => {
@@ -154,7 +154,11 @@ const ProfessionalAzanCoursePage: React.FC = () => {
       const response = await fetch(`${API_URL}/api/promotions/kursus-profesional-azan-hijjaz-oktober-2026/${endpoint}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...Object.fromEntries(form.entries()), ...getAttribution() }),
+        body: JSON.stringify({
+          ...Object.fromEntries(form.entries()),
+          ...getAttribution(),
+          meta_analytics_consent: analyticsConsent === "granted",
+        }),
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.detail || "Pendaftaran belum dapat diproses.");
@@ -198,7 +202,7 @@ const ProfessionalAzanCoursePage: React.FC = () => {
     <div className="bg-[#f7f4ec] text-stone-900">
       {metaPixelConfigured && analyticsConsent === null && <aside className="fixed inset-x-4 bottom-4 z-50 mx-auto max-w-2xl rounded-2xl border border-stone-200 bg-white p-5 shadow-2xl" aria-label="Persetujuan analitik pemasaran">
         <p className="font-black text-stone-900">Bantu kami menilai keberkesanan promosi</p>
-        <p className="mt-2 text-sm leading-6 text-stone-600">Dengan izin anda, Meta Pixel merekodkan lawatan dan peringkat pembayaran kursus. Nama, e-mel, nombor telefon dan ID klik individu tidak dihantar melalui integrasi ini.</p>
+        <p className="mt-2 text-sm leading-6 text-stone-600">Dengan izin anda, Meta Pixel merekodkan lawatan dan peringkat pembayaran kursus. Selepas bayaran disahkan, e-mel dan nombor telefon yang telah di-hash boleh dihantar kepada Meta untuk memadankan pembelian dengan kempen; nilai asal tidak dihantar melalui integrasi ini.</p>
         <div className="mt-4 flex flex-wrap gap-3"><button type="button" onClick={() => { setMetaConsent(true); setAnalyticsConsent("granted"); }} className="rounded-xl bg-emerald-700 px-5 py-3 font-bold text-white">Benarkan analitik</button><button type="button" onClick={() => { setMetaConsent(false); setAnalyticsConsent("denied"); }} className="rounded-xl border border-stone-300 px-5 py-3 font-bold text-stone-700">Tidak, terima kasih</button></div>
       </aside>}
       <section className="relative isolate overflow-hidden bg-[#073f32] text-white">

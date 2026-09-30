@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 
 from database import PromotionCampaign, PromotionPaymentAttempt, PromotionRegistration, User, get_db
 from auth import get_current_admin_user
+from meta_conversions import send_purchase_event
 
 
 router = APIRouter(prefix="/api/promotions", tags=["promotions"])
@@ -43,6 +44,7 @@ class RegistrationCreate(BaseModel):
     organization: Optional[str] = Field(default=None, max_length=180)
     registration_consent: bool
     marketing_consent: bool = False
+    meta_analytics_consent: bool = False
     attribution_source: Optional[str] = Field(default=None, max_length=80)
     attribution_medium: Optional[str] = Field(default=None, max_length=80)
     attribution_campaign: Optional[str] = Field(default=None, max_length=160)
@@ -251,6 +253,7 @@ def create_registration(slug: str, payload: RegistrationCreate, db: Session = De
     registration.organization = payload.organization.strip() if payload.organization else None
     registration.registration_consent = True
     registration.marketing_consent = payload.marketing_consent
+    registration.meta_analytics_consent = payload.meta_analytics_consent
     if not registration.attribution_source:
         registration.attribution_source = (payload.attribution_source or "unknown").strip().lower()
         registration.attribution_medium = (payload.attribution_medium or "").strip().lower() or None
@@ -299,6 +302,7 @@ def join_waitlist(slug: str, payload: WaitlistCreate, db: Session = Depends(get_
     registration.organization = payload.organization.strip() if payload.organization else None
     registration.registration_consent = True
     registration.marketing_consent = payload.marketing_consent
+    registration.meta_analytics_consent = payload.meta_analytics_consent
     if not registration.attribution_source:
         registration.attribution_source = (payload.attribution_source or "unknown").strip().lower()
         registration.attribution_medium = (payload.attribution_medium or "").strip().lower() or None
@@ -337,7 +341,8 @@ def toyyibpay_callback(
     ).first() is not None
     if not known_bill:
         raise HTTPException(404, "Bil pembayaran tidak ditemui")
-    if status == "1" and registration.status not in {"paid", "account_linked", "attended"}:
+    newly_paid = status == "1" and registration.status not in {"paid", "account_linked", "attended"}
+    if newly_paid:
         registration.status = "paid"
         registration.toyyibpay_reference_no = refno
         registration.payment_amount = float(amount)
@@ -351,6 +356,13 @@ def toyyibpay_callback(
         registration.status = "payment_failed"
         registration.reservation_expires_at = None
     db.commit()
+    if newly_paid and registration.meta_analytics_consent:
+        send_purchase_event(
+            event_id=f"professional-azan-purchase-{registration.public_token}",
+            email=registration.email,
+            phone=registration.phone,
+            value=registration.payment_amount,
+        )
     return {"status": "ok"}
 
 

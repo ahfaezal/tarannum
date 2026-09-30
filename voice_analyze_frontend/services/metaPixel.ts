@@ -40,9 +40,10 @@ export const initializeMetaPixel = () => {
   return true;
 };
 
-export const trackMetaEvent = (event: "ViewContent" | "InitiateCheckout" | "Purchase", params: MetaEventParams) => {
+export const trackMetaEvent = (event: "ViewContent" | "InitiateCheckout" | "Purchase", params: MetaEventParams, eventId?: string) => {
   if (!initializeMetaPixel() || !window.fbq) return false;
-  window.fbq("track", event, params);
+  if (eventId) window.fbq("track", event, params, { eventID: eventId });
+  else window.fbq("track", event, params);
   return true;
 };
 
