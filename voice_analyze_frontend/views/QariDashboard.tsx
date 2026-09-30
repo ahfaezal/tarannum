@@ -3,7 +3,7 @@
  */
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { getQariStudents, getQariContent, getQariCommissionStats, getQariReferralInfo, getStudentDetails, getQariStudentActivitySummary, getQariStudentSelectedRecordings, playSessionRecordingAudio, ManagedRecordingAudio, rebuildQariStudentSelectedRecordings, StudentDetails, QariStudentActivitySummary, SelectedRecordingsResponse, deleteQariContent, updateQariContent } from "../services/platformService";
+import { getQariStudents, getQariContent, getQariCommissionStats, getQariReferralInfo, getQariBankAccount, saveQariBankAccount, requestQariWithdrawal, QariBankAccountSummary, getStudentDetails, getQariStudentActivitySummary, getQariStudentSelectedRecordings, playSessionRecordingAudio, ManagedRecordingAudio, rebuildQariStudentSelectedRecordings, StudentDetails, QariStudentActivitySummary, SelectedRecordingsResponse, deleteQariContent, updateQariContent } from "../services/platformService";
 import { StudentInfo, QariContent } from "../services/platformService";
 import {
   Activity,
@@ -50,11 +50,25 @@ const QariDashboard: React.FC = () => {
     royalty_earned: number;
     royalty_currency: string;
     referral_breakdown: Array<{ code: string; count: number }>;
+    currency: "MYR";
+    fee_per_assessment_cents: number;
+    minimum_withdrawal_cents: number;
+    available_cents: number;
+    pending_withdrawal_cents: number;
+    paid_cents: number;
+    assessment_count: number;
+    earnings: Array<{id: string; student_name: string; course_title?: string | null; payer_type: "tarannum" | "participant"; amount_cents: number; status: string; decision: string; earned_at: string}>;
+    withdrawals: Array<{id: string; amount_cents: number; status: string; bank_name: string; account_number_masked: string; requested_at: string; processed_at?: string | null; payment_reference?: string | null}>;
   } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
   const [referralInfo, setReferralInfo] = useState<{ referralCode: string; qariName: string } | null>(null);
+  const [bankAccount, setBankAccount] = useState<QariBankAccountSummary>({configured: false});
+  const [bankForm, setBankForm] = useState({account_holder_name: "", bank_name: "", account_number: "", current_password: ""});
+  const [withdrawalAmount, setWithdrawalAmount] = useState(50);
+  const [financeBusy, setFinanceBusy] = useState(false);
+  const [financeMessage, setFinanceMessage] = useState("");
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   const [studentDetails, setStudentDetails] = useState<StudentDetails | null>(null);
   const [studentActivitySummary, setStudentActivitySummary] = useState<QariStudentActivitySummary | null>(null);
@@ -106,9 +120,11 @@ const QariDashboard: React.FC = () => {
       Promise.all([
         getQariCommissionStats().catch(() => null),
         getQariReferralInfo().catch(() => null),
-      ]).then(([commissionData, referralData]) => {
+        getQariBankAccount().catch(() => ({configured: false} as QariBankAccountSummary)),
+      ]).then(([commissionData, referralData, bankData]) => {
         if (commissionData) setCommissionStats(commissionData);
         if (referralData) setReferralInfo(referralData);
+        setBankAccount(bankData);
       });
     } catch (err: any) {
       setError(err.message || "Failed to load dashboard");
@@ -162,6 +178,31 @@ const QariDashboard: React.FC = () => {
       setCopiedLink(true);
       setTimeout(() => setCopiedLink(false), 2000);
     }
+  };
+
+  const refreshFinance = async () => {
+    const [summary, bank] = await Promise.all([getQariCommissionStats(), getQariBankAccount()]);
+    setCommissionStats(summary);
+    setBankAccount(bank);
+  };
+
+  const submitBankAccount = async (event: React.FormEvent) => {
+    event.preventDefault(); setFinanceBusy(true); setFinanceMessage("");
+    try {
+      const saved = await saveQariBankAccount(bankForm);
+      setBankAccount(saved); setBankForm({account_holder_name: "", bank_name: "", account_number: "", current_password: ""});
+      setFinanceMessage("Maklumat akaun bank berjaya disimpan dengan selamat.");
+    } catch (reason) { setFinanceMessage(reason instanceof Error ? reason.message : "Gagal menyimpan maklumat bank."); }
+    finally { setFinanceBusy(false); }
+  };
+
+  const submitWithdrawal = async () => {
+    setFinanceBusy(true); setFinanceMessage("");
+    try {
+      await requestQariWithdrawal(Math.round(withdrawalAmount * 100));
+      await refreshFinance(); setFinanceMessage("Permohonan pengeluaran telah dihantar kepada Tarannum Technologies.");
+    } catch (reason) { setFinanceMessage(reason instanceof Error ? reason.message : "Permohonan pengeluaran gagal."); }
+    finally { setFinanceBusy(false); }
   };
 
   const handleStudentClick = (student: StudentInfo) => {
@@ -553,10 +594,11 @@ const QariDashboard: React.FC = () => {
             <div className="bg-white rounded-xl shadow-md border border-slate-200 p-6 hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-slate-600 mb-1">Royalty Earned</p>
+                  <p className="text-sm font-medium text-slate-600 mb-1">Pendapatan Penilaian</p>
                   <p className="text-3xl font-bold text-amber-600">
-                    {commissionStats.royalty_currency || "USD"} {Number(commissionStats.royalty_earned || 0).toFixed(2)}
+                    RM {(commissionStats.available_cents / 100).toFixed(2)}
                   </p>
+                  <p className="mt-1 text-xs text-slate-500">Baki boleh dikeluarkan</p>
                 </div>
                 <div className="w-12 h-12 bg-amber-100 rounded-xl flex items-center justify-center">
                   <DollarSign className="w-6 h-6 text-amber-600" />
@@ -589,6 +631,21 @@ const QariDashboard: React.FC = () => {
             </div>
           </div>
         </div>
+
+        {commissionStats && <section className="mb-8 rounded-2xl border border-amber-200 bg-white p-6 shadow-md">
+          <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-xl font-bold text-slate-900">Pendapatan Penilaian Qari</h2><p className="mt-1 text-sm text-slate-600">RM10.00 direkodkan bagi setiap penilaian yang telah dihantar.</p></div><span className="rounded-full bg-amber-100 px-3 py-1 text-sm font-bold text-amber-900">Minimum pengeluaran RM{(commissionStats.minimum_withdrawal_cents / 100).toFixed(2)}</span></div>
+          <div className="mt-5 grid gap-3 sm:grid-cols-4">
+            {[['Boleh dikeluarkan', commissionStats.available_cents], ['Sedang diproses', commissionStats.pending_withdrawal_cents], ['Telah dibayar', commissionStats.paid_cents], ['Penilaian selesai', commissionStats.assessment_count]].map(([label, value], index) => <div key={String(label)} className="rounded-xl bg-slate-50 p-4"><p className="text-xs font-semibold uppercase text-slate-500">{label}</p><p className="mt-1 text-2xl font-black text-slate-900">{index === 3 ? value : `RM ${(Number(value) / 100).toFixed(2)}`}</p></div>)}
+          </div>
+          {financeMessage && <p role="status" className="mt-4 rounded-lg bg-emerald-50 p-3 text-sm font-semibold text-emerald-800">{financeMessage}</p>}
+          <div className="mt-6 grid gap-5 lg:grid-cols-2">
+            <div className="rounded-xl border p-4"><h3 className="font-bold">Akaun bank</h3>{bankAccount.configured && <p className="mt-2 text-sm text-slate-600">{bankAccount.account_holder_name}<br/>{bankAccount.bank_name} · {bankAccount.account_number_masked}</p>}<form className="mt-4 grid gap-3" onSubmit={submitBankAccount}><input required placeholder="Nama pemegang akaun" className="rounded border p-2" value={bankForm.account_holder_name} onChange={e=>setBankForm({...bankForm,account_holder_name:e.target.value})}/><input required placeholder="Nama bank" className="rounded border p-2" value={bankForm.bank_name} onChange={e=>setBankForm({...bankForm,bank_name:e.target.value})}/><input required inputMode="numeric" placeholder="Nombor akaun bank" className="rounded border p-2" value={bankForm.account_number} onChange={e=>setBankForm({...bankForm,account_number:e.target.value})}/><input required type="password" autoComplete="current-password" placeholder="Kata laluan semasa untuk pengesahan" className="rounded border p-2" value={bankForm.current_password} onChange={e=>setBankForm({...bankForm,current_password:e.target.value})}/><button disabled={financeBusy} className="rounded bg-slate-900 px-4 py-2 font-bold text-white disabled:opacity-50">{bankAccount.configured ? 'Kemas kini akaun bank' : 'Simpan akaun bank'}</button></form><p className="mt-2 text-xs text-slate-500">Nombor akaun dienkripsi dan hanya empat digit terakhir dipaparkan.</p></div>
+            <div className="rounded-xl border p-4"><h3 className="font-bold">Mohon pengeluaran</h3><p className="mt-2 text-sm text-slate-600">Baki tersedia: <strong>RM {(commissionStats.available_cents / 100).toFixed(2)}</strong></p><label className="mt-4 block text-sm font-semibold">Jumlah (RM)<input type="number" min={commissionStats.minimum_withdrawal_cents / 100} step="10" className="mt-1 block w-full rounded border p-2" value={withdrawalAmount} onChange={e=>setWithdrawalAmount(Number(e.target.value))}/></label><button type="button" disabled={financeBusy || !bankAccount.configured || withdrawalAmount * 100 > commissionStats.available_cents} onClick={()=>void submitWithdrawal()} className="mt-3 w-full rounded bg-amber-600 px-4 py-2 font-bold text-white disabled:opacity-50">Mohon pengeluaran</button>{!bankAccount.configured && <p className="mt-2 text-xs text-amber-700">Lengkapkan akaun bank terlebih dahulu.</p>}
+              <h4 className="mt-6 font-bold">Sejarah pengeluaran</h4><div className="mt-2 space-y-2 text-sm">{commissionStats.withdrawals.length ? commissionStats.withdrawals.slice(0,5).map(row=><div key={row.id} className="flex justify-between rounded bg-slate-50 p-2"><span>{new Date(row.requested_at).toLocaleDateString('ms-MY')} · {row.status}</span><strong>RM {(row.amount_cents/100).toFixed(2)}</strong></div>) : <p className="text-slate-500">Belum ada permohonan.</p>}</div>
+            </div>
+          </div>
+          <h3 className="mt-6 font-bold">Sejarah pendapatan</h3><div className="mt-3 overflow-x-auto"><table className="w-full min-w-[700px] text-left text-sm"><thead className="bg-slate-100"><tr><th className="p-2">Tarikh</th><th>Peserta</th><th>Sumber</th><th>Pembayar</th><th>Keputusan</th><th>Status</th><th>Jumlah</th></tr></thead><tbody>{commissionStats.earnings.length ? commissionStats.earnings.map(row=><tr key={row.id} className="border-t"><td className="p-2">{new Date(row.earned_at).toLocaleDateString('ms-MY')}</td><td>{row.student_name}</td><td>{row.course_title || 'Penilaian persendirian'}</td><td>{row.payer_type === 'tarannum' ? 'Tarannum Technologies' : 'Peserta'}</td><td>{row.decision}</td><td>{row.status}</td><td className="font-bold">RM {(row.amount_cents/100).toFixed(2)}</td></tr>) : <tr><td colSpan={7} className="p-4 text-center text-slate-500">Belum ada pendapatan penilaian direkodkan.</td></tr>}</tbody></table></div>
+        </section>}
 
         {/* Student Registration QR Section */}
         {referralCode && referralLink && (

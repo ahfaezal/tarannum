@@ -464,6 +464,9 @@ def decide_application(db: Session, application: CertificateApplication, qari: U
         "qari_score": qari_score, "critical_error": bool(critical_error),
         "assessment": assessment,
     })
+    # One completed professional review earns one idempotent RM10 ledger entry.
+    from qari_earnings_service import record_assessment_earning
+    record_assessment_earning(db, application)
     return certificate
 
 

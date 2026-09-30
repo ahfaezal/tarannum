@@ -12,11 +12,11 @@ from database import (
     AnalysisResult, QariContent, Reference, StudentQariRelationship,
     TrainingChallenge, TrainingChallengeParticipant, User, UserRole,
     UserSession, StudentActivityEvent, StudentProgress, get_db,
-    Course, CourseEnrollment,
+    AuditLog, Course, CourseEnrollment, QariBankAccount, QariEarning, QariWithdrawal,
 )
 from auth import (
     get_current_user, get_current_admin_user, get_current_qari_user,
-    get_current_student_user, require_registered_user, get_current_user_optional
+    get_current_student_user, require_registered_user, get_current_user_optional, verify_password
 )
 from qari_service import qari_service
 from progress_service import progress_service
@@ -65,6 +65,23 @@ def _normalize_full_name(name: Optional[str]) -> Optional[str]:
 class AssignQariRequest(BaseModel):
     qari_id: str
     referral_code: Optional[str] = None
+
+
+class QariBankAccountRequest(BaseModel):
+    account_holder_name: str
+    bank_name: str
+    account_number: str
+    current_password: str
+
+
+class QariWithdrawalRequest(BaseModel):
+    amount_cents: int
+
+
+class AdminWithdrawalUpdate(BaseModel):
+    status: str
+    payment_reference: Optional[str] = None
+    admin_notes: Optional[str] = None
 
 
 class QariContentRequest(BaseModel):
@@ -1319,14 +1336,9 @@ async def get_qari_commission_stats(
     current_user: User = Depends(get_current_qari_user),
     db: Session = Depends(get_db)
 ):
-    """Get Qari's commission statistics."""
+    """Return the RM10-per-assessment ledger (legacy route retained for clients)."""
     try:
-        from database import StudentQariRelationship
-        from sqlalchemy import func
-
         _ensure_qari_referral_code(current_user, db)
-        
-        # Count active students
         active_students = db.query(StudentQariRelationship).filter(
             and_(
                 StudentQariRelationship.qari_id == current_user.id,
@@ -1334,7 +1346,6 @@ async def get_qari_commission_stats(
             )
         ).count()
         
-        # Count students by referral code
         referral_stats = db.query(
             StudentQariRelationship.referral_code,
             func.count(StudentQariRelationship.id).label('count')
@@ -1345,16 +1356,14 @@ async def get_qari_commission_stats(
             )
         ).group_by(StudentQariRelationship.referral_code).all()
 
-        royalty = subscription_service.calculate_monthly_commission(
-            str(current_user.id), datetime.utcnow().month, datetime.utcnow().year, db=db
-        )
-        
-        return {
+        from qari_earnings_service import qari_finance_summary
+        summary = qari_finance_summary(db, current_user.id)
+        return {**summary,
             "active_students": active_students,
             "referral_code": current_user.referral_code,
-            "commission_rate": current_user.commission_rate or 0.0,
-            "royalty_earned": royalty.get("total_commission", 0.0),
-            "royalty_currency": royalty.get("currency", "USD"),
+            "commission_rate": 0.0,
+            "royalty_earned": summary["available_cents"] / 100,
+            "royalty_currency": "MYR",
             "referral_breakdown": [
                 {"code": code or "direct", "count": count}
                 for code, count in referral_stats
@@ -1363,6 +1372,51 @@ async def get_qari_commission_stats(
     except Exception as e:
         logger.error(f"Error getting commission stats: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/qari/bank-account")
+def get_qari_bank_account(current_user: User = Depends(get_current_qari_user), db: Session = Depends(get_db)):
+    from qari_earnings_service import bank_payload
+    return bank_payload(db.query(QariBankAccount).filter(QariBankAccount.qari_id == current_user.id).first())
+
+
+@router.put("/qari/bank-account")
+def save_qari_bank_account(payload: QariBankAccountRequest, current_user: User = Depends(get_current_qari_user), db: Session = Depends(get_db)):
+    from qari_earnings_service import bank_payload, encrypt_account_number
+    if not current_user.hashed_password or not verify_password(payload.current_password, current_user.hashed_password):
+        raise HTTPException(403, "Kata laluan semasa tidak tepat")
+    holder = " ".join(payload.account_holder_name.split()).upper()
+    bank_name = " ".join(payload.bank_name.split()).upper()
+    account_number = "".join(ch for ch in payload.account_number if ch.isdigit())
+    if len(holder) < 3 or len(bank_name) < 2 or not 6 <= len(account_number) <= 24:
+        raise HTTPException(400, "Maklumat akaun bank tidak lengkap atau tidak sah")
+    row = db.query(QariBankAccount).filter(QariBankAccount.qari_id == current_user.id).first()
+    if not row:
+        row = QariBankAccount(qari_id=current_user.id)
+        db.add(row)
+    row.account_holder_name = holder
+    row.bank_name = bank_name
+    row.account_number_encrypted = encrypt_account_number(account_number)
+    row.account_number_last4 = account_number[-4:]
+    row.is_verified = False
+    row.updated_at = datetime.utcnow()
+    db.flush()
+    db.add(AuditLog(action="update_qari_bank_account", entity_type="qari_bank_account", entity_id=str(row.id), user_id=current_user.id, new_values={"bank_name": bank_name, "last4": account_number[-4:]}))
+    db.commit()
+    return bank_payload(row)
+
+
+@router.post("/qari/withdrawals")
+def create_qari_withdrawal(payload: QariWithdrawalRequest, current_user: User = Depends(get_current_qari_user), db: Session = Depends(get_db)):
+    from qari_earnings_service import request_withdrawal
+    try:
+        row = request_withdrawal(db, current_user.id, payload.amount_cents)
+        db.add(AuditLog(action="request_qari_withdrawal", entity_type="qari_withdrawal", entity_id=str(row.id), user_id=current_user.id, new_values={"amount_cents": row.amount_cents, "currency": row.currency}))
+        db.commit()
+        return {"id": str(row.id), "status": row.status, "amount_cents": row.amount_cents, "currency": row.currency}
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(400, str(exc))
 
 
 @router.get("/qari/referral-info")
@@ -2548,6 +2602,49 @@ async def get_qari_commission(
     except Exception as e:
         logger.error(f"Error calculating commission: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/admin/qari-withdrawals")
+def admin_qari_withdrawals(current_user: User = Depends(get_current_admin_user), db: Session = Depends(get_db)):
+    """List payout requests without exposing encrypted account numbers."""
+    rows = db.query(QariWithdrawal, User).join(User, User.id == QariWithdrawal.qari_id).order_by(QariWithdrawal.requested_at.desc()).all()
+    return [{
+        "id": str(row.id), "qari_name": qari.full_name or qari.email, "qari_email": qari.email,
+        "amount_cents": row.amount_cents, "currency": row.currency, "status": row.status,
+        "account_holder_name": row.account_holder_name, "bank_name": row.bank_name,
+        "account_number_masked": f"•••• {row.account_number_last4}",
+        "requested_at": row.requested_at.isoformat(), "processed_at": row.processed_at.isoformat() if row.processed_at else None,
+        "payment_reference": row.payment_reference, "admin_notes": row.admin_notes,
+    } for row, qari in rows]
+
+
+@router.patch("/admin/qari-withdrawals/{withdrawal_id}")
+def admin_update_qari_withdrawal(withdrawal_id: UUID, payload: AdminWithdrawalUpdate, current_user: User = Depends(get_current_admin_user), db: Session = Depends(get_db)):
+    if payload.status not in {"processing", "paid", "rejected"}:
+        raise HTTPException(400, "Status pengeluaran tidak sah")
+    row = db.query(QariWithdrawal).filter(QariWithdrawal.id == withdrawal_id).with_for_update().first()
+    if not row:
+        raise HTTPException(404, "Permohonan pengeluaran tidak ditemui")
+    if row.status in {"paid", "rejected"}:
+        raise HTTPException(400, "Permohonan ini telah dimuktamadkan")
+    if payload.status == "paid" and not (payload.payment_reference or "").strip():
+        raise HTTPException(400, "Nombor rujukan pembayaran diperlukan")
+    earnings = db.query(QariEarning).filter(QariEarning.withdrawal_id == row.id).with_for_update().all()
+    row.status = payload.status
+    row.payment_reference = (payload.payment_reference or "").strip() or None
+    row.admin_notes = (payload.admin_notes or "").strip() or None
+    row.processed_by = current_user.id
+    row.processed_at = datetime.utcnow() if payload.status in {"paid", "rejected"} else None
+    for earning in earnings:
+        if payload.status == "paid":
+            earning.status = "paid"
+            earning.paid_at = row.processed_at
+        elif payload.status == "rejected":
+            earning.status = "available"
+            earning.withdrawal_id = None
+    db.add(AuditLog(action=f"qari_withdrawal_{payload.status}", entity_type="qari_withdrawal", entity_id=str(row.id), user_id=current_user.id, new_values={"payment_reference": row.payment_reference, "notes": row.admin_notes}))
+    db.commit()
+    return {"id": str(row.id), "status": row.status}
 
 
 @router.get("/admin/system-health")

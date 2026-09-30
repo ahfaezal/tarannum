@@ -590,6 +590,62 @@ class CertificateApplication(Base):
     decided_at = Column(DateTime, nullable=True)
 
 
+class QariBankAccount(Base):
+    """Encrypted payout destination owned by one Qari."""
+    __tablename__ = "qari_bank_accounts"
+    __table_args__ = (UniqueConstraint("qari_id", name="uq_qari_bank_account_qari"),)
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    qari_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    account_holder_name = Column(String, nullable=False)
+    bank_name = Column(String, nullable=False)
+    account_number_encrypted = Column(Text, nullable=False)
+    account_number_last4 = Column(String(4), nullable=False)
+    is_verified = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class QariWithdrawal(Base):
+    """Immutable payout request with a snapshot of its destination."""
+    __tablename__ = "qari_withdrawals"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    qari_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True)
+    amount_cents = Column(Integer, nullable=False)
+    currency = Column(String, nullable=False, default="MYR")
+    status = Column(String, nullable=False, default="requested", index=True)  # requested | processing | paid | rejected
+    account_holder_name = Column(String, nullable=False)
+    bank_name = Column(String, nullable=False)
+    account_number_encrypted = Column(Text, nullable=False)
+    account_number_last4 = Column(String(4), nullable=False)
+    requested_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    processed_at = Column(DateTime, nullable=True)
+    processed_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    payment_reference = Column(String, nullable=True)
+    admin_notes = Column(Text, nullable=True)
+
+
+class QariEarning(Base):
+    """One RM10 earning for one completed Qari assessment."""
+    __tablename__ = "qari_earnings"
+    __table_args__ = (UniqueConstraint("application_id", name="uq_qari_earning_application"),)
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    application_id = Column(UUID(as_uuid=True), ForeignKey("certificate_applications.id", ondelete="RESTRICT"), nullable=False, index=True)
+    qari_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True)
+    student_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True)
+    course_id = Column(UUID(as_uuid=True), ForeignKey("courses.id", ondelete="SET NULL"), nullable=True, index=True)
+    withdrawal_id = Column(UUID(as_uuid=True), ForeignKey("qari_withdrawals.id", ondelete="SET NULL"), nullable=True, index=True)
+    payer_type = Column(String, nullable=False)  # tarannum | participant
+    amount_cents = Column(Integer, nullable=False, default=1000)
+    currency = Column(String, nullable=False, default="MYR")
+    status = Column(String, nullable=False, default="available", index=True)  # available | withdrawal_pending | paid | held | cancelled
+    decision = Column(String, nullable=False)
+    earned_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    paid_at = Column(DateTime, nullable=True)
+
+
 class CEOSignature(Base):
     """Singleton protected CEO signature shared across API replicas."""
     __tablename__ = 'ceo_signatures'

@@ -712,6 +712,15 @@ export const getQariCommissionStats = async (): Promise<{
   royalty_earned: number;
   royalty_currency: string;
   referral_breakdown: Array<{ code: string; count: number }>;
+  currency: "MYR";
+  fee_per_assessment_cents: number;
+  minimum_withdrawal_cents: number;
+  available_cents: number;
+  pending_withdrawal_cents: number;
+  paid_cents: number;
+  assessment_count: number;
+  earnings: Array<{id: string; student_name: string; course_title?: string | null; payer_type: "tarannum" | "participant"; amount_cents: number; status: string; decision: string; earned_at: string}>;
+  withdrawals: Array<{id: string; amount_cents: number; status: string; bank_name: string; account_number_masked: string; requested_at: string; processed_at?: string | null; payment_reference?: string | null}>;
 }> => {
   const response = await fetch(`${API_URL}/api/platform/qari/commission-stats`, {
     headers: {
@@ -723,6 +732,26 @@ export const getQariCommissionStats = async (): Promise<{
     throw new Error("Failed to get commission stats");
   }
 
+  return response.json();
+};
+
+export type QariBankAccountSummary = {configured: boolean; account_holder_name?: string; bank_name?: string; account_number_masked?: string; is_verified?: boolean; updated_at?: string | null};
+
+export const getQariBankAccount = async (): Promise<QariBankAccountSummary> => {
+  const response = await fetch(`${API_URL}/api/platform/qari/bank-account`, {headers: {...getAuthHeader()}});
+  if (!response.ok) throw new Error("Gagal mendapatkan maklumat akaun bank");
+  return response.json();
+};
+
+export const saveQariBankAccount = async (payload: {account_holder_name: string; bank_name: string; account_number: string; current_password: string}): Promise<QariBankAccountSummary> => {
+  const response = await fetch(`${API_URL}/api/platform/qari/bank-account`, {method: "PUT", headers: {"Content-Type": "application/json", ...getAuthHeader()}, body: JSON.stringify(payload)});
+  if (!response.ok) { const error = await response.json().catch(() => ({})); throw new Error(error.detail || "Gagal menyimpan maklumat akaun bank"); }
+  return response.json();
+};
+
+export const requestQariWithdrawal = async (amountCents: number): Promise<{id: string; status: string; amount_cents: number; currency: string}> => {
+  const response = await fetch(`${API_URL}/api/platform/qari/withdrawals`, {method: "POST", headers: {"Content-Type": "application/json", ...getAuthHeader()}, body: JSON.stringify({amount_cents: amountCents})});
+  if (!response.ok) { const error = await response.json().catch(() => ({})); throw new Error(error.detail || "Permohonan pengeluaran gagal"); }
   return response.json();
 };
 
