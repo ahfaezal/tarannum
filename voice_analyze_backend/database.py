@@ -511,6 +511,7 @@ class PromotionRegistration(Base):
     organization = Column(String, nullable=True)
     registration_consent = Column(Boolean, nullable=False, default=False)
     marketing_consent = Column(Boolean, nullable=False, default=False)
+    meta_analytics_consent = Column(Boolean, nullable=False, default=False)
     consented_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     status = Column(String, nullable=False, default="interested", index=True)
     reservation_expires_at = Column(DateTime, nullable=True, index=True)
@@ -846,6 +847,7 @@ def init_db():
         Base.metadata.create_all(bind=engine)
         ensure_email_otp_columns()
         ensure_promotion_attribution_columns()
+        ensure_promotion_meta_consent_column()
         ensure_student_names_uppercase()
         ensure_course_management_columns()
         ensure_student_selected_recordings_table()
@@ -867,6 +869,15 @@ def ensure_promotion_attribution_columns():
         conn.execute(text("ALTER TABLE promotion_registrations ADD COLUMN IF NOT EXISTS attribution_source VARCHAR(80)"))
         conn.execute(text("ALTER TABLE promotion_registrations ADD COLUMN IF NOT EXISTS attribution_medium VARCHAR(80)"))
         conn.execute(text("ALTER TABLE promotion_registrations ADD COLUMN IF NOT EXISTS attribution_campaign VARCHAR(160)"))
+
+
+def ensure_promotion_meta_consent_column():
+    """Record explicit consent before sending a server-side Meta conversion."""
+    with engine.begin() as conn:
+        conn.execute(text(
+            "ALTER TABLE promotion_registrations "
+            "ADD COLUMN IF NOT EXISTS meta_analytics_consent BOOLEAN NOT NULL DEFAULT FALSE"
+        ))
 
 
 def ensure_student_names_uppercase():

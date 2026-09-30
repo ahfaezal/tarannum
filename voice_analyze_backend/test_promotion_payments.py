@@ -20,13 +20,16 @@ class PromotionPaymentTests(unittest.TestCase):
         self.assertEqual(payload.state, "")
         self.assertEqual(payload.district, "")
 
-    def callback(self, status):
+    def callback(self, status, meta_consent=False):
         registration_id = uuid4()
         registration = SimpleNamespace(
             id=registration_id,
+            public_token="public-token",
             toyyibpay_bill_code="new-bill",
             status="payment_reserved",
             email="ahmad@example.com",
+            phone="0123456789",
+            meta_analytics_consent=meta_consent,
             user_id=None,
             paid_at=None,
         )
@@ -42,10 +45,18 @@ class PromotionPaymentTests(unittest.TestCase):
         order_id = str(registration_id)
         digest = hashlib.md5(f"test-secret{status}{order_id}{refno}ok".encode()).hexdigest()
         with patch.dict(promotions.os.environ, {"TOYYIBPAY_SECRET_KEY": "test-secret"}):
-            result = promotions.toyyibpay_callback(
-                refno=refno, status=status, billcode="old-bill",
-                order_id=order_id, amount="200.00", hash=digest, db=db,
-            )
+            with patch.object(promotions, "send_purchase_event") as send_purchase:
+                result = promotions.toyyibpay_callback(
+                    refno=refno, status=status, billcode="old-bill",
+                    order_id=order_id, amount="200.00", hash=digest, db=db,
+                )
+                if meta_consent and status == "1":
+                    send_purchase.assert_called_once_with(
+                        event_id="professional-azan-purchase-public-token",
+                        email="ahmad@example.com", phone="0123456789", value=200.0,
+                    )
+                else:
+                    send_purchase.assert_not_called()
         return result, registration, db
 
     def test_late_success_from_previous_bill_is_not_lost(self):
@@ -60,6 +71,11 @@ class PromotionPaymentTests(unittest.TestCase):
         self.assertEqual(result, {"status": "ok"})
         self.assertEqual(registration.status, "payment_reserved")
         db.commit.assert_called_once()
+
+    def test_consented_purchase_is_sent_server_side(self):
+        result, registration, db = self.callback("1", meta_consent=True)
+        self.assertEqual(result, {"status": "ok"})
+        self.assertEqual(registration.status, "paid")
 
 
 if __name__ == "__main__":
