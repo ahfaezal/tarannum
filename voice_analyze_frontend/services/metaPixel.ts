@@ -10,6 +10,7 @@ declare global {
 const PIXEL_ID = String(import.meta.env.VITE_META_PIXEL_ID || "").trim();
 const CONSENT_KEY = "tarannum_marketing_analytics_consent";
 let initialized = false;
+let pageViewTracked = false;
 
 export const getMetaConsent = () => window.localStorage.getItem(CONSENT_KEY);
 
@@ -37,6 +38,10 @@ export const initializeMetaPixel = () => {
   script.src = "https://connect.facebook.net/en_US/fbevents.js";
   document.head.appendChild(script);
   window.fbq("init", PIXEL_ID);
+  if (!pageViewTracked) {
+    window.fbq("track", "PageView");
+    pageViewTracked = true;
+  }
   return true;
 };
 

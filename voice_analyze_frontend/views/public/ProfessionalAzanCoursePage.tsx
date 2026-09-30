@@ -276,7 +276,7 @@ const ProfessionalAzanCoursePage: React.FC = () => {
             <p className="mt-4 text-sm leading-6 text-stone-500">Video hanya dimainkan apabila anda menekan butang main. Gunakan fon kepala untuk pengalaman audio yang lebih jelas.</p>
           </div>
           <figure className="overflow-hidden rounded-3xl border border-stone-200 bg-emerald-950 shadow-xl">
-            <video controls playsInline preload="metadata" poster="/images/ustaz-ahmad-tarmizi-azan.webp" aria-label="Video contoh pengalaman latihan azan menggunakan Tarannum.ai" aria-describedby="ustaz-tarmizi-video-description" className="mx-auto max-h-[75vh] w-full bg-black">
+            <video controls playsInline preload="none" poster="/images/ustaz-ahmad-tarmizi-azan.webp" aria-label="Video contoh pengalaman latihan azan menggunakan Tarannum.ai" aria-describedby="ustaz-tarmizi-video-description" className="mx-auto max-h-[75vh] w-full bg-black">
               <source src="/images/azan-ustaz-ahmad-tarmizi-web.mp4" type="video/mp4" />
               Pelayar anda tidak menyokong video ini. <a href="/images/azan-ustaz-ahmad-tarmizi-web.mp4">Buka video azan Ustaz Ahmad Tarmizi</a>.
             </video>
@@ -313,7 +313,7 @@ const ProfessionalAzanCoursePage: React.FC = () => {
       </section>
 
       <section className="mx-auto grid max-w-7xl gap-10 px-5 py-16 sm:px-8 lg:grid-cols-2 lg:items-center">
-        <div className="grid gap-4"><img src="/images/kursus-profesional-azan-oktober-2026.png" alt="Kursus Profesional Azan bersama Ustaz Ahmad Tarmizi" className="mx-auto max-h-[640px] w-auto rounded-2xl object-contain shadow-lg"/><div className="grid grid-cols-2 gap-4"><div className="rounded-2xl bg-emerald-900 p-6 text-center text-white"><Award className="mx-auto h-9 w-9 text-amber-300"/><p className="mt-3 font-black">Johan Tilawah</p><p className="mt-1 text-sm text-emerald-100/70">Terengganu 2010 & 2016</p></div><div className="rounded-2xl bg-amber-100 p-6 text-center text-emerald-950"><Mic2 className="mx-auto h-9 w-9"/><p className="mt-3 font-black">Irama Hijjaz</p><p className="mt-1 text-sm text-stone-600">Alunan merdu dan tersusun</p></div></div></div>
+        <div className="grid gap-4"><img src="/images/kursus-profesional-azan-oktober-2026.webp" alt="Kursus Profesional Azan bersama Ustaz Ahmad Tarmizi" loading="lazy" decoding="async" className="mx-auto max-h-[640px] w-auto rounded-2xl object-contain shadow-lg"/><div className="grid grid-cols-2 gap-4"><div className="rounded-2xl bg-emerald-900 p-6 text-center text-white"><Award className="mx-auto h-9 w-9 text-amber-300"/><p className="mt-3 font-black">Johan Tilawah</p><p className="mt-1 text-sm text-emerald-100/70">Terengganu 2010 & 2016</p></div><div className="rounded-2xl bg-amber-100 p-6 text-center text-emerald-950"><Mic2 className="mx-auto h-9 w-9"/><p className="mt-3 font-black">Irama Hijjaz</p><p className="mt-1 text-sm text-stone-600">Alunan merdu dan tersusun</p></div></div></div>
         <div><p className="text-sm font-black uppercase tracking-[.2em] text-emerald-700">Profil pengajar</p><h2 className="mt-3 text-3xl font-black sm:text-4xl">Bimbingan qari dan tokoh al-Quran berpengalaman.</h2><p className="mt-5 leading-8 text-stone-600">Ustaz Ahmad Tarmizi bin Abdul Rahman, juga dikenali sebagai Ustaz Tarmizi Abd Rahman, ialah qari, pendakwah dan tokoh al-Quran terkenal di Malaysia.</p><p className="mt-4 leading-8 text-stone-600">Beliau merupakan qari #QuranTime TV Al-Hijrah, juri Akademi Al-Quran dan Geng Ngaji Astro Oasis, serta bekas peserta akhir Akademi Al-Quran TV9. Beliau menjuarai Tilawah Al-Quran Negeri Terengganu pada 2010 dan 2016, dan terkenal dengan alunan irama Hijjaz.</p></div>
       </section>
 
@@ -384,7 +384,11 @@ const ProfessionalAzanCoursePage: React.FC = () => {
         </div>
       </section>
 
-      <section className="border-t border-stone-200 bg-white py-12"><div className="mx-auto grid max-w-7xl gap-6 px-5 sm:px-8 md:grid-cols-[1fr_auto] md:items-center"><div><h2 className="text-2xl font-black">Surau Jumaat Al-Amin</h2><p className="mt-2 text-stone-600">Bandar Tun Razak, Kuala Lumpur</p></div><a href="https://maps.app.goo.gl/p3CLDp2h9KuEeVHcA" target="_blank" rel="noreferrer" className="inline-flex items-center justify-center gap-2 rounded-xl border-2 border-emerald-700 px-5 py-3 font-bold text-emerald-800"><MapPin className="h-5 w-5"/>Dapatkan arah</a></div></section>
+      <section className="border-t border-stone-200 bg-white py-12 pb-28 sm:pb-12"><div className="mx-auto grid max-w-7xl gap-6 px-5 sm:px-8 md:grid-cols-[1fr_auto] md:items-center"><div><h2 className="text-2xl font-black">Surau Jumaat Al-Amin</h2><p className="mt-2 text-stone-600">Bandar Tun Razak, Kuala Lumpur</p></div><a href="https://maps.app.goo.gl/p3CLDp2h9KuEeVHcA" target="_blank" rel="noreferrer" className="inline-flex items-center justify-center gap-2 rounded-xl border-2 border-emerald-700 px-5 py-3 font-bold text-emerald-800"><MapPin className="h-5 w-5"/>Dapatkan arah</a></div></section>
+      {!campaign?.is_full && <nav aria-label="Tindakan pendaftaran pantas" className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-2 gap-2 border-t border-stone-200 bg-white/95 p-3 shadow-[0_-8px_30px_rgba(0,0,0,.12)] backdrop-blur sm:hidden">
+        <a href="#daftar" className="inline-flex items-center justify-center gap-2 rounded-xl bg-amber-400 px-4 py-3 font-black text-emerald-950">Daftar RM200 <ArrowRight className="h-4 w-4" /></a>
+        <a href="https://wa.me/60192504000?text=Assalamualaikum%2C%20saya%20berminat%20dengan%20Kursus%20Profesional%20Azan%20pada%2024%20Oktober%202026." className="inline-flex items-center justify-center rounded-xl bg-emerald-800 px-4 py-3 font-black text-white">Tanya WhatsApp</a>
+      </nav>}
     </div>
   );
 };
