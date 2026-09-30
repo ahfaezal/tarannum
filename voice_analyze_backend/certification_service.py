@@ -419,12 +419,19 @@ def decide_application(db: Session, application: CertificateApplication, qari: U
     if decision == "approved":
         grade = grade_for_score(qari_score)
     if decision == "approved":
-        if not application.course_id:
-            raise ValueError('A managed course enrollment is required for competency certification')
-        enrollment = db.query(CourseEnrollment).filter(CourseEnrollment.course_id == application.course_id,
-            CourseEnrollment.student_id == application.student_id).first()
-        if not enrollment or not recalculate_enrollment(db, enrollment, actor_id=qari.id)['eligible']:
-            raise ValueError('Course attendance and 60 minutes of practice must remain verified')
+        if application.course_id:
+            enrollment = db.query(CourseEnrollment).filter(CourseEnrollment.course_id == application.course_id,
+                CourseEnrollment.student_id == application.student_id).first()
+            if not enrollment or not recalculate_enrollment(db, enrollment, actor_id=qari.id)['eligible']:
+                raise ValueError('Course attendance and 60 minutes of practice must remain verified')
+        else:
+            from database import AssessmentPayment
+            paid = db.query(AssessmentPayment.id).filter(
+                AssessmentPayment.application_id == application.id,
+                AssessmentPayment.status == "application_created",
+            ).first()
+            if not paid:
+                raise ValueError('Verified RM10 payment is required for this private assessment')
         signature = db.query(QariSignature).filter(
             QariSignature.qari_id == qari.id,
             QariSignature.is_active.is_(True),

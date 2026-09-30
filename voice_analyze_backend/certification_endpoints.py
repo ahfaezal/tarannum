@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, Query
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, Query
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -40,6 +40,7 @@ from database import (
     get_db,
     QariContent, StudentQariRelationship,
     CEOSignature, AuditLog,
+    AssessmentPayment, AssessmentPaymentAttempt,
 )
 
 
@@ -102,6 +103,11 @@ class CompetencyApplicationCreate(BaseModel):
     session_id: UUID
     certificate_type: str
     course_id: Optional[UUID] = None
+
+
+class PrivateAssessmentCheckoutCreate(BaseModel):
+    session_id: UUID
+    certificate_type: str
 
 
 class QariDecision(BaseModel):
@@ -584,6 +590,99 @@ def create_competency_application(payload: CompetencyApplicationCreate, student:
         raise HTTPException(400, str(exc))
 
 
+@router.post("/student/private-assessment-checkout")
+def private_assessment_checkout(payload: PrivateAssessmentCheckoutCreate, student: User = Depends(get_current_student_user), db: Session = Depends(get_db)):
+    """Create or resume one RM10 ToyyibPay bill for a non-course recording."""
+    import secrets
+    from assessment_payment_service import ASSESSMENT_PRICE_CENTS, create_bill, validate_private_assessment
+    try:
+        session, _analysis, reference, qari = validate_private_assessment(
+            db, student, payload.session_id, payload.certificate_type
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    payment = db.query(AssessmentPayment).filter(AssessmentPayment.session_id == session.id).with_for_update().first()
+    if payment and payment.status in {"paid", "application_created"}:
+        return {"status": payment.status, "payment_token": payment.public_token, "application_id": str(payment.application_id) if payment.application_id else None}
+    if payment and payment.status == "payment_pending" and payment.toyyibpay_bill_code:
+        return {"status": payment.status, "payment_token": payment.public_token, "checkout_url": f"https://toyyibpay.com/{payment.toyyibpay_bill_code}"}
+    if not payment:
+        payment = AssessmentPayment(
+            public_token=secrets.token_urlsafe(24), student_id=student.id, qari_id=qari.id,
+            reference_id=session.reference_id, session_id=session.id,
+            certificate_type=payload.certificate_type, amount_cents=ASSESSMENT_PRICE_CENTS,
+            currency="MYR", status="created",
+        )
+        db.add(payment)
+        db.flush()
+    try:
+        bill_code = create_bill(payment, student, reference)
+    except HTTPException:
+        db.rollback()
+        raise
+    payment.toyyibpay_bill_code = bill_code
+    payment.status = "payment_pending"
+    db.add(AssessmentPaymentAttempt(payment_id=payment.id, bill_code=bill_code))
+    db.add(AuditLog(action="create_private_assessment_bill", entity_type="assessment_payment", entity_id=str(payment.id), user_id=student.id, new_values={"amount_cents": payment.amount_cents, "bill_code": bill_code}))
+    db.commit()
+    return {"status": payment.status, "payment_token": payment.public_token, "checkout_url": f"https://toyyibpay.com/{bill_code}"}
+
+
+@router.post("/toyyibpay/assessment-callback")
+def private_assessment_callback(
+    refno: str = Form(...), status: str = Form(...), billcode: str = Form(...),
+    order_id: str = Form(...), amount: str = Form(...), hash: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    """Release the Qari task only after a verified successful callback."""
+    from assessment_payment_service import callback_amount_is_correct, create_application_after_payment, valid_callback_hash
+    if not valid_callback_hash(status, order_id, refno, hash):
+        raise HTTPException(400, "Callback pembayaran tidak sah")
+    try:
+        payment_id = UUID(order_id)
+    except ValueError as exc:
+        raise HTTPException(400, "Rujukan pembayaran tidak sah") from exc
+    payment = db.query(AssessmentPayment).filter(AssessmentPayment.id == payment_id).with_for_update().first()
+    if not payment:
+        raise HTTPException(404, "Rekod pembayaran tidak ditemui")
+    known_bill = db.query(AssessmentPaymentAttempt.id).filter(
+        AssessmentPaymentAttempt.payment_id == payment.id,
+        AssessmentPaymentAttempt.bill_code == billcode,
+    ).first()
+    if not known_bill:
+        raise HTTPException(404, "Bil pembayaran tidak ditemui")
+    if status == "1":
+        if not callback_amount_is_correct(amount):
+            raise HTTPException(400, "Amaun pembayaran tidak tepat")
+        if payment.status != "application_created":
+            payment.status = "paid"
+            payment.toyyibpay_reference_no = refno
+            payment.paid_at = datetime.utcnow()
+            application = create_application_after_payment(db, payment)
+            db.add(CertificationNotification(
+                user_id=payment.qari_id,
+                notification_type="qari_review_requested",
+                title="Penilaian berbayar baharu",
+                message="Bayaran RM10 telah disahkan dan satu rakaman menunggu semakan anda.",
+                metadata_json={"application_id": str(application.id), "payment_id": str(payment.id)},
+            ))
+            db.add(AuditLog(action="private_assessment_paid", entity_type="assessment_payment", entity_id=str(payment.id), user_id=payment.student_id, new_values={"application_id": str(application.id), "amount_cents": payment.amount_cents, "reference_no": refno}))
+    elif status == "3" and payment.status == "payment_pending" and payment.toyyibpay_bill_code == billcode:
+        payment.status = "payment_failed"
+    db.commit()
+    return {"status": "ok"}
+
+
+@router.get("/student/private-assessment-payments/{token}")
+def private_assessment_payment_status(token: str, student: User = Depends(get_current_student_user), db: Session = Depends(get_db)):
+    payment = db.query(AssessmentPayment).filter(
+        AssessmentPayment.public_token == token, AssessmentPayment.student_id == student.id
+    ).first()
+    if not payment:
+        raise HTTPException(404, "Pembayaran tidak ditemui")
+    return {"status": payment.status, "amount_cents": payment.amount_cents, "application_id": str(payment.application_id) if payment.application_id else None}
+
+
 @router.get("/student/competency-eligibility")
 def competency_eligibility(student: User = Depends(get_current_student_user), db: Session = Depends(get_db)):
     return _competency_eligibility_rows(db, student.id)
@@ -618,6 +717,7 @@ def _competency_eligibility_rows(db: Session, student_id: UUID) -> list[dict]:
         matched = next((pair for pair in course_rows
             if session.created_at <= pair[0].starts_at + timedelta(days=pair[0].completion_window_days)), None)
         course, enrollment = matched if matched else (None, None)
+        payment = db.query(AssessmentPayment).filter(AssessmentPayment.session_id == session.id).first()
         attended = bool(enrollment and enrollment.attendance_status == "attended")
         practice_complete = bool(enrollment and (
             enrollment.eligibility_override or (
@@ -625,9 +725,9 @@ def _competency_eligibility_rows(db: Session, student_id: UUID) -> list[dict]:
                 and (enrollment.valid_recording_count or 0) >= enrollment.required_recording_count
             )
         ))
-        can_submit = bool(course and attended and practice_complete)
+        can_submit = bool((course and attended and practice_complete) or not course)
         if not course:
-            blocked_reason = "Pendaftaran kursus diperlukan"
+            blocked_reason = None
         elif not attended:
             blocked_reason = "Kehadiran belum disahkan"
         elif not practice_complete:
@@ -640,16 +740,21 @@ def _competency_eligibility_rows(db: Session, student_id: UUID) -> list[dict]:
             "reference_title": reference.title,
             "maqam": reference.maqam,
             "score": analysis.score,
-            "application_id": str(application.id) if application else None,
-            "application_status": application.status if application else None,
+            "application_id": str(application.id) if application else (str(payment.application_id) if payment and payment.application_id else None),
+            "application_status": application.status if application else (payment.status if payment else None),
             "created_at": session.created_at.isoformat(),
             "course_id": str(course.id) if course else None,
             "course_title": course.title if course else None,
-            "certificate_type": ("competency_azan" if course.certificate_category == "azan" else "competency_tarannum") if course else None,
+            "certificate_type": (("competency_azan" if course.certificate_category == "azan" else "competency_tarannum") if course
+                else ("competency_azan" if "azan" in (reference.title or "").lower() else "competency_tarannum")),
             "attendance_verified": attended,
             "practice_60_minutes_complete": practice_complete,
             "can_submit": can_submit,
             "blocked_reason": blocked_reason,
+            "payment_required": not bool(course),
+            "payment_status": payment.status if payment else None,
+            "payment_token": payment.public_token if payment else None,
+            "payment_amount_cents": payment.amount_cents if payment else 1000,
         })
     return result
 

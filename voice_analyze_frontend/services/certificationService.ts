@@ -82,6 +82,10 @@ export interface CompetencyEligibility {
   practice_60_minutes_complete: boolean;
   can_submit: boolean;
   blocked_reason?: string | null;
+  payment_required?: boolean;
+  payment_status?: string | null;
+  payment_token?: string | null;
+  payment_amount_cents?: number;
 }
 
 export interface CertificationCourse {
@@ -135,6 +139,8 @@ export const competencyGradeForScore = (score: number): { label: string; range: 
 export const getStudentCourseProgress = () => request<CourseProgress[]>("/student/courses");
 export const getCompetencyEligibility = () => request<CompetencyEligibility[]>("/student/competency-eligibility");
 export const submitCompetencyApplication = (sessionId: string, certificateType: string, courseId: string) => request<any>("/student/competency-applications", { method: "POST", body: JSON.stringify({ session_id: sessionId, certificate_type: certificateType, course_id: courseId }) });
+export const createPrivateAssessmentCheckout = (sessionId: string, certificateType: string) => request<{status: string; payment_token: string; checkout_url?: string; application_id?: string | null}>("/student/private-assessment-checkout", { method: "POST", body: JSON.stringify({ session_id: sessionId, certificate_type: certificateType }) });
+export const getPrivateAssessmentPaymentStatus = (token: string) => request<{status: string; amount_cents: number; application_id?: string | null}>(`/student/private-assessment-payments/${encodeURIComponent(token)}`);
 export const getMyCertificates = () => request<CertificateSummary[]>("/certificates/mine");
 export const getAdminUserCertificates = (userId: string) => request<CertificateSummary[]>(`/admin/users/${encodeURIComponent(userId)}/certificates`);
 export const getAdminStudentFlowPreview = (userId: string) => request<StudentFlowPreview>(`/admin/users/${encodeURIComponent(userId)}/student-flow-preview`);

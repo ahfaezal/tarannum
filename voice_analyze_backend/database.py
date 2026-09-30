@@ -590,6 +590,40 @@ class CertificateApplication(Base):
     decided_at = Column(DateTime, nullable=True)
 
 
+class AssessmentPayment(Base):
+    """RM10 ToyyibPay checkout for one non-course competency assessment."""
+    __tablename__ = "assessment_payments"
+    __table_args__ = (UniqueConstraint("session_id", name="uq_assessment_payment_session"),)
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    public_token = Column(String, unique=True, nullable=False, index=True)
+    student_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    qari_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True)
+    reference_id = Column(String, ForeignKey("references.id", ondelete="RESTRICT"), nullable=False)
+    session_id = Column(UUID(as_uuid=True), ForeignKey("user_sessions.id", ondelete="RESTRICT"), nullable=False, index=True)
+    application_id = Column(UUID(as_uuid=True), ForeignKey("certificate_applications.id", ondelete="SET NULL"), nullable=True, unique=True)
+    certificate_type = Column(String, nullable=False)
+    amount_cents = Column(Integer, nullable=False, default=1000)
+    currency = Column(String, nullable=False, default="MYR")
+    status = Column(String, nullable=False, default="created", index=True)  # created | payment_pending | paid | application_created | payment_failed
+    toyyibpay_bill_code = Column(String, nullable=True, index=True)
+    toyyibpay_reference_no = Column(String, nullable=True)
+    paid_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class AssessmentPaymentAttempt(Base):
+    """Every issued bill is retained so late valid callbacks remain safe."""
+    __tablename__ = "assessment_payment_attempts"
+    __table_args__ = (UniqueConstraint("bill_code", name="uq_assessment_payment_attempt_bill"),)
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    payment_id = Column(UUID(as_uuid=True), ForeignKey("assessment_payments.id", ondelete="CASCADE"), nullable=False, index=True)
+    bill_code = Column(String, nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
 class QariBankAccount(Base):
     """Encrypted payout destination owned by one Qari."""
     __tablename__ = "qari_bank_accounts"
