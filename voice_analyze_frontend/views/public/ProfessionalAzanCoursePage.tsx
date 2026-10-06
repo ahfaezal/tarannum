@@ -201,9 +201,9 @@ const ProfessionalAzanCoursePage: React.FC = () => {
   return (
     <div className="bg-[#f7f4ec] text-stone-900">
       {metaPixelConfigured && analyticsConsent === null && <aside className="fixed inset-x-4 bottom-4 z-50 mx-auto max-w-2xl rounded-2xl border border-stone-200 bg-white p-5 shadow-2xl" aria-label="Persetujuan analitik pemasaran">
-        <p className="font-black text-stone-900">Bantu kami menilai keberkesanan promosi</p>
-        <p className="mt-2 text-sm leading-6 text-stone-600">Dengan izin anda, Meta Pixel merekodkan lawatan dan peringkat pembayaran kursus. Selepas bayaran disahkan, e-mel dan nombor telefon yang telah di-hash boleh dihantar kepada Meta untuk memadankan pembelian dengan kempen; nilai asal tidak dihantar melalui integrasi ini.</p>
-        <div className="mt-4 flex flex-wrap gap-3"><button type="button" onClick={() => { setMetaConsent(true); setAnalyticsConsent("granted"); }} className="rounded-xl bg-emerald-700 px-5 py-3 font-bold text-white">Benarkan analitik</button><button type="button" onClick={() => { setMetaConsent(false); setAnalyticsConsent("denied"); }} className="rounded-xl border border-stone-300 px-5 py-3 font-bold text-stone-700">Tidak, terima kasih</button></div>
+        <p className="font-black text-stone-900">Bantu kami menambah baik laman Tarannum.ai</p>
+        <p className="mt-2 text-sm leading-6 text-stone-600">Kami menggunakan Meta Pixel untuk memahami kunjungan laman dan menambah baik maklumat serta proses pendaftaran kursus. Sila klik butang <strong>“Benarkan Analitik”</strong> untuk membantu kami.</p>
+        <div className="mt-4 flex flex-wrap gap-3"><button type="button" onClick={() => { setMetaConsent(true); setAnalyticsConsent("granted"); }} className="rounded-xl bg-emerald-700 px-5 py-3 font-bold text-white">Benarkan Analitik</button><button type="button" onClick={() => { setMetaConsent(false); setAnalyticsConsent("denied"); }} className="rounded-xl border border-stone-300 px-5 py-3 font-bold text-stone-700">Tolak</button></div>
       </aside>}
       <section className="relative isolate overflow-hidden bg-[#073f32] text-white">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_82%_18%,rgba(212,168,73,.24),transparent_30%),linear-gradient(135deg,transparent_0%,rgba(255,255,255,.04)_55%,transparent_100%)]" />
