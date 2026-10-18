@@ -48,6 +48,13 @@ def require_reference_editor(reference: Reference, current_user: User):
         raise HTTPException(status_code=403, detail="You can only edit annotations for your own reference")
 
 
+def annotation_owner_id(reference: Reference, current_user: User):
+    """Keep admin-created guidance attached to the Qari who owns the reference."""
+    if current_user.role == UserRole.ADMIN.value and reference.owner_id:
+        return reference.owner_id
+    return current_user.id
+
+
 def serialize(item: LearningAnnotation):
     return {
         "id": str(item.id),
@@ -109,7 +116,12 @@ def create_learning_annotation(
         raise HTTPException(status_code=404, detail="Reference not found")
     require_reference_editor(reference, current_user)
     values = payload.model_dump(exclude={"id"})
-    item = LearningAnnotation(reference_id=reference_id, qari_id=current_user.id, status="draft", **values)
+    item = LearningAnnotation(
+        reference_id=reference_id,
+        qari_id=annotation_owner_id(reference, current_user),
+        status="draft",
+        **values,
+    )
     db.add(item)
     db.commit()
     db.refresh(item)
@@ -129,26 +141,30 @@ def save_learning_annotations(
     if not reference:
         raise HTTPException(status_code=404, detail="Reference not found")
     require_reference_editor(reference, current_user)
+    owner_id = annotation_owner_id(reference, current_user)
 
     saved = []
     retained_ids = []
     for annotation in payload.annotations:
         item = None
         if annotation.id:
-            item = db.query(LearningAnnotation).filter(
+            item_query = db.query(LearningAnnotation).filter(
                 LearningAnnotation.id == annotation.id,
                 LearningAnnotation.reference_id == reference_id,
-                LearningAnnotation.qari_id == current_user.id,
-            ).first()
+            )
+            if current_user.role != UserRole.ADMIN.value:
+                item_query = item_query.filter(LearningAnnotation.qari_id == current_user.id)
+            item = item_query.first()
         values = annotation.model_dump(exclude={"id"})
         if item:
             for key, value in values.items():
                 setattr(item, key, value)
+            item.qari_id = owner_id
             item.status = payload.status
             item.is_active = True
             retained_ids.append(item.id)
         else:
-            item = LearningAnnotation(reference_id=reference_id, qari_id=current_user.id, status=payload.status, **values)
+            item = LearningAnnotation(reference_id=reference_id, qari_id=owner_id, status=payload.status, **values)
             db.add(item)
             db.flush()
             retained_ids.append(item.id)
@@ -158,9 +174,10 @@ def save_learning_annotations(
     # truth so legacy/hidden records cannot remain published for students.
     stale_query = db.query(LearningAnnotation).filter(
         LearningAnnotation.reference_id == reference_id,
-        LearningAnnotation.qari_id == current_user.id,
         LearningAnnotation.is_active.is_(True),
     )
+    if current_user.role != UserRole.ADMIN.value:
+        stale_query = stale_query.filter(LearningAnnotation.qari_id == current_user.id)
     if retained_ids:
         stale_query = stale_query.filter(LearningAnnotation.id.notin_(retained_ids))
     stale_query.update({LearningAnnotation.is_active: False}, synchronize_session=False)

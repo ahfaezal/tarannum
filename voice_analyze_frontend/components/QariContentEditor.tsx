@@ -393,7 +393,7 @@ const QariContentEditor: React.FC = () => {
                 surahName={surahName}
                 onTrimAudio={handleTrimAudio}
                 isTrimmingAudio={trimmingAudio}
-                referenceId={isAdminManagingQari ? undefined : content.reference_id}
+                referenceId={content.reference_id}
               />
             )}
           </div>
