@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Languages, RefreshCw, Save, Send, Trash2 } from "lucide-react";
+import { Eye, EyeOff, Languages, RefreshCw, Save, Send, Trash2 } from "lucide-react";
 import { LearningAnnotation, LearningAnnotationType, learningAnnotationService } from "../services/learningAnnotationService";
 import { TextSegment } from "../services/referenceLibraryService";
 
@@ -57,6 +57,7 @@ const QariAnnotationEditor: React.FC<Props> = ({ referenceId, duration, currentT
   const [selectedAyah, setSelectedAyah] = useState("all");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<"draft" | "published" | null>(null);
+  const [publicationStatus, setPublicationStatus] = useState<"draft" | "published">("draft");
   const [message, setMessage] = useState("");
   const [viewport, setViewport] = useState<GraphViewport>({ startTime: 0, endTime: duration, plotLeft: 60, plotRight: 740, plotTop: 60, plotBottom: 300, width: 800, height: 360 });
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -64,7 +65,10 @@ const QariAnnotationEditor: React.FC<Props> = ({ referenceId, duration, currentT
   useEffect(() => {
     setLoading(true);
     learningAnnotationService.list(referenceId, true)
-      .then(setItems).catch((error) => setMessage(error.message)).finally(() => setLoading(false));
+      .then((loadedItems) => {
+        setItems(loadedItems);
+        setPublicationStatus(loadedItems.length > 0 && loadedItems.every((item) => item.status === "published") ? "published" : "draft");
+      }).catch((error) => setMessage(error.message)).finally(() => setLoading(false));
   }, [referenceId]);
 
   const ayahRange = useMemo(() => {
@@ -75,6 +79,7 @@ const QariAnnotationEditor: React.FC<Props> = ({ referenceId, duration, currentT
 
   const visibleItems = items.filter((item) => item.annotation_type === "letter" && item.start_time >= viewport.startTime && item.start_time <= viewport.endTime);
   const selected = items.find((item) => item.id === selectedId) || null;
+  const isPublished = items.length > 0 && publicationStatus === "published";
   const timeFromPointer = (clientX: number) => {
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!rect || duration <= 0) return 0;
@@ -145,6 +150,7 @@ const QariAnnotationEditor: React.FC<Props> = ({ referenceId, duration, currentT
     try {
       const result = await learningAnnotationService.saveAll(referenceId, items, status, inactiveIds);
       setItems(result.annotations); setInactiveIds([]);
+      setPublicationStatus(status);
       setMessage(status === "published" ? "Panduan telah diterbitkan kepada pengguna." : "Draf panduan telah disimpan.");
     } catch (error: any) { setMessage(error.message); }
     finally { setSaving(null); }
@@ -207,7 +213,18 @@ const QariAnnotationEditor: React.FC<Props> = ({ referenceId, duration, currentT
         <button type="button" onClick={removeSelected} className="inline-flex self-end items-center justify-center gap-2 rounded-lg bg-rose-600 px-3 py-2 text-sm font-bold text-white" title="Buang ikon"><Trash2 size={16}/>Buang ikon</button>
       </div>}
 
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-3"><p className="text-xs font-medium text-slate-600">{message || `${items.length} tanda · ${items.some((item) => item.status === "draft") ? "Ada perubahan draf" : "Sedia"}`}</p><div className="flex flex-wrap gap-2">{items.length > 0 && <button type="button" onClick={removeAll} disabled={!!saving} className="inline-flex items-center gap-2 rounded-lg border border-rose-300 bg-white px-4 py-2 text-sm font-bold text-rose-700 disabled:opacity-50"><Trash2 size={16}/>Buang semua ikon</button>}<button type="button" onClick={() => save("draft")} disabled={!!saving} className="inline-flex items-center gap-2 rounded-lg bg-slate-700 px-4 py-2 text-sm font-bold text-white disabled:opacity-50"><Save size={16}/>{saving === "draft" ? "Menyimpan…" : "Simpan draf"}</button><button type="button" onClick={() => save("published")} disabled={!!saving} className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-50"><Send size={16}/>{saving === "published" ? "Menerbitkan…" : "Simpan & terbitkan"}</button></div></div>
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-xs font-medium text-slate-600">{message || `${items.length} tanda · ${items.some((item) => item.status === "draft") ? "Ada perubahan draf" : "Sedia"}`}</p>
+          {items.length > 0 && <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-bold ${isPublished ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-700"}`}>{isPublished ? <Eye size={14}/> : <EyeOff size={14}/>} {isPublished ? "Aktif untuk pelajar" : "Tidak aktif"}</span>}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {items.length > 0 && <button type="button" onClick={removeAll} disabled={!!saving} className="inline-flex items-center gap-2 rounded-lg border border-rose-300 bg-white px-4 py-2 text-sm font-bold text-rose-700 disabled:opacity-50"><Trash2 size={16}/>Buang semua ikon</button>}
+          {items.length > 0 && isPublished && <button type="button" onClick={() => save("draft")} disabled={!!saving} className="inline-flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-bold text-amber-800 disabled:opacity-50"><EyeOff size={16}/>{saving === "draft" ? "Menyahaktifkan…" : "Nyahaktifkan ikon"}</button>}
+          <button type="button" onClick={() => save("draft")} disabled={!!saving} className="inline-flex items-center gap-2 rounded-lg bg-slate-700 px-4 py-2 text-sm font-bold text-white disabled:opacity-50"><Save size={16}/>{saving === "draft" ? "Menyimpan…" : "Simpan draf"}</button>
+          <button type="button" onClick={() => save("published")} disabled={!!saving || items.length === 0} className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-50"><Send size={16}/>{saving === "published" ? "Menerbitkan…" : isPublished ? "Simpan & terbitkan" : "Aktifkan & terbitkan"}</button>
+        </div>
+      </div>
     </div>
   );
 };
