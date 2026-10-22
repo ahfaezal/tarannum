@@ -14,7 +14,8 @@ class AdminLiveScoringTests(unittest.TestCase):
 
     def test_every_admin_route_requires_admin_dependency(self):
         names=['admin_live_scoring_context','admin_create_training_challenge',
-            'admin_list_training_challenges','admin_update_training_challenge','admin_training_challenge_leaderboard']
+            'admin_list_training_challenges','admin_add_training_challenge_participants',
+            'admin_update_training_challenge','admin_training_challenge_leaderboard']
         for name in names:
             fn=next(n for n in self.tree.body if isinstance(n,ast.FunctionDef) and n.name==name)
             self.assertIn('Depends(get_current_admin_user)',ast.unparse(fn))

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
-import { CalendarClock, ChevronDown, Plus, Trophy, Users, X } from "lucide-react";
+import { CalendarClock, ChevronDown, Plus, Search, Trophy, UserPlus, Users, X } from "lucide-react";
 import {
+  addTrainingChallengeParticipants,
   createTrainingChallenge,
   getQariTrainingChallenges,
   getTrainingChallengeLeaderboard,
@@ -37,13 +38,15 @@ const TrainingChallengePanel: React.FC<Props> = ({ students, content, managedQar
   const [participantScores, setParticipantScores] = useState<Record<string, TrainingChallengeParticipantScore[]>>({});
   const [leaderboardLoading, setLeaderboardLoading] = useState<string | null>(null);
   const [liveBoardId, setLiveBoardId] = useState<string | null>(null);
-  const [leaderboardUpdatedAt, setLeaderboardUpdatedAt] = useState<Record<string, Date>>({});
   const [boardPulse, setBoardPulse] = useState<string | null>(null);
   const [now, setNow] = useState(new Date());
   const [showForm, setShowForm] = useState(false);
   const [title, setTitle] = useState("");
   const [referenceId, setReferenceId] = useState("");
   const [selectedStudents, setSelectedStudents] = useState<string[]>([]);
+  const [managingChallengeId, setManagingChallengeId] = useState<string | null>(null);
+  const [additionalStudents, setAdditionalStudents] = useState<string[]>([]);
+  const [participantSearch, setParticipantSearch] = useState("");
   const [startAt, setStartAt] = useState(localDateTime(new Date()));
   const [endAt, setEndAt] = useState(localDateTime(new Date(Date.now() + 24 * 60 * 60 * 1000)));
 
@@ -105,7 +108,6 @@ const TrainingChallengePanel: React.FC<Props> = ({ students, content, managedQar
       const response = await getTrainingChallengeLeaderboard(challengeId, managedQariId);
       setLeaders((current) => ({ ...current, [challengeId]: response.leaders || [] }));
       setParticipantScores((current) => ({ ...current, [challengeId]: response.participant_scores || [] }));
-      setLeaderboardUpdatedAt((current) => ({ ...current, [challengeId]: new Date() }));
       setBoardPulse(challengeId);
       window.setTimeout(() => setBoardPulse((current) => current === challengeId ? null : current), 700);
     } catch (err: any) {
@@ -118,6 +120,36 @@ const TrainingChallengePanel: React.FC<Props> = ({ students, content, managedQar
   const openLiveBoard = async (challengeId: string) => {
     setLiveBoardId(challengeId);
     await loadLeaderboard(challengeId);
+  };
+
+  const openParticipantManager = async (challengeId: string) => {
+    if (managingChallengeId === challengeId) {
+      setManagingChallengeId(null);
+      return;
+    }
+    setManagingChallengeId(challengeId);
+    setAdditionalStudents([]);
+    setParticipantSearch("");
+    await loadLeaderboard(challengeId);
+  };
+
+  const addParticipants = async (challengeId: string) => {
+    if (!additionalStudents.length) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const response = await addTrainingChallengeParticipants(challengeId, additionalStudents, managedQariId);
+      setChallenges((current) => current.map((item) => item.id === challengeId
+        ? { ...item, ...response.challenge, participant_count: response.participant_count }
+        : item));
+      setAdditionalStudents([]);
+      setParticipantSearch("");
+      await loadLeaderboard(challengeId);
+    } catch (err: any) {
+      setError(err.message || "Failed to add participants");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const cancelChallenge = async (challengeId: string) => {
@@ -231,7 +263,40 @@ const TrainingChallengePanel: React.FC<Props> = ({ students, content, managedQar
                     <span className={`rounded-full px-3 py-1 text-xs font-bold ${challenge.status === "active" ? "bg-emerald-100 text-emerald-700" : challenge.status === "cancelled" ? "bg-red-100 text-red-700" : "bg-slate-100 text-slate-700"}`}>{challenge.status.toUpperCase()}</span>
                   </div>
                   <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-slate-600"><span className="flex items-center gap-1"><Users className="h-4 w-4" />{challenge.participant_count || 0} participants</span><span className="flex items-center gap-1"><CalendarClock className="h-4 w-4" />Timed challenge</span></div>
-                  <div className="mt-4 flex flex-wrap gap-2"><button type="button" onClick={() => openLiveBoard(challenge.id)} className="rounded-lg border border-emerald-300 px-3 py-2 text-sm font-bold text-emerald-700 hover:bg-emerald-50">{leaderboardLoading === challenge.id ? "Refreshing…" : "Open Live Board"}</button>{challenge.status !== "completed" && challenge.status !== "cancelled" && <button type="button" onClick={() => cancelChallenge(challenge.id)} className="rounded-lg border border-red-200 px-3 py-2 text-sm font-bold text-red-700 hover:bg-red-50">End Board</button>}</div>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <button type="button" onClick={() => openLiveBoard(challenge.id)} className="rounded-lg border border-emerald-300 px-3 py-2 text-sm font-bold text-emerald-700 hover:bg-emerald-50">{leaderboardLoading === challenge.id ? "Refreshing…" : "Open Live Board"}</button>
+                    {challenge.status !== "completed" && challenge.status !== "cancelled" && <>
+                      <button type="button" onClick={() => openParticipantManager(challenge.id)} className="flex items-center gap-2 rounded-lg border border-sky-200 px-3 py-2 text-sm font-bold text-sky-700 hover:bg-sky-50"><UserPlus className="h-4 w-4" />Urus Peserta</button>
+                      <button type="button" onClick={() => cancelChallenge(challenge.id)} className="rounded-lg border border-red-200 px-3 py-2 text-sm font-bold text-red-700 hover:bg-red-50">End Board</button>
+                    </>}
+                  </div>
+                  {managingChallengeId === challenge.id && (() => {
+                    const currentIds = new Set((participantScores[challenge.id] || []).map((item) => item.student_id));
+                    const query = participantSearch.trim().toLocaleLowerCase();
+                    const candidates = students.filter((student) => !currentIds.has(student.student_id) && (!query
+                      || (student.student_name || "").toLocaleLowerCase().includes(query)
+                      || student.student_email.toLocaleLowerCase().includes(query)));
+                    return <div className="mt-4 rounded-xl border border-sky-200 bg-sky-50/60 p-4">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div><h4 className="font-bold text-slate-800">Tambah peserta ke Live Board ini</h4><p className="text-xs text-slate-600">Rakaman peserta sejak waktu mula asal papan akan terus diambil kira.</p></div>
+                        <button type="button" onClick={() => setManagingChallengeId(null)} className="rounded-lg p-2 text-slate-500 hover:bg-white" aria-label="Close participant manager"><X className="h-4 w-4" /></button>
+                      </div>
+                      <label className="mt-3 flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2">
+                        <Search className="h-4 w-4 text-slate-400" />
+                        <input value={participantSearch} onChange={(event) => setParticipantSearch(event.target.value)} className="min-w-0 flex-1 bg-transparent text-sm outline-none" placeholder="Cari nama atau e-mel peserta" />
+                      </label>
+                      <div className="mt-3 max-h-56 overflow-y-auto rounded-lg border border-slate-200 bg-white p-2">
+                        {candidates.length ? candidates.map((student) => <label key={student.student_id} className="flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 hover:bg-slate-50">
+                          <input type="checkbox" checked={additionalStudents.includes(student.student_id)} onChange={() => setAdditionalStudents((current) => current.includes(student.student_id) ? current.filter((id) => id !== student.student_id) : [...current, student.student_id])} className="h-4 w-4 accent-emerald-600" />
+                          <span className="min-w-0 text-sm"><strong className="block truncate text-slate-800">{student.student_name || student.student_email}</strong><span className="block truncate text-xs text-slate-500">{student.student_email}</span></span>
+                        </label>) : <p className="p-4 text-center text-sm text-slate-500">{participantSearch ? "Tiada peserta sepadan ditemui." : "Semua peserta kursus telah berada dalam Live Board ini."}</p>}
+                      </div>
+                      <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                        <button type="button" onClick={() => setAdditionalStudents(candidates.map((student) => student.student_id))} disabled={!candidates.length} className="text-xs font-bold text-sky-700 disabled:opacity-40">Pilih semua hasil carian</button>
+                        <button type="button" onClick={() => addParticipants(challenge.id)} disabled={saving || !additionalStudents.length} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">{saving ? "Menambah…" : `Tambah ${additionalStudents.length || ""} Peserta`}</button>
+                      </div>
+                    </div>;
+                  })()}
                   {leaders[challenge.id] && <div className="mt-4 grid gap-2 sm:grid-cols-3">{leaders[challenge.id].length ? leaders[challenge.id].map((leader) => <div key={leader.student_id} className="rounded-lg bg-slate-50 p-3"><div className="text-xs font-bold text-amber-600">#{leader.rank}</div><div className="truncate font-semibold text-slate-800">{leader.student_name}</div><div className="text-2xl font-black text-emerald-700">{Math.round(leader.score)}%</div></div>) : <p className="text-sm text-slate-500">No completed score yet.</p>}</div>}
                 </article>
               ))}
@@ -241,40 +306,49 @@ const TrainingChallengePanel: React.FC<Props> = ({ students, content, managedQar
       )}
       {liveBoardId && (() => {
         const challenge = challenges.find((item) => item.id === liveBoardId);
-        const boardLeaders = leaders[liveBoardId] || [];
         const boardParticipants = participantScores[liveBoardId] || [];
+        const liveRanked = boardParticipants
+          .filter((participant) => participant.score_period === "live" && participant.score !== null)
+          .sort((a, b) => (b.score || 0) - (a.score || 0) || (a.achieved_at || "").localeCompare(b.achieved_at || ""));
+        const boardLeaders = liveRanked.slice(0, 3);
+        const remainingRanked = liveRanked.slice(3);
+        const waitingParticipants = boardParticipants
+          .filter((participant) => participant.score_period !== "live" || participant.score === null)
+          .sort((a, b) => a.student_name.localeCompare(b.student_name));
         if (!challenge) return null;
-        return <div className="fixed inset-0 z-[100] flex h-dvh min-h-0 flex-col gap-3 overflow-hidden bg-slate-950 px-4 py-4 text-white md:px-8 md:py-5">
+        return <div className="fixed inset-0 z-[100] flex h-dvh min-h-0 flex-col gap-3 overflow-hidden bg-gradient-to-br from-slate-950 via-slate-950 to-emerald-950 px-4 py-4 text-white md:px-8 md:py-5">
           {managedQariName && <p className="shrink-0 text-base font-semibold text-emerald-300">Qari: {managedQariName} · Dikendalikan oleh Admin</p>}
           <div className="flex shrink-0 items-start justify-between gap-4 border-b border-white/15 pb-3">
-            <div className="min-w-0"><div className="flex flex-wrap items-center gap-3"><p className="text-sm font-bold uppercase tracking-[0.25em] text-emerald-400">Live Training Leaderboard</p><span className="inline-flex items-center gap-2 rounded-full bg-red-500/15 px-3 py-1 text-xs font-black tracking-wider text-red-300"><span className="h-2 w-2 animate-pulse rounded-full bg-red-400" />LIVE</span></div><h2 className="mt-1 text-3xl font-black md:text-4xl">{challenge.title}</h2><div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-sm text-slate-300"><span>Highest Experimental Score V2.3</span><span className="font-mono font-bold text-white">Time remaining: {formatRemaining(challenge.end_at)}</span><span>Updated: {leaderboardUpdatedAt[liveBoardId]?.toLocaleTimeString() || "Waiting…"}</span></div></div>
+            <div className="min-w-0"><div className="flex flex-wrap items-center gap-3"><p className="text-sm font-bold uppercase tracking-[0.25em] text-emerald-400">Live Scoring</p><span className="inline-flex items-center gap-2 rounded-full bg-red-500/15 px-3 py-1 text-xs font-black tracking-wider text-red-300"><span className="h-2 w-2 animate-pulse rounded-full bg-red-400" />LIVE</span></div><h2 className="mt-1 text-3xl font-black md:text-4xl">{challenge.title}</h2><div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-sm text-slate-300"><span>{boardParticipants.length} peserta</span><span className="font-mono font-bold text-white">Masa berbaki: {formatRemaining(challenge.end_at)}</span></div></div>
             <button type="button" onClick={() => setLiveBoardId(null)} className="rounded-xl border border-white/20 p-3 hover:bg-white/10" aria-label="Close live board"><X className="h-6 w-6" /></button>
           </div>
-          <div className="flex max-h-[38vh] shrink-0 items-center justify-center overflow-y-auto py-1 md:max-h-none">
-            {boardLeaders.length === 0 ? <div className="text-center"><Trophy className="mx-auto h-20 w-20 text-amber-400/50" /><p className="mt-5 text-2xl font-bold">Waiting for completed scores…</p><p className="mt-2 text-slate-400">Students may continue using the normal Recording & Assessment page.</p></div> : <div className={`grid w-full max-w-6xl gap-5 transition-opacity duration-700 md:grid-cols-3 ${boardPulse === liveBoardId ? "opacity-70" : "opacity-100"}`}>{boardLeaders.map((leader, index) => {
+          <div className="flex max-h-[34vh] shrink-0 items-center justify-center overflow-y-auto py-1 md:max-h-none">
+            {boardLeaders.length === 0 ? <div className="py-4 text-center"><Trophy className="mx-auto h-12 w-12 text-amber-400/50" /><p className="mt-2 text-xl font-bold">Menunggu skor pertama…</p></div> : <div className={`grid w-full max-w-6xl gap-3 transition-opacity duration-700 md:grid-cols-3 ${boardPulse === liveBoardId ? "opacity-70" : "opacity-100"}`}>{boardLeaders.map((leader, index) => {
               const styles = index === 0
-                ? { card: "border-amber-400 bg-amber-400/10", badge: "bg-amber-400 text-slate-950", label: "Gold" }
+                ? { card: "border-amber-400 bg-amber-400/10", badge: "bg-amber-400 text-slate-950", label: "JUARA" }
                 : index === 1
-                ? { card: "border-slate-300/60 bg-slate-300/10", badge: "bg-slate-300 text-slate-950", label: "Silver" }
-                : { card: "border-orange-500/60 bg-orange-500/10", badge: "bg-orange-600 text-white", label: "Bronze" };
-              return <div key={leader.student_id} className={`min-w-0 rounded-2xl border p-4 text-center transition-all duration-700 ${styles.card}`}><div className={`mx-auto flex h-12 w-12 items-center justify-center rounded-full text-xl font-black ${styles.badge}`}>#{leader.rank}</div><div className="mt-2 text-xs font-bold uppercase tracking-[0.2em] text-slate-400">{styles.label}</div><h3 className="mt-2 truncate text-lg font-bold" title={leader.student_name}>{leader.student_name}</h3><div className="mt-2 text-5xl font-black text-emerald-400">{Math.round(leader.score)}%</div></div>;
+                ? { card: "border-slate-300/60 bg-slate-300/10", badge: "bg-slate-300 text-slate-950", label: "KEDUA" }
+                : { card: "border-orange-500/60 bg-orange-500/10", badge: "bg-orange-600 text-white", label: "KETIGA" };
+              return <div key={leader.student_id} className={`min-w-0 rounded-2xl border p-3 text-center transition-all duration-700 ${styles.card}`}><div className={`mx-auto flex h-10 w-10 items-center justify-center rounded-full text-lg font-black ${styles.badge}`}>#{index + 1}</div><div className="mt-1 text-xs font-bold uppercase tracking-[0.2em] text-slate-400">{styles.label}</div><h3 className="mt-1 truncate text-lg font-bold" title={leader.student_name}>{leader.student_name}</h3><div className="mt-1 text-4xl font-black text-emerald-400">{Math.round(leader.score || 0)}%</div></div>;
             })}</div>}
           </div>
           <div className="flex min-h-0 flex-1 flex-col rounded-xl border border-white/15 bg-white/5 p-3">
-            <h3 className="shrink-0 text-lg font-bold">Skor semua peserta</h3>
-            <p className="mb-2 shrink-0 text-xs text-slate-400">Skor sebelum sesi dipaparkan untuk rujukan sahaja dan tidak dikira dalam Top 3 sesi ini.</p>
+            <div className="mb-2 flex shrink-0 flex-wrap items-end justify-between gap-2"><h3 className="text-lg font-bold">Kedudukan Semasa</h3><p className="text-xs text-slate-400">{liveRanked.length} telah merekod skor · {waitingParticipants.length} menunggu</p></div>
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-            <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
-              {boardParticipants.map((participant) => <div key={participant.student_id} className="flex items-center justify-between gap-3 rounded-lg bg-slate-900 px-3 py-2 text-sm">
-                <span className="min-w-0 truncate" title={participant.student_name}>{participant.student_name}</span>
-                <span className="shrink-0 text-right font-bold">{participant.score === null ? "Belum ada skor" : `${Math.round(participant.score)}%`}
-                  {participant.score_period === "before_session" && <span className="block text-xs font-normal text-amber-300">Sebelum sesi{participant.achieved_at ? ` · ${new Date(`${participant.achieved_at}Z`).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : ""}</span>}
-                </span>
+            <div className="grid gap-1.5 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5">
+              {remainingRanked.map((participant, index) => <div key={participant.student_id} className="flex items-center gap-2 rounded-lg border border-emerald-400/20 bg-emerald-400/10 px-2.5 py-2 text-sm">
+                <span className="w-9 shrink-0 font-black text-emerald-300">#{index + 4}</span>
+                <span className="min-w-0 flex-1 truncate font-semibold" title={participant.student_name}>{participant.student_name}</span>
+                <span className="shrink-0 font-black text-emerald-300">{Math.round(participant.score || 0)}%</span>
+              </div>)}
+              {waitingParticipants.map((participant) => <div key={participant.student_id} className="flex items-center gap-2 rounded-lg bg-slate-900/80 px-2.5 py-2 text-sm">
+                <span className="w-9 shrink-0 text-center text-slate-600">•</span>
+                <span className="min-w-0 flex-1 truncate" title={participant.student_name}>{participant.student_name}</span>
+                <span className="shrink-0 text-[11px] text-slate-500">Menunggu</span>
               </div>)}
             </div>
             </div>
           </div>
-          <div className="shrink-0 text-center text-xs text-slate-500">Top 3 sesi semasa · paparan motivasi latihan · bukan kedudukan rasmi</div>
         </div>;
       })()}
     </section>

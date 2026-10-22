@@ -1309,6 +1309,23 @@ export const updateTrainingChallengeStatus = async (
   return response.json();
 };
 
+export const addTrainingChallengeParticipants = async (
+  challengeId: string,
+  studentIds: string[],
+  qariId?: string,
+): Promise<{ added: number; participant_count: number; challenge: TrainingChallenge }> => {
+  const response = await fetch(`${challengeBase(qariId)}/${challengeId}/participants`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...getAuthHeader() },
+    body: JSON.stringify({ student_ids: studentIds }),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: response.statusText }));
+    throw new Error(error.detail || "Failed to add participants to the live board");
+  }
+  return response.json();
+};
+
 export const getTrainingChallengeLeaderboard = async (
   challengeId: string,
   qariId?: string,

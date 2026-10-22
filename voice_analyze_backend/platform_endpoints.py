@@ -134,6 +134,10 @@ class TrainingChallengeStatusRequest(BaseModel):
     status: str
 
 
+class TrainingChallengeParticipantsRequest(BaseModel):
+    student_ids: List[str]
+
+
 def _challenge_status(challenge: TrainingChallenge, now: Optional[datetime] = None) -> str:
     current = now or datetime.utcnow()
     if challenge.status == "cancelled":
@@ -476,6 +480,93 @@ def update_training_challenge_status(
     return _challenge_payload(challenge, count)
 
 
+def _add_training_challenge_participants(
+    challenge_id, payload, current_user, db, admin_managed=False, actor_id=None
+):
+    """Add students to an existing board without changing its scoring window."""
+    challenge = db.query(TrainingChallenge).filter(
+        TrainingChallenge.id == challenge_id,
+        TrainingChallenge.qari_id == current_user.id,
+    ).first()
+    if not challenge:
+        raise HTTPException(status_code=404, detail="Training Challenge not found")
+    if _challenge_status(challenge) in {"completed", "cancelled"}:
+        raise HTTPException(status_code=400, detail="Participants cannot be added after the board has ended")
+    if not payload.student_ids:
+        raise HTTPException(status_code=400, detail="Select at least one student")
+
+    try:
+        requested_ids = list(dict.fromkeys(UUID(student_id) for student_id in payload.student_ids))
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail="One or more student identifiers are invalid")
+
+    allowed_ids = set()
+    if challenge.course_id:
+        allowed_ids = {row[0] for row in db.query(CourseEnrollment.student_id).join(
+            User, User.id == CourseEnrollment.student_id,
+        ).filter(
+            CourseEnrollment.course_id == challenge.course_id,
+            CourseEnrollment.student_id.in_(requested_ids),
+            User.role == "student",
+            User.is_active == True,
+        ).all()}
+    elif admin_managed:
+        allowed_ids = {row[0] for row in db.query(User.id).filter(
+            User.id.in_(requested_ids),
+            User.role == "student",
+            User.is_active == True,
+        ).all()}
+    else:
+        allowed_ids = {row[0] for row in db.query(StudentQariRelationship.student_id).filter(
+            StudentQariRelationship.qari_id == current_user.id,
+            StudentQariRelationship.student_id.in_(requested_ids),
+            StudentQariRelationship.is_active == True,
+        ).all()}
+    if allowed_ids != set(requested_ids):
+        raise HTTPException(status_code=403, detail="Every participant must be an active eligible student")
+
+    existing_ids = {row[0] for row in db.query(TrainingChallengeParticipant.student_id).filter(
+        TrainingChallengeParticipant.challenge_id == challenge.id,
+        TrainingChallengeParticipant.student_id.in_(requested_ids),
+    ).all()}
+    new_ids = [student_id for student_id in requested_ids if student_id not in existing_ids]
+    db.add_all([
+        TrainingChallengeParticipant(challenge_id=challenge.id, student_id=student_id)
+        for student_id in new_ids
+    ])
+    if new_ids:
+        db.add(AuditLog(
+            action="add_training_challenge_participants",
+            entity_type="training_challenge",
+            entity_id=str(challenge.id),
+            user_id=actor_id or current_user.id,
+            new_values={
+                "student_ids": [str(student_id) for student_id in new_ids],
+                "scoring_window_start": challenge.start_at.isoformat(),
+                "scoring_window_end": challenge.end_at.isoformat(),
+            },
+        ))
+    db.commit()
+    total = db.query(func.count(TrainingChallengeParticipant.id)).filter(
+        TrainingChallengeParticipant.challenge_id == challenge.id,
+    ).scalar() or 0
+    return {
+        "added": len(new_ids),
+        "participant_count": total,
+        "challenge": _challenge_payload(challenge, total),
+    }
+
+
+@router.post("/qari/training-challenges/{challenge_id}/participants")
+def add_training_challenge_participants(
+    challenge_id: UUID,
+    payload: TrainingChallengeParticipantsRequest,
+    current_user: User = Depends(get_current_qari_user),
+    db: Session = Depends(get_db),
+):
+    return _add_training_challenge_participants(challenge_id, payload, current_user, db)
+
+
 @router.get("/qari/training-challenges/{challenge_id}/leaderboard")
 def get_training_challenge_leaderboard(
     challenge_id: UUID,
@@ -618,6 +709,19 @@ def admin_create_training_challenge(qari_id: str, payload: TrainingChallengeCrea
 def admin_list_training_challenges(qari_id: str,
         current_user: User = Depends(get_current_admin_user), db: Session = Depends(get_db)):
     return list_qari_training_challenges(_get_admin_managed_qari(qari_id, db), db)
+
+
+@router.post('/admin/qari/{qari_id}/training-challenges/{challenge_id}/participants')
+def admin_add_training_challenge_participants(qari_id: str, challenge_id: UUID,
+        payload: TrainingChallengeParticipantsRequest,
+        current_user: User = Depends(get_current_admin_user), db: Session = Depends(get_db)):
+    qari = _get_admin_managed_qari(qari_id, db)
+    result = _add_training_challenge_participants(
+        challenge_id, payload, qari, db, admin_managed=True, actor_id=current_user.id
+    )
+    logger.info('Admin %s added %s participant(s) to board %s for Qari %s',
+        current_user.id, result['added'], challenge_id, qari_id)
+    return result
 
 
 @router.put('/admin/qari/{qari_id}/training-challenges/{challenge_id}/status')
