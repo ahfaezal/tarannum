@@ -92,6 +92,8 @@ export interface CertificationCourse {
   id: string;
   qari_id?: string | null;
   title: string;
+  certificate_course_title: string;
+  competency_name?: string | null;
   certificate_category: "tarannum" | "azan";
   reference_id: string;
   reference_title: string;

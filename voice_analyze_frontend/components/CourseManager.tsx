@@ -8,6 +8,12 @@ import { courseContextPath } from '../utils/certificationRequestUtils';
 type Context = {qaris: {id: string; name: string}[]; references: QariContent[]; students: {id: string; name: string; email?: string; registered_at?: string}[]; student_total?: number; student_offset?: number; student_limit?: number};
 type Enrollment = {id: string; student_id: string; student_name: string; student_email: string; attendance_status: string; valid_recording_count: number; required_recording_count: number; eligible: boolean; competency_status: string; total_recording_count: number; course_date_recording_count: number; post_course_recording_count: number; attendance_certificate_status: 'issued' | 'not_issued'; competency_certificate_status: 'issued' | 'not_issued'};
 
+const malaysiaDate = (value: string) => new Date(/[zZ]|[+-]\d\d:\d\d$/.test(value) ? value : `${value}Z`);
+const formatMalaysiaDateTime = (value: Date) => value.toLocaleString('ms-MY', {
+  day: 'numeric', month: 'long', year: 'numeric', hour: 'numeric', minute: '2-digit',
+  hour12: true, timeZone: 'Asia/Kuala_Lumpur',
+});
+
 export default function CourseManager({admin = false, defaultExpanded = false}: {admin?: boolean; defaultExpanded?: boolean}) {
   const [opened, setOpened] = useState(defaultExpanded);
   const [courses, setCourses] = useState<CertificationCourse[]>([]);
@@ -93,7 +99,33 @@ export default function CourseManager({admin = false, defaultExpanded = false}: 
       </form>
       </details>
       {course && <div className="space-y-4">
-        <h3 className="font-bold">{course.title} · {course.reference_title} · {course.required_recording_count} rakaman sah untuk 60 minit</h3>
+        {(() => {
+          const startsAt = malaysiaDate(course.starts_at);
+          const endsAt = new Date(startsAt.getTime() + course.duration_minutes * 60_000);
+          const completionDeadline = new Date(startsAt.getTime() + course.completion_window_days * 86_400_000);
+          const qariName = context.qaris.find(q => q.id === course.qari_id)?.name || '—';
+          return <section className="rounded-xl border border-emerald-200 bg-emerald-50 p-4" aria-labelledby="course-information-heading">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div><h3 id="course-information-heading" className="text-lg font-bold text-emerald-950">Maklumat Kursus</h3><p className="text-sm text-emerald-800">Ringkasan rasmi untuk semakan pentadbiran dan sijil.</p></div>
+              <span className="rounded-full bg-white px-3 py-1 text-sm font-bold text-emerald-800">{enrollments.length} peserta</span>
+            </div>
+            <dl className="mt-4 grid gap-x-6 gap-y-3 text-sm md:grid-cols-2 xl:grid-cols-3">
+              <div><dt className="text-slate-500">Nama pengurusan kursus</dt><dd className="font-semibold text-slate-900">{course.title}</dd></div>
+              <div><dt className="text-slate-500">Nama pada sijil</dt><dd className="font-semibold text-slate-900">{course.certificate_course_title || course.title}</dd></div>
+              <div><dt className="text-slate-500">Nama kompetensi</dt><dd className="font-semibold text-slate-900">{course.competency_name || '—'}</dd></div>
+              <div><dt className="text-slate-500">Qari</dt><dd className="font-semibold text-slate-900">{qariName}</dd></div>
+              <div><dt className="text-slate-500">Rujukan latihan</dt><dd className="font-semibold text-slate-900">{course.reference_title}</dd></div>
+              <div><dt className="text-slate-500">Kategori</dt><dd className="font-semibold capitalize text-slate-900">{course.certificate_category}</dd></div>
+              <div><dt className="text-slate-500">Tarikh dan masa mula</dt><dd className="font-semibold text-slate-900">{formatMalaysiaDateTime(startsAt)}</dd></div>
+              <div><dt className="text-slate-500">Tarikh dan masa tamat</dt><dd className="font-semibold text-slate-900">{formatMalaysiaDateTime(endsAt)}</dd></div>
+              <div><dt className="text-slate-500">Lokasi</dt><dd className="font-semibold text-slate-900">{course.location || '—'}</dd></div>
+              <div><dt className="text-slate-500">Tempoh program</dt><dd className="font-semibold text-slate-900">{Math.floor(course.duration_minutes / 60)} jam {course.duration_minutes % 60 ? `${course.duration_minutes % 60} minit` : ''}</dd></div>
+              <div><dt className="text-slate-500">Keperluan latihan</dt><dd className="font-semibold text-slate-900">{course.required_practice_minutes} minit ({course.required_recording_count} rakaman sah)</dd></div>
+              <div><dt className="text-slate-500">Tarikh akhir latihan</dt><dd className="font-semibold text-slate-900">{formatMalaysiaDateTime(completionDeadline)} ({course.completion_window_days} hari)</dd></div>
+              <div><dt className="text-slate-500">Status</dt><dd className="font-semibold capitalize text-slate-900">{course.status}</dd></div>
+            </dl>
+          </section>;
+        })()}
         {admin && <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="font-bold text-emerald-950">Infografik Prestasi Kursus</p><p className="text-sm text-emerald-800">Analisis lengkap dimuatkan hanya apabila diperlukan.</p></div><button type="button" className="rounded-lg bg-emerald-700 px-4 py-2 font-bold text-white hover:bg-emerald-800" onClick={() => setShowPerformance(value => !value)}>{showPerformance ? 'Tutup Infografik' : 'Buka Infografik Prestasi'}</button></div>{showPerformance && <div className="mt-4"><CoursePerformanceDashboard key={course.id} courseId={course.id} /></div>}</div>}
         <form className="grid gap-3 md:grid-cols-4" onSubmit={e => {e.preventDefault(); setAppliedFilters({search, ...filters}); void run(() => loadContext(course.qari_id, search, {...filters, offset: 0}));}}>
           <label>Nama atau e-mel<input className="block w-full rounded border p-2" placeholder="Cari calon peserta" value={search} onChange={e => setSearch(e.target.value)} /></label>
