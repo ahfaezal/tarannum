@@ -77,6 +77,7 @@ class User(Base):
     phone_number = Column(String, nullable=True)
     avatar_path = Column(String, nullable=True)
     organization = Column(String, nullable=True)
+    job_title = Column(String, nullable=True)
     state = Column(String, nullable=True)
     bio = Column(Text, nullable=True)
     maqam_specialization = Column(String, nullable=True)
@@ -1121,6 +1122,7 @@ def ensure_user_profile_columns():
         "phone_number": "VARCHAR",
         "avatar_path": "VARCHAR",
         "organization": "VARCHAR",
+        "job_title": "VARCHAR",
         "state": "VARCHAR",
         "bio": "TEXT",
         "maqam_specialization": "VARCHAR",

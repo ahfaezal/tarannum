@@ -35,6 +35,22 @@ def _fit_font(text: str, font: str, maximum: float, max_width: float, minimum: f
     return size
 
 
+def _wrap_text_to_width(text: str, font: str, size: float, max_width: float) -> list[str]:
+    """Wrap a short certificate label without shrinking it into illegibility."""
+    lines: list[str] = []
+    current = ""
+    for word in text.split():
+        candidate = f"{current} {word}".strip()
+        if current and stringWidth(candidate, font, size) > max_width:
+            lines.append(current)
+            current = word
+        else:
+            current = candidate
+    if current:
+        lines.append(current)
+    return lines
+
+
 def _centered(c: canvas.Canvas, text: str, y: float, font: str, size: float, color=EMERALD):
     c.setFillColor(color)
     c.setFont(font, size)
@@ -83,10 +99,10 @@ def _course_date_label(value: str) -> str:
 
 
 def _draw_attendance_body(c: canvas.Canvas, certificate: Certificate, snapshot: dict, width: float, height: float):
-    _centered(c, "SIJIL KEHADIRAN & PENYERTAAN", height - 198, "Times-Roman", 31, EMERALD)
+    _centered(c, "SIJIL KEHADIRAN & PENYERTAAN", height - 198, "Times-Bold", 31, EMERALD)
     _centered(c, "Dengan ini diperakui bahawa", height - 239, "Helvetica", 12.5, NAVY)
     student_name = (snapshot.get("student_name") or "").upper()
-    _centered(c, student_name, height - 279, "Times-Roman", _fit_font(student_name, "Times-Roman", 29, width - 145, 14), EMERALD)
+    _centered(c, student_name, height - 279, "Times-Bold", _fit_font(student_name, "Times-Bold", 29, width - 145, 14), EMERALD)
     _centered(c, "telah menghadiri", height - 309, "Helvetica", 12, NAVY)
 
     # The empty ornate course cartouche is part of the approved background.
@@ -100,23 +116,33 @@ def _draw_attendance_body(c: canvas.Canvas, certificate: Certificate, snapshot: 
     c.setFont("Helvetica", 10)
     duration_minutes = snapshot.get("course_duration_minutes") or 360
     duration_hours = round(duration_minutes / 60)
-    footer_items = [
-        f"Tarikh Kursus: {_course_date_label(snapshot.get('course_date') or '')}",
-        f"Tempoh Kursus: 1 Hari - {duration_hours} Jam",
+    footer_rows = [
+        [f"Tarikh Kursus: {_course_date_label(snapshot.get('course_date') or '')}"],
+        [f"Tempoh Kursus: 1 Hari - {duration_hours} Jam"],
+        [f"No. Sijil: {certificate.certificate_number}"],
     ]
     if snapshot.get("course_location"):
-        footer_items.append(f"Lokasi Latihan: {snapshot['course_location']}")
-    footer_items.append(f"No. Sijil: {certificate.certificate_number}")
-    for index, item in enumerate(footer_items):
-        y = 146 - index * 27
-        c.setFont("Helvetica", _fit_font(item, "Helvetica", 10, 235, 7))
+        footer_rows.append(
+            _wrap_text_to_width(
+                f"Lokasi Latihan: {snapshot['course_location']}",
+                "Helvetica",
+                9.5,
+                255,
+            )
+        )
+
+    y = 150
+    for row in footer_rows:
+        c.setFont("Helvetica", 9.5 if len(row) > 1 else 10)
         c.setStrokeColor(GOLD)
         c.setLineWidth(0.9)
         c.line(left - 15, y + 4, left - 11, y + 9)
         c.line(left - 11, y + 9, left - 7, y + 4)
         c.line(left - 7, y + 4, left - 11, y - 1)
         c.line(left - 11, y - 1, left - 15, y + 4)
-        c.drawString(left, y, item)
+        for line_index, line in enumerate(row):
+            c.drawString(left, y - line_index * 11, line)
+        y -= 26 + max(0, len(row) - 1) * 11
 
 
 def _draw_diamond(c: canvas.Canvas, x: float, y: float, radius: float, color=EMERALD):

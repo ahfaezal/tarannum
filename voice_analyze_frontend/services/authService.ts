@@ -51,6 +51,7 @@ export interface StudentProfile extends User {
 export interface QariProfile extends User {
   email_verified?: boolean;
   organization?: string | null;
+  job_title?: string | null;
   state?: string | null;
   bio?: string | null;
   maqam_specialization?: string | null;
@@ -66,6 +67,7 @@ export interface ProfileUpdateData {
   address?: string | null;
   phone_number?: string | null;
   organization?: string | null;
+  job_title?: string | null;
   state?: string | null;
   bio?: string | null;
   maqam_specialization?: string | null;

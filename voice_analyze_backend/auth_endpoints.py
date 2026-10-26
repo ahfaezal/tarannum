@@ -96,6 +96,7 @@ class UserResponse(BaseModel):
     avatar_path: Optional[str] = None
     avatar_url: Optional[str] = None
     organization: Optional[str] = None
+    job_title: Optional[str] = None
     state: Optional[str] = None
     bio: Optional[str] = None
     maqam_specialization: Optional[str] = None
@@ -115,6 +116,7 @@ class UserProfileUpdate(BaseModel):
     address: Optional[str] = None
     phone_number: Optional[str] = None
     organization: Optional[str] = None
+    job_title: Optional[str] = None
     state: Optional[str] = None
     bio: Optional[str] = None
     maqam_specialization: Optional[str] = None
@@ -254,6 +256,7 @@ def _qari_profile_payload(user: User, db: Session) -> dict:
         "full_name": user.full_name,
         "phone_number": getattr(user, "phone_number", None),
         "organization": getattr(user, "organization", None),
+        "job_title": getattr(user, "job_title", None),
         "state": getattr(user, "state", None),
         "bio": getattr(user, "bio", None),
         "maqam_specialization": getattr(user, "maqam_specialization", None),
@@ -928,6 +931,7 @@ async def get_current_user_info(current_user: User = Depends(get_current_active_
         "avatar_path": getattr(current_user, "avatar_path", None),
         "avatar_url": _get_avatar_url(getattr(current_user, "avatar_path", None)),
         "organization": getattr(current_user, "organization", None),
+        "job_title": getattr(current_user, "job_title", None),
         "state": getattr(current_user, "state", None),
         "bio": getattr(current_user, "bio", None),
         "maqam_specialization": getattr(current_user, "maqam_specialization", None),
@@ -969,6 +973,8 @@ async def update_my_profile(
     if role == UserRole.QARI.value:
         if payload.organization is not None:
             current_user.organization = _clean_optional_text(payload.organization)
+        if payload.job_title is not None:
+            current_user.job_title = _clean_optional_text(payload.job_title)
         if payload.state is not None:
             current_user.state = _clean_optional_text(payload.state)
         if payload.bio is not None:

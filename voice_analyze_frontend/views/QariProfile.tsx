@@ -58,6 +58,7 @@ const QariProfileView: React.FC = () => {
     full_name: "",
     phone_number: "",
     organization: "",
+    job_title: "",
     state: "",
     bio: "",
     maqam_specialization: "",
@@ -87,11 +88,12 @@ const QariProfileView: React.FC = () => {
     () => [
       { label: "Add phone number", done: Boolean(form.phone_number.trim()) },
       { label: "Add organization", done: Boolean(form.organization.trim()) },
+      { label: "Add job title", done: Boolean(form.job_title.trim()) },
       { label: "Add bio", done: Boolean(form.bio.trim()) },
       { label: "Add maqam specialization", done: Boolean(form.maqam_specialization.trim()) },
       { label: "Add profile photo", done: Boolean(profile?.avatar_path) },
     ],
-    [form.bio, form.maqam_specialization, form.organization, form.phone_number, profile?.avatar_path]
+    [form.bio, form.job_title, form.maqam_specialization, form.organization, form.phone_number, profile?.avatar_path]
   );
 
   const incompleteItems = completionItems.filter((item) => !item.done);
@@ -107,6 +109,7 @@ const QariProfileView: React.FC = () => {
         full_name: data.full_name || "",
         phone_number: data.phone_number || "",
         organization: data.organization || "",
+        job_title: data.job_title || "",
         state: data.state || "",
         bio: data.bio || "",
         maqam_specialization: data.maqam_specialization || "",
@@ -392,6 +395,15 @@ const QariProfileView: React.FC = () => {
                     onChange={(event) => setForm({ ...form, organization: event.target.value })}
                     className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-emerald-500 focus:ring-4 focus:ring-emerald-100"
                     placeholder="School, mosque, or institution"
+                  />
+                </label>
+                <label className="space-y-2">
+                  <span className="text-sm font-semibold text-slate-700">Jawatan</span>
+                  <input
+                    value={form.job_title}
+                    onChange={(event) => setForm({ ...form, job_title: event.target.value })}
+                    className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none transition focus:border-emerald-500 focus:ring-4 focus:ring-emerald-100"
+                    placeholder="Pensyarah/Johan Tilawah/Panel Penilai"
                   />
                 </label>
                 <label className="space-y-2">
