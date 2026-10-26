@@ -41,6 +41,10 @@ export interface CourseProgress {
   reference_duration_seconds: number;
   required_practice_seconds: number;
   required_recording_count: number;
+  attempted_recording_count: number;
+  actual_valid_recording_count: number;
+  uncredited_recording_count: number;
+  minimum_recording_duration_seconds: number;
   valid_recording_count: number;
   remaining_recording_count: number;
   eligible: boolean;

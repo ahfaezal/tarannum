@@ -85,12 +85,25 @@ const CertificatesPage: React.FC = () => {
       <div className="grid gap-4 md:grid-cols-2">
         {progress.length === 0 && <p className="rounded-xl border bg-white p-5 text-slate-500">Tiada kursus berdaftar.</p>}
         {progress.map((item) => {
-          const percent = Math.min(100, Math.round(item.valid_recording_count * 100 / Math.max(1, item.required_recording_count)));
+          const validCount = item.actual_valid_recording_count ?? item.valid_recording_count;
+          const attemptedCount = item.attempted_recording_count ?? validCount;
+          const uncreditedCount = item.uncredited_recording_count ?? Math.max(0, attemptedCount - validCount);
+          const remainingCount = Math.max(0, item.required_recording_count - validCount);
+          const percent = Math.min(100, Math.round(validCount * 100 / Math.max(1, item.required_recording_count)));
           return <article key={item.enrollment_id} className="rounded-2xl border bg-white p-5 shadow-sm">
             <div className="flex items-start justify-between gap-3"><h3 className="font-bold text-slate-900">{item.title}</h3><span className={`rounded-full px-3 py-1 text-xs font-bold ${item.attendance_status === "attended" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>{item.attendance_status === "attended" ? "Hadir disahkan" : "Menunggu kehadiran"}</span></div>
             <div className="mt-4 h-3 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-emerald-600" style={{ width: `${percent}%` }} /></div>
-            <div className="mt-2 flex justify-between text-sm text-slate-600"><span>{item.valid_recording_count}/{item.required_recording_count} rakaman</span><span>{percent}%</span></div>
-            <p className="mt-3 text-sm text-slate-500">Baki {item.remaining_recording_count} rakaman • Tarikh akhir {new Date(item.deadline).toLocaleDateString("ms-MY")}</p>
+            <div className="mt-2 flex justify-between text-sm text-slate-600"><span>{validCount}/{item.required_recording_count} rakaman sah</span><span>{percent}%</span></div>
+            <dl className="mt-4 grid grid-cols-3 gap-2 text-center">
+              <div className="rounded-xl bg-slate-50 p-3"><dt className="text-xs font-medium text-slate-500">Jumlah direkodkan</dt><dd className="mt-1 text-2xl font-bold text-slate-900">{attemptedCount}</dd></div>
+              <div className="rounded-xl bg-emerald-50 p-3"><dt className="text-xs font-medium text-emerald-700">Rakaman sah</dt><dd className="mt-1 text-2xl font-bold text-emerald-800">{validCount}</dd></div>
+              <div className="rounded-xl bg-amber-50 p-3"><dt className="text-xs font-medium text-amber-700">Tidak dikira</dt><dd className="mt-1 text-2xl font-bold text-amber-800">{uncreditedCount}</dd></div>
+            </dl>
+            <div className={`mt-4 rounded-xl p-3 text-sm font-semibold ${remainingCount === 0 ? "bg-emerald-100 text-emerald-900" : "bg-blue-50 text-blue-900"}`}>
+              {remainingCount === 0 ? `Sasaran ${item.required_recording_count} rakaman sah telah lengkap.` : `Anda memerlukan ${remainingCount} lagi rakaman sah.`}
+            </div>
+            <p className="mt-3 text-xs leading-5 text-slate-500">Rakaman sah mestilah menggunakan rujukan kursus ini, dibuat dalam tempoh latihan, tidak berulang, mempunyai fail audio dan berdurasi sekurang-kurangnya 80% audio rujukan{item.minimum_recording_duration_seconds ? ` (${Math.ceil(item.minimum_recording_duration_seconds)} saat)` : ""}.</p>
+            <p className="mt-2 text-sm text-slate-500">Tarikh akhir {new Date(item.deadline).toLocaleDateString("ms-MY")}</p>
           </article>;
         })}
       </div>
