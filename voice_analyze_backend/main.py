@@ -2522,6 +2522,11 @@ async def health_check():
     temp_files = list(TEMP_DIR.glob("*")) if TEMP_DIR.exists() else []
     return {
         "status": "healthy",
+        "deployment_revision": (
+            os.getenv("RAILWAY_GIT_COMMIT_SHA")
+            or os.getenv("GIT_COMMIT_SHA")
+            or "unknown"
+        )[:12],
         "temp_dir": str(TEMP_DIR),
         "temp_dir_exists": TEMP_DIR.exists(),
         "temp_dir_files_count": len(temp_files),

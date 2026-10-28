@@ -27,6 +27,11 @@ class MigrationConfigurationTests(unittest.TestCase):
         railway = (BACKEND_DIR / "railway.toml").read_text(encoding="utf-8")
         self.assertIn('preDeployCommand = ["python migration_runner.py"]', railway)
 
+    def test_health_exposes_non_secret_deployment_revision(self):
+        main_source = (BACKEND_DIR / "main.py").read_text(encoding="utf-8")
+        self.assertIn('"deployment_revision"', main_source)
+        self.assertIn('os.getenv("RAILWAY_GIT_COMMIT_SHA")', main_source)
+
 
 if __name__ == "__main__":
     unittest.main()
