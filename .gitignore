@@ -1,1 +1,13 @@
 .vercel
+
+# Local secrets and provider exports
+.env
+.env.*
+!.env.example
+*Key.txt
+*key.txt
+*.pem
+*.p12
+*.pfx
+credentials*.json
+service-account*.json

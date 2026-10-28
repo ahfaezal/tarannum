@@ -12,10 +12,12 @@ load_dotenv()
 
 from jose import jwt, JWTError
 
-SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-change-in-production-use-long-random-string-min-32-chars")
+SECRET_KEY = os.getenv("SECRET_KEY", "").strip()
+if len(SECRET_KEY) < 32:
+    raise RuntimeError("SECRET_KEY must be configured with at least 32 characters")
 ALGORITHM = "HS256"
 
-def test_token(token: str):
+def validate_token(token: str):
     """Test if a JWT token is valid."""
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
@@ -38,17 +40,7 @@ def test_token(token: str):
         return False
 
 if __name__ == "__main__":
-    # if len(sys.argv) < 2:
-    #     print("Usage: python test_auth_token.py <jwt_token>")
-    #     print()
-    #     print("To get your token:")
-    #     print("1. Open browser console on localhost:3000")
-    #     print("2. Run: localStorage.getItem('tarannum_auth_token')")
-    #     print("3. Copy the token and run this script")
-    #     sys.exit(1)
-    
-    token = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI1NDJjMTM0MC1mNDA3LTRlOWUtOTM0MC0xZmQ3MGU1M2U3YWYiLCJlbWFpbCI6ImFkbWluQGdtYWlsLmNvbSIsInJvbGUiOiJhZG1pbiIsImV4cCI6MTc2OTg5MzM3Nn0.LHPlJrouvJQQ2oD9iab62wzba3rc6V-QCMOzCEJrd2k'
-    print(f"Testing token: {token[:50]}...")
-    print(f"Using SECRET_KEY: {SECRET_KEY[:20]}...")
-    print()
-    test_token(token)
+    if len(sys.argv) != 2:
+        print("Usage: python test_auth_token.py <jwt_token>")
+        sys.exit(1)
+    validate_token(sys.argv[1])

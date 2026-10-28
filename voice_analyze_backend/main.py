@@ -464,11 +464,20 @@ try:
 except ImportError as e:
     logger.warning(f"Could not import routers: {e}")
 
-# Enable CORS - allow all origins for production deployment
-# Note: allow_credentials cannot be True with allow_origins=["*"]
-# If you need credentials, specify exact origins instead
-# In production, replace ["*"] with specific allowed origins
-allowed_origins = os.getenv("ALLOWED_ORIGINS", "*").split(",")
+# Production defaults are deliberately limited to Tarannum's known web
+# origins. Additional preview/staging origins must be declared explicitly.
+environment_name = os.getenv("ENVIRONMENT", "development").strip().lower()
+railway_environment_name = os.getenv("RAILWAY_ENVIRONMENT_NAME", "").strip().lower()
+is_production = environment_name == "production" or railway_environment_name == "production"
+production_origins = (
+    "https://tarannum.ai,https://www.tarannum.ai,"
+    "https://voice-analyze-frontend-lsyr.vercel.app"
+)
+allowed_origins_default = production_origins if is_production else "*"
+allowed_origins = os.getenv("ALLOWED_ORIGINS", allowed_origins_default).split(",")
+if is_production and allowed_origins == ["*"]:
+    logger.warning("Wildcard CORS refused in production; using known Tarannum origins")
+    allowed_origins = production_origins.split(",")
 if allowed_origins == ["*"]:
     allow_origins_list = ["*"]
     allow_creds = False  # Cannot use credentials with wildcard
@@ -481,8 +490,8 @@ app.add_middleware(
     allow_origins=allow_origins_list,
     allow_credentials=allow_creds,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],  # Explicitly allow OPTIONS
-    allow_headers=["*"],  # Allow all headers (including Authorization)
-    expose_headers=["*"],  # Expose all headers to frontend
+    allow_headers=["Authorization", "Content-Type", "X-Request-ID", "Accept", "Origin"],
+    expose_headers=["X-Request-ID", "X-Response-Time-Ms", "X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset", "Retry-After"],
 )
 logger.info(f"CORS configured: origins={allow_origins_list}, credentials={allow_creds}")
 
@@ -527,35 +536,16 @@ except Exception as e:
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
-class OptionsHandlerMiddleware(BaseHTTPMiddleware):
-    """Handle OPTIONS requests before FastAPI route validation."""
-    async def dispatch(self, request, call_next):
-        if request.method == "OPTIONS":
-            logger.info(f"OptionsHandlerMiddleware: Handling OPTIONS request for {request.url.path}")
-            # Return early for OPTIONS requests - CORS middleware will add headers
-            response = Response(
-                status_code=200,
-                headers={
-                    "Access-Control-Allow-Origin": "*",
-                    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
-                    "Access-Control-Allow-Headers": "*",
-                    "Access-Control-Max-Age": "3600",
-                }
-            )
-            logger.info(f"OptionsHandlerMiddleware: Returning 200 for OPTIONS {request.url.path}")
-            return response
-        return await call_next(request)
-
-# Add OPTIONS handler middleware BEFORE other middleware (but after CORS)
-app.add_middleware(OptionsHandlerMiddleware)
-
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     """Add security headers to all responses."""
     async def dispatch(self, request, call_next):
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
-        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["X-XSS-Protection"] = "0"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "camera=(), geolocation=(), payment=(), usb=()"
+        response.headers["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'; base-uri 'none'"
         # Only add HSTS if using HTTPS
         if request.url.scheme == "https":
             response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
@@ -572,6 +562,8 @@ class RequestTimingMiddleware(BaseHTTPMiddleware):
         started = time.perf_counter()
         response = await call_next(request)
         duration_ms = (time.perf_counter() - started) * 1000
+        from runtime_metrics import observe_request
+        observe_request(duration_ms, response.status_code)
         response.headers["X-Request-ID"] = request_id
         response.headers["X-Response-Time-Ms"] = f"{duration_ms:.1f}"
         if duration_ms >= float(os.getenv("SLOW_REQUEST_MS", "1000")):

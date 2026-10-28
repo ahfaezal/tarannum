@@ -12,14 +12,16 @@ load_dotenv()
 from jose import jwt, JWTError
 from datetime import datetime
 
-SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-change-in-production-use-long-random-string-min-32-chars")
+SECRET_KEY = os.getenv("SECRET_KEY", "").strip()
+if len(SECRET_KEY) < 32:
+    raise RuntimeError("SECRET_KEY must be configured with at least 32 characters")
 ALGORITHM = "HS256"
 
 print("=" * 70)
 print("Authentication Debug")
 print("=" * 70)
 print()
-print(f"SECRET_KEY: {SECRET_KEY[:30]}... (length: {len(SECRET_KEY)})")
+print(f"SECRET_KEY configured: yes (length: {len(SECRET_KEY)})")
 print()
 
 # Test with a sample token structure

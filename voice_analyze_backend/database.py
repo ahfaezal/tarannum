@@ -27,21 +27,22 @@ class UserRole(str, Enum):
     STUDENT = "student"
     PUBLIC = "public"  # Not registered, demo access only
 
-# Database URL from environment variable or default
-# If DATABASE_URL is not set, try to use the connection from test_database.py
-DATABASE_URL = os.getenv("DATABASE_URL")
+# Never carry database credentials in source code. Local development and every
+# deployed service must provide DATABASE_URL explicitly (normally via .env or
+# the Railway service variables).
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 if not DATABASE_URL:
-    # Default connection (user can override with .env file)
-    DB_PASSWORD = os.getenv("DB_PASSWORD", "#1113tencom")
-    DB_NAME = os.getenv("DB_NAME", "tarannum_db1koljkl")
-    DATABASE_URL = f"postgresql+psycopg2://postgres:{DB_PASSWORD}@127.0.0.1:5432/{DB_NAME}"
+    raise RuntimeError("DATABASE_URL must be configured")
+
+DB_POOL_SIZE = max(1, int(os.getenv("DB_POOL_SIZE", "4")))
+DB_MAX_OVERFLOW = max(0, int(os.getenv("DB_MAX_OVERFLOW", "2")))
 
 # Create engine
 engine = create_engine(
     DATABASE_URL,
     pool_pre_ping=True,  # Verify connections before using
-    pool_size=int(os.getenv("DB_POOL_SIZE", "10")),
-    max_overflow=int(os.getenv("DB_MAX_OVERFLOW", "10")),
+    pool_size=DB_POOL_SIZE,
+    max_overflow=DB_MAX_OVERFLOW,
     pool_timeout=int(os.getenv("DB_POOL_TIMEOUT", "10")),
     pool_recycle=int(os.getenv("DB_POOL_RECYCLE", "1800")),
     pool_use_lifo=True,

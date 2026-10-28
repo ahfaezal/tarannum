@@ -2,8 +2,8 @@
 System monitoring and health checks for Milestone 4.
 Provides comprehensive system health metrics for production management.
 """
-from database import SessionLocal, UserSession, User, AnalysisResult, StudentProgress
-from sqlalchemy import func, and_
+from database import SessionLocal, UserSession, User, AnalysisResult, StudentProgress, engine
+from sqlalchemy import func, and_, text
 from datetime import datetime, timedelta
 from typing import Dict, Optional
 import logging
@@ -48,15 +48,19 @@ class MonitoringService:
             ).scalar() or 0
             
             # Processing queue status (if Celery is available)
-            queue_status = {"active": 0, "queued": 0, "available": False}
+            queue_status = {"active": 0, "queued": 0, "reserved": 0, "workers": 0, "available": False}
             try:
                 from task_queue import celery_app
                 inspect = celery_app.control.inspect()
                 active_tasks = inspect.active() or {}
                 scheduled_tasks = inspect.scheduled() or {}
+                reserved_tasks = inspect.reserved() or {}
+                worker_stats = inspect.stats() or {}
                 queue_status = {
                     "active": sum(len(tasks) for tasks in active_tasks.values()),
-                    "queued": sum(len(tasks) for tasks in scheduled_tasks.values()),
+                    "queued": sum(len(tasks) for tasks in scheduled_tasks.values()) + sum(len(tasks) for tasks in reserved_tasks.values()),
+                    "reserved": sum(len(tasks) for tasks in reserved_tasks.values()),
+                    "workers": len(worker_stats),
                     "available": True
                 }
             except Exception as e:
@@ -118,9 +122,18 @@ class MonitoringService:
             # Database connection test
             db_connected = True
             try:
-                db_session.execute(func.now())
+                db_session.execute(text("SELECT 1"))
             except Exception:
                 db_connected = False
+
+            pool = engine.pool
+            pool_metrics = {
+                "size": pool.size(),
+                "checked_out": pool.checkedout(),
+                "checked_in": pool.checkedin(),
+                "overflow": pool.overflow(),
+            }
+            from runtime_metrics import snapshot as runtime_snapshot
             
             return {
                 "status": "healthy" if db_connected else "degraded",
@@ -142,8 +155,10 @@ class MonitoringService:
                     "total_users": total_users,
                     "total_progress": total_progress,
                     "total_analyses": total_analyses,
-                    "assessment_sessions": assessment_sessions
+                    "assessment_sessions": assessment_sessions,
+                    "connection_pool": pool_metrics,
                 },
+                "http": runtime_snapshot(),
                 "recent_activity": {
                     "sessions_last_hour": recent_sessions
                 }
