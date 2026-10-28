@@ -14,6 +14,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, Query
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from PIL import Image
 import qrcode
@@ -157,9 +158,19 @@ def _default_join_expiry(course: Course) -> datetime:
     return course.starts_at + timedelta(minutes=course.duration_minutes, hours=2)
 
 
-def _ensure_course_join_code(course: Course) -> None:
+def _new_course_join_pin(db: Session) -> str:
+    for _ in range(20):
+        pin = f"{secrets.randbelow(1_000_000):06d}"
+        if not db.query(Course.id).filter(Course.join_pin == pin).first():
+            return pin
+    raise HTTPException(503, "Kod penyertaan tidak dapat dijana. Sila cuba lagi.")
+
+
+def _ensure_course_join_code(course: Course, db: Session) -> None:
     if not course.join_code:
         course.join_code = secrets.token_urlsafe(32)
+    if not course.join_pin:
+        course.join_pin = _new_course_join_pin(db)
     if not course.join_expires_at:
         course.join_expires_at = _default_join_expiry(course)
 
@@ -170,7 +181,7 @@ def _course_join_url(course: Course) -> str:
 
 
 def _joinable_course(db: Session, token: str) -> tuple[Course, Reference, User]:
-    course = db.query(Course).filter(Course.join_code == token).first()
+    course = db.query(Course).filter(or_(Course.join_code == token, Course.join_pin == token)).first()
     if not course or not course.join_enabled or course.status != "published":
         raise HTTPException(404, "Pautan penyertaan kursus tidak sah atau telah ditutup")
     if course.join_expires_at and course.join_expires_at < datetime.utcnow():
@@ -211,6 +222,7 @@ def create_course(payload: CourseCreate, admin: User = Depends(get_current_admin
         created_by=admin.id,
         qari_id=payload.qari_id,
         join_code=secrets.token_urlsafe(32),
+        join_pin=_new_course_join_pin(db),
     )
     course.join_expires_at = _default_join_expiry(course)
     db.add(course)
@@ -265,13 +277,15 @@ def managed_course_join_link(course_id: UUID, payload: CourseJoinLinkUpdate,
     course = _managed_course(db, course_id, user)
     if payload.rotate or not course.join_code:
         course.join_code = secrets.token_urlsafe(32)
+        course.join_pin = _new_course_join_pin(db)
     if payload.enabled is not None:
         course.join_enabled = payload.enabled
-    _ensure_course_join_code(course)
+    _ensure_course_join_code(course, db)
     db.commit()
     return {
         "course_id": str(course.id),
         "join_url": _course_join_url(course),
+        "manual_code": course.join_pin,
         "enabled": bool(course.join_enabled),
         "expires_at": course.join_expires_at.isoformat() if course.join_expires_at else None,
     }
@@ -281,7 +295,7 @@ def managed_course_join_link(course_id: UUID, payload: CourseJoinLinkUpdate,
 def managed_course_join_qr(course_id: UUID, user: User = Depends(get_current_user),
         db: Session = Depends(get_db)):
     course = _managed_course(db, course_id, user)
-    _ensure_course_join_code(course)
+    _ensure_course_join_code(course, db)
     db.commit()
     image = qrcode.make(_course_join_url(course))
     buffer = io.BytesIO()

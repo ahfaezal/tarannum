@@ -474,6 +474,7 @@ class Course(Base):
     required_practice_seconds = Column(Integer, nullable=False, default=3600)
     status = Column(String, nullable=False, default="draft", index=True)  # draft | published | completed | archived
     join_code = Column(String(64), unique=True, nullable=True, index=True)
+    join_pin = Column(String(6), unique=True, nullable=True, index=True)
     join_enabled = Column(Boolean, nullable=False, default=True)
     join_expires_at = Column(DateTime, nullable=True)
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)

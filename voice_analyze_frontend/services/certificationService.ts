@@ -130,6 +130,7 @@ export interface CertificationCourse {
 export interface CourseJoinLink {
   course_id: string;
   join_url: string;
+  manual_code: string;
   enabled: boolean;
   expires_at?: string | null;
 }

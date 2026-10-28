@@ -46,6 +46,16 @@ class CourseManagementTests(unittest.TestCase):
         self.assertIn('down_revision: Union[str, None] = "20261028_0001"', revision)
         self.assertIn('op.create_index("ix_courses_join_code"', revision)
 
+    def test_manual_join_pin_schema_and_lookup_are_present(self):
+        revision = Path(__file__).with_name('alembic').joinpath(
+            'versions', '20261028_0005_course_manual_join_pin.py'
+        ).read_text(encoding='utf-8')
+        self.assertIn('ADD COLUMN IF NOT EXISTS join_pin VARCHAR(6)', revision)
+        self.assertIn('CREATE UNIQUE INDEX IF NOT EXISTS ix_courses_join_pin', revision)
+        source = Path(__file__).with_name('certification_endpoints.py').read_text(encoding='utf-8')
+        self.assertIn('Course.join_pin == token', source)
+        self.assertIn('"manual_code": course.join_pin', source)
+
     def test_owner_boundary_and_admin_access(self):
         owner=uuid4(); course=SimpleNamespace(qari_id=owner)
         db=MagicMock(); db.query.return_value.filter.return_value.first.return_value=course
