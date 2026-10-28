@@ -19,9 +19,11 @@ BCRYPT_MAX_PASSWORD_LENGTH = 72
 
 
 # JWT settings
-SECRET_KEY = os.getenv("SECRET_KEY", "").strip()
-if len(SECRET_KEY) < 32:
-    raise RuntimeError("SECRET_KEY must be configured with at least 32 characters")
+# The Celery worker imports ``main.score_performance`` and therefore this
+# module, although it never serves HTTP or validates user tokens. The API stays
+# strict; only that isolated role may use an ephemeral process-local value.
+from security_config import resolve_secret_key
+SECRET_KEY = resolve_secret_key(os.getenv("SECRET_KEY", ""), os.getenv("SERVICE_ROLE", ""))
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days
 
