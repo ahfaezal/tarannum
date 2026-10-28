@@ -3,3 +3,6 @@ nixPkgs = ["python310", "ffmpeg"]
 
 [start]
 cmd = "python main.py"
+
+[deploy]
+preDeployCommand = ["python migration_runner.py"]

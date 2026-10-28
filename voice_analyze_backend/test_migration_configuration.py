@@ -1,0 +1,32 @@
+from pathlib import Path
+import unittest
+
+
+BACKEND_DIR = Path(__file__).resolve().parent
+
+
+class MigrationConfigurationTests(unittest.TestCase):
+    def test_baseline_revision_and_runner_are_pinned_together(self):
+        runner = (BACKEND_DIR / "migration_runner.py").read_text(encoding="utf-8")
+        baseline = (
+            BACKEND_DIR
+            / "alembic"
+            / "versions"
+            / "20261028_0001_legacy_schema_baseline.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn('BASELINE_REVISION = "20261028_0001"', runner)
+        self.assertIn('revision: str = "20261028_0001"', baseline)
+
+    def test_runner_serialises_predeploy_migrations(self):
+        runner = (BACKEND_DIR / "migration_runner.py").read_text(encoding="utf-8")
+        self.assertIn("pg_advisory_lock", runner)
+        self.assertIn("pg_advisory_unlock", runner)
+        self.assertIn('command.upgrade(config, "head")', runner)
+
+    def test_railway_runs_migrations_before_start(self):
+        railway = (BACKEND_DIR / "railway.toml").read_text(encoding="utf-8")
+        self.assertIn('preDeployCommand = ["python migration_runner.py"]', railway)
+
+
+if __name__ == "__main__":
+    unittest.main()
