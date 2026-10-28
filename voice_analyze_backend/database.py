@@ -473,6 +473,9 @@ class Course(Base):
     completion_window_days = Column(Integer, nullable=False, default=30)
     required_practice_seconds = Column(Integer, nullable=False, default=3600)
     status = Column(String, nullable=False, default="draft", index=True)  # draft | published | completed | archived
+    join_code = Column(String(64), unique=True, nullable=True, index=True)
+    join_enabled = Column(Boolean, nullable=False, default=True)
+    join_expires_at = Column(DateTime, nullable=True)
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
@@ -552,6 +555,7 @@ class CourseEnrollment(Base):
     course_id = Column(UUID(as_uuid=True), ForeignKey("courses.id", ondelete="CASCADE"), nullable=False, index=True)
     student_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     attendance_status = Column(String, nullable=False, default="registered", index=True)  # registered | attended | absent
+    enrollment_source = Column(String, nullable=False, default="manual", index=True)  # manual | qr
     attendance_verified_at = Column(DateTime, nullable=True)
     attendance_verified_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     valid_recording_count = Column(Integer, nullable=False, default=0)

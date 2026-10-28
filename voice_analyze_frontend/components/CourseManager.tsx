@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { CertificateSummary, CertificationCourse, downloadCertificate, getAdminUserCertificates, getCertificatePdfBlob, managedCertificationRequest as api } from '../services/certificationService';
+import { CertificateSummary, CertificationCourse, CourseJoinLink, downloadCertificate, getAdminUserCertificates, getCertificatePdfBlob, getManagedCourseJoinLink, getManagedCourseJoinQr, managedCertificationRequest as api, updateManagedCourseJoinLink } from '../services/certificationService';
 import { QariContent } from '../services/platformService';
 import TrainingChallengePanel from './TrainingChallengePanel';
 import CoursePerformanceDashboard from './CoursePerformanceDashboard';
@@ -35,8 +35,11 @@ export default function CourseManager({admin = false, defaultExpanded = false}: 
   const [certificateLoading, setCertificateLoading] = useState(false);
   const [certificatePreviewUrl, setCertificatePreviewUrl] = useState<string | null>(null);
   const [showPerformance, setShowPerformance] = useState(false);
+  const [joinLink, setJoinLink] = useState<CourseJoinLink | null>(null);
+  const [joinQrUrl, setJoinQrUrl] = useState<string | null>(null);
   const certificateRequest = useRef(0);
   useEffect(() => () => { if (certificatePreviewUrl) URL.revokeObjectURL(certificatePreviewUrl); }, [certificatePreviewUrl]);
+  useEffect(() => () => { if (joinQrUrl) URL.revokeObjectURL(joinQrUrl); }, [joinQrUrl]);
   const closeCertificates = () => { certificateRequest.current += 1; setCertificateStudent(null); setCertificates([]); setCertificateError(''); setCertificatePreviewUrl(null); };
   const viewCertificates = async (student: Enrollment) => {
     const request = ++certificateRequest.current;
@@ -63,16 +66,36 @@ export default function CourseManager({admin = false, defaultExpanded = false}: 
   useEffect(() => {if (opened) void run(async () => {await Promise.all([loadCourses(), loadContext()]);});}, [opened]);
   const selectCourse = async (id: string) => {
     const token = ++version.current;
-    setSelected(id); setEnrollments([]); setChosen([]); setShowPerformance(false);
+    setSelected(id); setEnrollments([]); setChosen([]); setShowPerformance(false); setJoinLink(null);
+    if (joinQrUrl) URL.revokeObjectURL(joinQrUrl);
+    setJoinQrUrl(null);
     setAppliedFilters({search, ...filters});
     await run(async () => {
-      const rows = await api<Enrollment[]>(`/managed/courses/${id}/enrollments`);
+      const [rows, link, qr] = await Promise.all([
+        api<Enrollment[]>(`/managed/courses/${id}/enrollments`),
+        getManagedCourseJoinLink(id),
+        getManagedCourseJoinQr(id),
+      ]);
       if (version.current === token) {
         setEnrollments(rows);
+        setJoinLink(link);
+        setJoinQrUrl(URL.createObjectURL(qr));
         const selectedCourse = courses.find(c => c.id === id);
         if (selectedCourse) await loadContext(selectedCourse.qari_id, search, {...filters, offset: 0});
       }
     });
+  };
+  const refreshJoinQr = async (payload: {rotate?: boolean; enabled?: boolean}) => {
+    if (!selected) return;
+    setBusy(true); setError('');
+    try {
+      const link = await updateManagedCourseJoinLink(selected, payload);
+      const qr = await getManagedCourseJoinQr(selected);
+      if (joinQrUrl) URL.revokeObjectURL(joinQrUrl);
+      setJoinLink(link); setJoinQrUrl(URL.createObjectURL(qr));
+      setSuccess(payload.rotate ? 'Kod QR baharu berjaya dijana. QR lama tidak lagi sah.' : link.enabled ? 'Penyertaan QR dibuka.' : 'Penyertaan QR ditutup.');
+    } catch (e: any) { setError(e.message || 'Gagal mengemas kini QR kursus.'); }
+    finally { setBusy(false); }
   };
   const refresh = async () => {if (selected) setEnrollments(await api<Enrollment[]>(`/managed/courses/${selected}/enrollments`));};
   const updateAttendance = async (enrollment: Enrollment, attendanceStatus: string) => {
@@ -154,6 +177,14 @@ export default function CourseManager({admin = false, defaultExpanded = false}: 
             </dl>
           </section>;
         })()}
+        {joinLink && <section className="rounded-xl border border-sky-200 bg-sky-50 p-4" aria-labelledby="course-qr-heading">
+          <div className="flex flex-col gap-5 md:flex-row md:items-center">
+            {joinQrUrl && <img src={joinQrUrl} alt={`QR penyertaan ${course.title}`} className="h-48 w-48 rounded-xl border bg-white p-2" />}
+            <div className="min-w-0 flex-1"><h3 id="course-qr-heading" className="text-lg font-bold text-sky-950">QR Penyertaan Kursus</h3><p className="mt-1 text-sm text-sky-900">Peserta login, imbas QR dan sistem memilih Qari serta rujukan ini secara automatik. Kehadiran masih perlu disahkan Qari.</p><p className="mt-3 break-all rounded-lg bg-white p-3 text-xs text-slate-600">{joinLink.join_url}</p><p className="mt-2 text-xs font-semibold text-slate-600">Status: {joinLink.enabled ? 'Dibuka' : 'Ditutup'}{joinLink.expires_at ? ` · Tamat ${formatMalaysiaDateTime(malaysiaDate(joinLink.expires_at))}` : ''}</p>
+              <div className="mt-4 flex flex-wrap gap-2"><button type="button" disabled={busy} onClick={() => void navigator.clipboard.writeText(joinLink.join_url).then(() => setSuccess('Pautan penyertaan disalin.'))} className="rounded-lg bg-sky-700 px-3 py-2 text-sm font-bold text-white">Salin pautan</button><a href={joinQrUrl || undefined} download={`qr-${course.title.replace(/[^a-z0-9]+/gi,'-').toLowerCase()}.png`} className="rounded-lg border border-sky-700 px-3 py-2 text-sm font-bold text-sky-800">Muat turun QR</a><button type="button" disabled={busy} onClick={() => void refreshJoinQr({enabled: !joinLink.enabled})} className="rounded-lg border border-slate-400 px-3 py-2 text-sm font-bold">{joinLink.enabled ? 'Tutup penyertaan' : 'Buka penyertaan'}</button><button type="button" disabled={busy} onClick={() => {if(window.confirm('Jana QR baharu? QR lama akan berhenti berfungsi.')) void refreshJoinQr({rotate:true, enabled:true});}} className="rounded-lg border border-amber-500 px-3 py-2 text-sm font-bold text-amber-800">Jana QR baharu</button></div>
+            </div>
+          </div>
+        </section>}
         {admin && <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="font-bold text-emerald-950">Infografik Prestasi Kursus</p><p className="text-sm text-emerald-800">Analisis lengkap dimuatkan hanya apabila diperlukan.</p></div><button type="button" className="rounded-lg bg-emerald-700 px-4 py-2 font-bold text-white hover:bg-emerald-800" onClick={() => setShowPerformance(value => !value)}>{showPerformance ? 'Tutup Infografik' : 'Buka Infografik Prestasi'}</button></div>{showPerformance && <div className="mt-4"><CoursePerformanceDashboard key={course.id} courseId={course.id} /></div>}</div>}
         <form className="grid gap-3 md:grid-cols-4" onSubmit={e => {e.preventDefault(); setAppliedFilters({search, ...filters}); void run(() => loadContext(course.qari_id, search, {...filters, offset: 0}));}}>
           <label>Nama atau e-mel<input className="block w-full rounded border p-2" placeholder="Cari calon peserta" value={search} onChange={e => setSearch(e.target.value)} /></label>

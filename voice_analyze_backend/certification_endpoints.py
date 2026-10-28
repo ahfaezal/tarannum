@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import io
 import os
+import secrets
 import statistics
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -15,6 +16,7 @@ from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from PIL import Image
+import qrcode
 
 from auth import get_current_admin_user, get_current_qari_user, get_current_student_user, get_current_user
 from certification_service import (
@@ -99,6 +101,11 @@ class AttendanceUpdate(BaseModel):
     attendance_status: str
 
 
+class CourseJoinLinkUpdate(BaseModel):
+    rotate: bool = False
+    enabled: Optional[bool] = None
+
+
 class CompetencyApplicationCreate(BaseModel):
     session_id: UUID
     certificate_type: str
@@ -141,7 +148,43 @@ def _course_payload(course: Course, reference: Reference) -> dict:
         "required_practice_minutes": round(course.required_practice_seconds / 60),
         "completion_window_days": course.completion_window_days,
         "status": course.status,
+        "join_enabled": bool(course.join_enabled),
+        "join_expires_at": course.join_expires_at.isoformat() if course.join_expires_at else None,
     }
+
+
+def _default_join_expiry(course: Course) -> datetime:
+    return course.starts_at + timedelta(minutes=course.duration_minutes, hours=2)
+
+
+def _ensure_course_join_code(course: Course) -> None:
+    if not course.join_code:
+        course.join_code = secrets.token_urlsafe(32)
+    if not course.join_expires_at:
+        course.join_expires_at = _default_join_expiry(course)
+
+
+def _course_join_url(course: Course) -> str:
+    frontend_url = os.getenv("FRONTEND_URL", "https://tarannum.ai").strip().rstrip("/")
+    return f"{frontend_url}/course/join/{course.join_code}"
+
+
+def _joinable_course(db: Session, token: str) -> tuple[Course, Reference, User]:
+    course = db.query(Course).filter(Course.join_code == token).first()
+    if not course or not course.join_enabled or course.status != "published":
+        raise HTTPException(404, "Pautan penyertaan kursus tidak sah atau telah ditutup")
+    if course.join_expires_at and course.join_expires_at < datetime.utcnow():
+        raise HTTPException(410, "Tempoh penyertaan QR kursus telah tamat")
+    reference = db.query(Reference).filter(Reference.id == course.reference_id).first()
+    qari = db.query(User).filter(
+        User.id == course.qari_id,
+        User.role == "qari",
+        User.is_active == True,
+        User.is_approved == True,
+    ).first()
+    if not reference or not qari:
+        raise HTTPException(409, "Maklumat Qari atau rujukan kursus belum lengkap")
+    return course, reference, qari
 
 
 @router.post("/admin/courses")
@@ -167,7 +210,9 @@ def create_course(payload: CourseCreate, admin: User = Depends(get_current_admin
         status="published",
         created_by=admin.id,
         qari_id=payload.qari_id,
+        join_code=secrets.token_urlsafe(32),
     )
+    course.join_expires_at = _default_join_expiry(course)
     db.add(course)
     db.commit()
     db.refresh(course)
@@ -212,6 +257,118 @@ def managed_create_course(payload: CourseCreate, user: User = Depends(get_curren
     if user.role == 'qari': payload.qari_id = user.id
     if not payload.qari_id: raise HTTPException(400, 'Select the course Qari')
     return create_course(payload, user, db)
+
+
+@router.post('/managed/courses/{course_id}/join-link')
+def managed_course_join_link(course_id: UUID, payload: CourseJoinLinkUpdate,
+        user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    course = _managed_course(db, course_id, user)
+    if payload.rotate or not course.join_code:
+        course.join_code = secrets.token_urlsafe(32)
+    if payload.enabled is not None:
+        course.join_enabled = payload.enabled
+    _ensure_course_join_code(course)
+    db.commit()
+    return {
+        "course_id": str(course.id),
+        "join_url": _course_join_url(course),
+        "enabled": bool(course.join_enabled),
+        "expires_at": course.join_expires_at.isoformat() if course.join_expires_at else None,
+    }
+
+
+@router.get('/managed/courses/{course_id}/join-qr')
+def managed_course_join_qr(course_id: UUID, user: User = Depends(get_current_user),
+        db: Session = Depends(get_db)):
+    course = _managed_course(db, course_id, user)
+    _ensure_course_join_code(course)
+    db.commit()
+    image = qrcode.make(_course_join_url(course))
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    return Response(
+        content=buffer.getvalue(),
+        media_type="image/png",
+        headers={"Cache-Control": "private, no-store"},
+    )
+
+
+@router.get('/student/course-join/{token}')
+def student_course_join_preview(token: str,
+        student: User = Depends(get_current_student_user), db: Session = Depends(get_db)):
+    course, reference, qari = _joinable_course(db, token)
+    enrollment = db.query(CourseEnrollment).filter(
+        CourseEnrollment.course_id == course.id,
+        CourseEnrollment.student_id == student.id,
+    ).first()
+    return {
+        "course": _course_payload(course, reference),
+        "qari_name": qari.full_name or qari.email,
+        "already_joined": enrollment is not None,
+    }
+
+
+@router.post('/student/course-join/{token}')
+def student_course_join(token: str,
+        student: User = Depends(get_current_student_user), db: Session = Depends(get_db)):
+    course, reference, qari = _joinable_course(db, token)
+    enrollment = db.query(CourseEnrollment).filter(
+        CourseEnrollment.course_id == course.id,
+        CourseEnrollment.student_id == student.id,
+    ).first()
+    created = False
+    if not enrollment:
+        enrollment = CourseEnrollment(
+            course_id=course.id,
+            student_id=student.id,
+            enrollment_source="qr",
+            required_recording_count=required_recording_count(
+                course.required_practice_seconds, reference.duration
+            ),
+        )
+        db.add(enrollment)
+        created = True
+
+    active_relationships = db.query(StudentQariRelationship).filter(
+        StudentQariRelationship.student_id == student.id,
+        StudentQariRelationship.is_active == True,
+    ).all()
+    target_relationship = next(
+        (row for row in active_relationships if row.qari_id == qari.id), None
+    )
+    for relationship in active_relationships:
+        if relationship.qari_id != qari.id:
+            relationship.is_active = False
+    if target_relationship is None:
+        target_relationship = db.query(StudentQariRelationship).filter(
+            StudentQariRelationship.student_id == student.id,
+            StudentQariRelationship.qari_id == qari.id,
+        ).order_by(StudentQariRelationship.joined_at.desc()).first()
+        if target_relationship:
+            target_relationship.is_active = True
+            target_relationship.last_active = datetime.utcnow()
+        else:
+            db.add(StudentQariRelationship(
+                student_id=student.id,
+                qari_id=qari.id,
+                is_active=True,
+                commission_rate=qari.commission_rate or 0.0,
+            ))
+
+    db.commit()
+    db.refresh(enrollment)
+    return {
+        "joined": True,
+        "created": created,
+        "course_id": str(course.id),
+        "course_title": course.title,
+        "qari_id": str(qari.id),
+        "qari_name": qari.full_name or qari.email,
+        "reference_id": course.reference_id,
+        "reference_title": reference.title,
+        "attendance_status": enrollment.attendance_status,
+        "training_path": f"/training?course={course.id}&reference={course.reference_id}",
+    }
 
 
 @router.get('/managed/context')

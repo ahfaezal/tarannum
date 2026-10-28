@@ -591,7 +591,10 @@ const TrainingStudio: React.FC = () => {
           : ((!selectedRef || !selectedRef.id || Array.isArray(selectedRef)) && refs.length > 0);  // Only if not selected for public users
         
         if (shouldAutoSelect && refs.length > 0) {
-          const first = refs[0]; // This is the latest uploaded file (sorted by upload_date)
+          const courseReferenceId = sessionStorage.getItem("tarannum_course_reference_id");
+          const first = refs.find((item: any) =>
+            item.id === courseReferenceId || item.reference_id === courseReferenceId
+          ) || refs[0];
           console.log(`[${userRole} Load] Auto-selecting latest file:`, first.id, first.filename || first.title, "upload_date:", first.upload_date);
           
           // For students, ALWAYS update to latest file (even if same ID, to ensure fresh data)

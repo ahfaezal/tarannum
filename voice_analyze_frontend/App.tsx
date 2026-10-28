@@ -37,6 +37,8 @@ const AdminExpertValidation = lazy(() => import("./views/AdminExpertValidation")
 const CertificatesPage = lazy(() => import("./views/CertificatesPage"));
 const QariCertification = lazy(() => import("./views/QariCertification"));
 const AdminCertification = lazy(() => import("./views/AdminCertification"));
+const CourseScannerPage = lazy(() => import("./views/CourseScannerPage"));
+const CourseJoinPage = lazy(() => import("./views/CourseJoinPage"));
 
 const PageLoader = () => (
   <div className="flex min-h-[40vh] items-center justify-center" role="status">
@@ -92,6 +94,8 @@ const App: React.FC = () => {
             <Route element={<ProtectedRoute roles={["student"]} />}>
               <Route path="/progress" element={<StudentProgress />} />
               <Route path="/certificates" element={<CertificatesPage />} />
+              <Route path="/course/scan" element={<CourseScannerPage />} />
+              <Route path="/course/join/:token" element={<CourseJoinPage />} />
             </Route>
             <Route element={<ProtectedRoute roles={["student", "qari"]} />}>
               <Route path="/profile" element={<ProfileRoute />} />

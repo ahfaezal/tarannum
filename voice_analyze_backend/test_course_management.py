@@ -20,6 +20,32 @@ def load_function(file, name, env):
 
 
 class CourseManagementTests(unittest.TestCase):
+    def test_qr_join_requires_student_auth_and_preserves_attendance_approval(self):
+        tree = ast.parse(Path(__file__).with_name('certification_endpoints.py').read_text(encoding='utf-8'))
+        functions = {node.name: node for node in tree.body if isinstance(node, ast.FunctionDef)}
+        preview = ast.unparse(functions['student_course_join_preview'])
+        join = ast.unparse(functions['student_course_join'])
+        self.assertIn('Depends(get_current_student_user)', preview)
+        self.assertIn('Depends(get_current_student_user)', join)
+        self.assertIn("enrollment_source='qr'", join)
+        self.assertNotIn("attendance_status='attended'", join)
+
+    def test_qr_join_switches_active_qari_and_is_idempotent(self):
+        source = Path(__file__).with_name('certification_endpoints.py').read_text(encoding='utf-8')
+        tree = ast.parse(source)
+        join = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == 'student_course_join')
+        rendered = ast.unparse(join)
+        self.assertIn('CourseEnrollment.course_id == course.id', rendered)
+        self.assertIn('relationship.is_active = False', rendered)
+        self.assertIn('target_relationship.is_active = True', rendered)
+
+    def test_qr_schema_is_an_alembic_revision(self):
+        revision = Path(__file__).with_name('alembic').joinpath(
+            'versions', '20261028_0002_course_qr_join.py'
+        ).read_text(encoding='utf-8')
+        self.assertIn('down_revision: Union[str, None] = "20261028_0001"', revision)
+        self.assertIn('op.create_index("ix_courses_join_code"', revision)
+
     def test_owner_boundary_and_admin_access(self):
         owner=uuid4(); course=SimpleNamespace(qari_id=owner)
         db=MagicMock(); db.query.return_value.filter.return_value.first.return_value=course

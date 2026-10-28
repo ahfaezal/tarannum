@@ -110,6 +110,34 @@ export interface CertificationCourse {
   required_practice_minutes: number;
   completion_window_days: number;
   status: string;
+  join_enabled?: boolean;
+  join_expires_at?: string | null;
+}
+
+export interface CourseJoinLink {
+  course_id: string;
+  join_url: string;
+  enabled: boolean;
+  expires_at?: string | null;
+}
+
+export interface CourseJoinPreview {
+  course: CertificationCourse;
+  qari_name: string;
+  already_joined: boolean;
+}
+
+export interface CourseJoinResult {
+  joined: boolean;
+  created: boolean;
+  course_id: string;
+  course_title: string;
+  qari_id: string;
+  qari_name: string;
+  reference_id: string;
+  reference_title: string;
+  attendance_status: string;
+  training_path: string;
 }
 
 export interface QariApplication {
@@ -156,6 +184,15 @@ export const createCertificationCourse = (payload: Record<string, any>) => reque
 export const enrollCourseStudents = (courseId: string, studentIds: string[]) => request<{ created: number; required_recording_count: number }>(`/admin/courses/${courseId}/enroll`, { method: "POST", body: JSON.stringify({ student_ids: studentIds }) });
 export const getCourseEnrollments = (courseId: string) => request<any[]>(`/admin/courses/${courseId}/enrollments`);
 export const setEnrollmentAttendance = (enrollmentId: string, attendance_status: string) => request<any>(`/admin/enrollments/${enrollmentId}/attendance`, { method: "PATCH", body: JSON.stringify({ attendance_status }) });
+export const getManagedCourseJoinLink = (courseId: string) => request<CourseJoinLink>(`/managed/courses/${courseId}/join-link`, { method: "POST", body: JSON.stringify({ rotate: false }) });
+export const updateManagedCourseJoinLink = (courseId: string, payload: {rotate?: boolean; enabled?: boolean}) => request<CourseJoinLink>(`/managed/courses/${courseId}/join-link`, { method: "POST", body: JSON.stringify(payload) });
+export const getCourseJoinPreview = (token: string) => request<CourseJoinPreview>(`/student/course-join/${encodeURIComponent(token)}`);
+export const joinCourseWithQr = (token: string) => request<CourseJoinResult>(`/student/course-join/${encodeURIComponent(token)}`, { method: "POST", body: "{}" });
+export const getManagedCourseJoinQr = async (courseId: string): Promise<Blob> => {
+  const response = await fetch(`${API_URL}/api/certification/managed/courses/${encodeURIComponent(courseId)}/join-qr`, {headers: getAuthHeader()});
+  if (!response.ok) throw new Error((await response.json().catch(() => ({}))).detail || 'Gagal menjana QR kursus');
+  return response.blob();
+};
 export const getQariApplications = () => request<QariApplication[]>("/qari/applications");
 export const getAdminQariFlowPreview = (userId: string) => request<QariFlowPreview>(`/admin/users/${encodeURIComponent(userId)}/qari-flow-preview`);
 export const decideQariApplication = (id: string, payload: Record<string, any>) => request<{ status: string; certificate_id?: string }>(`/qari/applications/${id}/decision`, { method: "POST", body: JSON.stringify(payload) });
