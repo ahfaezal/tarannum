@@ -4,10 +4,23 @@ import { certificationErrorMessage } from '../utils/certificationRequestUtils';
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
 const request = async <T>(path: string, options: RequestInit = {}): Promise<T> => {
-  const response = await fetch(`${API_URL}/api/certification${path}`, {
-    ...options,
-    headers: { "Content-Type": "application/json", ...getAuthHeader(), ...(options.headers || {}) },
-  });
+  const method = (options.method || "GET").toUpperCase();
+  const execute = () => fetch(`${API_URL}/api/certification${path}`, {
+      ...options,
+      headers: { "Content-Type": "application/json", ...getAuthHeader(), ...(options.headers || {}) },
+    });
+  let response: Response;
+  try {
+    response = await execute();
+  } catch (error) {
+    if (method !== "GET") throw error;
+    await new Promise(resolve => setTimeout(resolve, 750));
+    response = await execute();
+  }
+  if (method === "GET" && [502, 503, 504].includes(response.status)) {
+    await new Promise(resolve => setTimeout(resolve, 750));
+    response = await execute();
+  }
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: response.statusText }));
     throw new Error(certificationErrorMessage(error.detail));

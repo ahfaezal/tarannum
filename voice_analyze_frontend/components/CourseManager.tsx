@@ -57,7 +57,11 @@ export default function CourseManager({admin = false, defaultExpanded = false}: 
   const version = useRef(0);
   const course = courses.find(c => c.id === selected);
   const run = async (job: () => Promise<void>) => {setBusy(true); setError(''); try {await job();} catch (e: any) {setError(e.message);} finally {setBusy(false);}};
-  const loadCourses = async () => setCourses(await api<CertificationCourse[]>('/managed/courses'));
+  const loadCourses = async () => {
+    const rows = await api<CertificationCourse[]>('/managed/courses');
+    setCourses(rows);
+    return rows;
+  };
   const loadContext = async (qariId = form.qari_id, term = '', options = {registered_from: '', registered_to: '', sort: 'newest', offset: 0}) => {
     const data = await api<Context>(courseContextPath(qariId, term, options));
     setContext(data);
@@ -136,7 +140,7 @@ export default function CourseManager({admin = false, defaultExpanded = false}: 
       {success && <p role="status" aria-live="polite" className="rounded-lg bg-emerald-50 p-3 font-semibold text-emerald-800">{success}</p>}
       <label className="block font-semibold">Pilih kursus<select className="ml-3 max-w-full rounded border p-2" value={selected} disabled={busy} onChange={e => {if(e.target.value) void selectCourse(e.target.value); else {setSelected('');setEnrollments([]);setShowPerformance(false);}}}><option value="">Pilih kursus untuk pemantauan</option>{courses.map(c => <option key={c.id} value={c.id}>{c.title} · {new Date(c.starts_at).toLocaleDateString('ms-MY')}</option>)}</select></label>
       <details className="rounded-xl border p-4"><summary className="cursor-pointer font-bold text-emerald-800">Cipta Kursus Baharu</summary>
-      <form className="mt-4 grid gap-3 md:grid-cols-2" onSubmit={e => {e.preventDefault(); setSuccess(''); void run(async () => {await api('/managed/courses', post({...form, starts_at: new Date(form.starts_at).toISOString()})); setSuccess('Kursus Telah Berjaya Dicipta'); setForm(f => ({...f, title: '', certificate_course_title: '', competency_name: '', starts_at: '', location: ''})); await loadCourses();});}}>
+      <form className="mt-4 grid gap-3 md:grid-cols-2" onSubmit={e => {e.preventDefault(); setSuccess(''); void run(async () => {const payload={...form, starts_at: new Date(form.starts_at).toISOString()};let created: CertificationCourse | null=null;try{created=await api<CertificationCourse>('/managed/courses', post(payload));}catch(reason:any){if(!String(reason?.message || reason).toLowerCase().includes('failed to fetch')) throw reason;const rows=await loadCourses();created=rows.find(item=>item.title===payload.title.trim() && item.qari_id===payload.qari_id && item.reference_id===payload.reference_id && Math.abs(new Date(item.starts_at).getTime()-new Date(payload.starts_at).getTime())<1000) || null;if(!created) throw reason;}setSuccess('Kursus Telah Berjaya Dicipta. Pilih kursus tersebut pada senarai di atas untuk melihat QR.'); setForm(f => ({...f, title: '', certificate_course_title: '', competency_name: '', starts_at: '', location: ''})); await loadCourses();});}}>
         <label>Nama pengurusan kursus<span className="block text-xs font-normal text-slate-500">Untuk dashboard dan pemantauan dalaman</span><input required minLength={3} className="block w-full rounded border p-2" value={form.title} onChange={e => setForm({...form, title: e.target.value})} /></label>
         <label>Qari<select required className="block w-full rounded border p-2" value={form.qari_id} disabled={!admin || busy} onChange={e => {const id=e.target.value; setForm({...form,qari_id:id,reference_id:''}); void run(() => loadContext(id));}}><option value="">Pilih qari</option>{context.qaris.map(q => <option key={q.id} value={q.id}>{q.name}</option>)}</select></label>
         <label>Nama kursus pada sijil<span className="block text-xs font-normal text-slate-500">Dicetak pada Sijil Kehadiran & Penyertaan</span><input required minLength={3} maxLength={240} className="block w-full rounded border p-2 uppercase" value={form.certificate_course_title} onChange={e => setForm({...form, certificate_course_title: e.target.value.toUpperCase()})} placeholder="KURSUS AZAN TARANNUM HIJJAZ" /></label>
