@@ -26,6 +26,18 @@ class MigrationConfigurationTests(unittest.TestCase):
     def test_railway_runs_migrations_before_start(self):
         railway = (BACKEND_DIR / "railway.toml").read_text(encoding="utf-8")
         self.assertIn('preDeployCommand = ["python migration_runner.py"]', railway)
+        self.assertIn('cmd = "python migration_runner.py && python main.py"', railway)
+
+    def test_qr_schema_repair_is_idempotent(self):
+        repair = (
+            BACKEND_DIR
+            / "alembic"
+            / "versions"
+            / "20261028_0003_repair_course_qr_schema.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn("ADD COLUMN IF NOT EXISTS join_code", repair)
+        self.assertIn('"enrollment_source VARCHAR NOT NULL DEFAULT', repair)
+        self.assertIn("CREATE UNIQUE INDEX IF NOT EXISTS ix_courses_join_code", repair)
 
     def test_health_exposes_non_secret_deployment_revision(self):
         main_source = (BACKEND_DIR / "main.py").read_text(encoding="utf-8")

@@ -2,7 +2,7 @@
 nixPkgs = ["python310", "ffmpeg"]
 
 [start]
-cmd = "python main.py"
+cmd = "python migration_runner.py && python main.py"
 
 [deploy]
 preDeployCommand = ["python migration_runner.py"]
