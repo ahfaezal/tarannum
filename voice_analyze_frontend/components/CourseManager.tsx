@@ -125,8 +125,11 @@ export default function CourseManager({admin = false, defaultExpanded = false}: 
     }
   };
   const post = (body: unknown) => ({method: 'POST', body: JSON.stringify(body)});
-  return <section className="mb-6 rounded-2xl border border-emerald-200 bg-white p-5">
-    <button aria-expanded={opened} className="text-xl font-bold text-emerald-800" onClick={() => setOpened(!opened)}>Urus Kursus {opened ? '−' : '+'}</button>
+  return <section className="mb-8 rounded-2xl border border-emerald-300 bg-white p-5 shadow-md">
+    <button aria-expanded={opened} className="flex w-full items-center justify-between gap-4 text-left" onClick={() => setOpened(!opened)}>
+      <span><span className="block text-xl font-black text-emerald-900">Cipta / Urus Kursus &amp; QR</span><span className="mt-1 block text-sm font-normal text-slate-600">Cipta kursus, jana QR penyertaan, daftar peserta dan sahkan kehadiran.</span></span>
+      <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-emerald-700 text-2xl font-bold text-white" aria-hidden="true">{opened ? '−' : '+'}</span>
+    </button>
     {opened && <div className="mt-4 space-y-5">
       <p className="text-sm text-slate-600">Satu senarai peserta untuk kursus dan Live Scoring. Sijil Kehadiran memerlukan hadir + 60 minit latihan; Sijil Kompetensi turut memerlukan skor ≥75 dan kelulusan qari.</p>
       {error && <p role="alert" className="text-red-700">{error}</p>}

@@ -647,6 +647,8 @@ const QariDashboard: React.FC = () => {
           <h3 className="mt-6 font-bold">Sejarah pendapatan</h3><div className="mt-3 overflow-x-auto"><table className="w-full min-w-[700px] text-left text-sm"><thead className="bg-slate-100"><tr><th className="p-2">Tarikh</th><th>Peserta</th><th>Sumber</th><th>Pembayar</th><th>Keputusan</th><th>Status</th><th>Jumlah</th></tr></thead><tbody>{commissionStats.earnings.length ? commissionStats.earnings.map(row=><tr key={row.id} className="border-t"><td className="p-2">{new Date(row.earned_at).toLocaleDateString('ms-MY')}</td><td>{row.student_name}</td><td>{row.course_title || 'Penilaian persendirian'}</td><td>{row.payer_type === 'tarannum' ? 'Tarannum Technologies' : 'Peserta'}</td><td>{row.decision}</td><td>{row.status}</td><td className="font-bold">RM {(row.amount_cents/100).toFixed(2)}</td></tr>) : <tr><td colSpan={7} className="p-4 text-center text-slate-500">Belum ada pendapatan penilaian direkodkan.</td></tr>}</tbody></table></div>
         </section>}
 
+        <CourseManager />
+
         {/* Student Registration QR Section */}
         {referralCode && referralLink && (
           <div className="bg-white rounded-xl shadow-md border border-slate-200 p-6 mb-8">
@@ -792,7 +794,6 @@ const QariDashboard: React.FC = () => {
         </div>}
 
         <TrainingChallengePanel students={students} content={content} />
-        <CourseManager />
 
         {/* Students List */}
         <div className="bg-white rounded-xl shadow-md border border-slate-200 p-6 mb-8">
