@@ -31,15 +31,16 @@ class MigrationConfigurationTests(unittest.TestCase):
         self.assertIn('cmd = "python migration_runner.py && python main.py"', railway)
 
     def test_qr_schema_repair_is_idempotent(self):
-        repair = (
-            BACKEND_DIR
-            / "alembic"
-            / "versions"
-            / "20261028_0003_repair_course_qr_schema.py"
-        ).read_text(encoding="utf-8")
-        self.assertIn("ADD COLUMN IF NOT EXISTS join_code", repair)
-        self.assertIn('"enrollment_source VARCHAR NOT NULL DEFAULT', repair)
-        self.assertIn("CREATE UNIQUE INDEX IF NOT EXISTS ix_courses_join_code", repair)
+        for filename in (
+            "20261028_0003_repair_course_qr_schema.py",
+            "20261028_0004_verify_course_qr_schema.py",
+        ):
+            repair = (BACKEND_DIR / "alembic" / "versions" / filename).read_text(
+                encoding="utf-8"
+            )
+            self.assertIn("ADD COLUMN IF NOT EXISTS join_code", repair)
+            self.assertIn('"enrollment_source VARCHAR NOT NULL DEFAULT', repair)
+            self.assertIn("CREATE UNIQUE INDEX IF NOT EXISTS ix_courses_join_code", repair)
 
     def test_health_exposes_non_secret_deployment_revision(self):
         main_source = (BACKEND_DIR / "main.py").read_text(encoding="utf-8")
