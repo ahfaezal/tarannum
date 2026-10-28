@@ -57,14 +57,23 @@ def run_migrations() -> None:
                 if "alembic_version" not in tables:
                     LOGGER.info("Stamping existing Tarannum schema at %s", BASELINE_REVISION)
                     command.stamp(config, BASELINE_REVISION)
+                    # The shared connection may already own a transaction from
+                    # schema inspection.  Persist the stamp before upgrading.
+                    connection.commit()
 
                 LOGGER.info("Upgrading Tarannum schema to Alembic head")
                 command.upgrade(config, "head")
+                # Alembic is intentionally given this connection so every
+                # replica shares the advisory lock.  Explicitly commit because
+                # SQLAlchemy otherwise rolls back transactional PostgreSQL DDL
+                # when the outer connection context closes.
+                connection.commit()
             finally:
                 connection.execute(
                     text("SELECT pg_advisory_unlock(:lock_id)"),
                     {"lock_id": MIGRATION_LOCK_ID},
                 )
+                connection.commit()
     finally:
         engine.dispose()
 

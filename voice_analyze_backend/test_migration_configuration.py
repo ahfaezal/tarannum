@@ -22,6 +22,8 @@ class MigrationConfigurationTests(unittest.TestCase):
         self.assertIn("pg_advisory_lock", runner)
         self.assertIn("pg_advisory_unlock", runner)
         self.assertIn('command.upgrade(config, "head")', runner)
+        upgrade_call = runner.index('command.upgrade(config, "head")')
+        self.assertGreater(runner.index("connection.commit()", upgrade_call), upgrade_call)
 
     def test_railway_runs_migrations_before_start(self):
         railway = (BACKEND_DIR / "railway.toml").read_text(encoding="utf-8")
