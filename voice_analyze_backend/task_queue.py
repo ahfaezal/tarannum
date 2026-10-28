@@ -230,6 +230,11 @@ if CELERY_AVAILABLE and celery_app:
 
             # Import lazily to avoid task_queue <-> main circular imports.
             if encoded_result is None:
+                # Railway may not define SERVICE_ROLE on the worker service.
+                # Mark only the executing Celery child immediately before the
+                # lazy application import; the API process remains strict and
+                # still refuses to start without its configured JWT secret.
+                os.environ["SERVICE_ROLE"] = "scoring-worker"
                 from main import score_performance
 
                 with local_path.open("rb") as audio_stream:
