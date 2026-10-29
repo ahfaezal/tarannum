@@ -519,7 +519,13 @@ const RecordingPage: React.FC<{embedded?: boolean}> = ({embedded = false}) => {
       <p className="text-xs font-bold uppercase tracking-wider text-emerald-700">{embedded ? `Rakaman ${displayedRecordingNumber} daripada 3` : "Step 2"}</p>
       <h2 className="mt-1 text-xl font-bold">{embedded ? "Rakam bacaan anda" : `Record Recitation — ${mode === "R1" ? "Baseline" : "Progress"}`}</h2>
       <p className="mt-2 text-sm text-slate-600">{embedded ? "Ikuti graf rujukan Qari. Rakaman akan dinilai secara automatik selepas selesai." : modeDescription[mode]}</p>
-      {error && <div className="mt-4 rounded-xl bg-red-50 p-4 text-sm text-red-800">{error}</div>}
+      {error && (
+        <div className="mt-4 rounded-xl bg-red-50 p-4 text-sm text-red-800">
+          {embedded
+            ? "Sesi penilaian sebelumnya telah tamat. Anda boleh mulakan rakaman baharu."
+            : error}
+        </div>
+      )}
       {!referenceId
         ? <p className="mt-6 rounded-xl bg-amber-50 p-4 text-amber-900">Select a reference audio first.</p>
         : <Suspense fallback={<p className="mt-6 text-slate-500">Loading recorder…</p>}>
