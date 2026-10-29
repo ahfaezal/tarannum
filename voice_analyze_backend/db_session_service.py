@@ -157,14 +157,27 @@ class DBSessionService:
                         raise ValueError(f"S3 upload returned invalid URL: {s3_url}")
                 else:
                     # Fallback to local storage
-                    local_file_path = str(user_audio_path.relative_to(Path(__file__).parent))
+                    try:
+                        local_file_path = str(user_audio_path.relative_to(Path(__file__).parent))
+                    except ValueError:
+                        # Worker recordings live in the OS temporary directory,
+                        # outside the backend tree.  Failing to make that path
+                        # relative must not abort persistence after scoring has
+                        # already completed.
+                        local_file_path = None
                     integrity_error = "S3 audio upload was not completed; local storage was used."
                     logger.info(f"Student recording saved to local storage: {local_file_path}")
                     
             except Exception as cloud_error:
-                # If S3 fails, use local storage
-                logger.warning(f"Could not upload student recording to S3: {cloud_error}. Using local storage.")
-                local_file_path = str(user_audio_path.relative_to(Path(__file__).parent))
+                # A Celery worker uses an OS temp file which is deleted after
+                # the job.  Record the integrity failure without attempting a
+                # second relative_to() that can hide the real S3 error and
+                # prevent the score from being saved.
+                logger.warning(f"Could not upload student recording to S3: {cloud_error}.")
+                try:
+                    local_file_path = str(user_audio_path.relative_to(Path(__file__).parent))
+                except ValueError:
+                    local_file_path = None
                 integrity_error = str(cloud_error)[:1000]
             
             # Update session with file path

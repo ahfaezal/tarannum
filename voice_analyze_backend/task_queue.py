@@ -307,8 +307,18 @@ if CELERY_AVAILABLE and celery_app:
                     local_path.unlink()
             except Exception as cleanup_error:
                 logger.warning("Could not delete scoring job temp file %s: %s", local_path, cleanup_error)
+            # Keep failed input for a bounded recovery window.  Previously the
+            # worker deleted it on the terminal failed state while the admin UI
+            # still offered "Retry", guaranteeing another failure.  Successful
+            # jobs no longer need the staging object and can release it.
             if terminal and staged_path and cloud_storage is not None:
-                cloud_storage.delete_file(staged_path)
+                current_job = db.query(ScoringJob).filter(
+                    ScoringJob.id == UUID(job_id)
+                ).first()
+                if current_job and current_job.status == "completed":
+                    if cloud_storage.delete_file(staged_path):
+                        current_job.staging_path = None
+                        db.commit()
             db.close()
             logger.info(
                 "SCORING_JOB_TIMING job_id=%s total_ms=%.1f stages=%s terminal=%s retries=%s",

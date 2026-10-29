@@ -27,6 +27,8 @@ export type ScoringOperations = {
     age_seconds: number;
     queued_at?: string;
     error?: string;
+    retryable?: boolean;
+    action_reason?: string;
   }>;
 };
 

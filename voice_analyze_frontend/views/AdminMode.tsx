@@ -537,11 +537,12 @@ const AdminMode: React.FC<AdminModeProps> = ({ view = 'presets' }) => {
       };
     }
     const failed = scoringCapacity.failed_last_hour ?? 0;
+    const completed = scoringCapacity.completed_last_hour ?? 0;
     const oldestWait = scoringCapacity.oldest_wait_seconds ?? 0;
     const oldestActive = scoringCapacity.oldest_processing_seconds ?? 0;
     const waiting = scoringCapacity.waiting ?? 0;
     const apiSlow = (capacityLatencyMs ?? 0) >= 2500;
-    if (failed > 0 || oldestWait >= 300 || oldestActive >= 600 || apiSlow) {
+    if ((failed >= 3 && completed === 0) || oldestWait >= 300 || oldestActive >= 600 || apiSlow) {
       return {
         label: 'MERAH — Hentikan penghantaran',
         detail: 'Terdapat kegagalan, tugasan terlalu lama atau API sangat perlahan. Tunggu queue pulih sebelum kumpulan seterusnya.',
@@ -549,7 +550,7 @@ const AdminMode: React.FC<AdminModeProps> = ({ view = 'presets' }) => {
         badge: 'bg-red-600 text-white',
       };
     }
-    if (waiting >= 10 || oldestWait >= 90 || oldestActive >= 300 || (capacityLatencyMs ?? 0) >= 1000) {
+    if (failed > 0 || waiting >= 10 || oldestWait >= 90 || oldestActive >= 300 || (capacityLatencyMs ?? 0) >= 1000) {
       return {
         label: 'KUNING — Tunggu sebentar',
         detail: 'Sistem sedang sibuk. Jangan mulakan kumpulan baharu sehingga angka Waiting dan Oldest wait menurun.',
@@ -1176,7 +1177,7 @@ const AdminMode: React.FC<AdminModeProps> = ({ view = 'presets' }) => {
                     <tbody>{scoringOperations.jobs.map(job => <tr key={job.job_id} className="border-t">
                       <td className="p-2"><strong>{job.participant}</strong><br/><span className="text-xs text-slate-500">{job.email}</span></td>
                       <td>{job.status} · {job.stage}</td><td>{job.age_seconds}s</td>
-                      <td>{job.status === 'failed' || (job.status === 'processing' && job.age_seconds >= 960) ? <button onClick={() => void handleRetryScoringJob(job.job_id)} className="rounded bg-amber-600 px-3 py-1 font-semibold text-white">Retry selamat</button> : <span className="text-xs text-slate-500">Sedang dipantau</span>}</td>
+                      <td>{job.retryable ? <button onClick={() => void handleRetryScoringJob(job.job_id)} className="rounded bg-amber-600 px-3 py-1 font-semibold text-white">Retry rakaman</button> : <span className="text-xs font-medium text-slate-600">{job.action_reason || 'Sedang dipantau'}</span>}</td>
                     </tr>)}</tbody>
                   </table>
                 </div>}

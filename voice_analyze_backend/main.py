@@ -229,6 +229,30 @@ def recover_stale_queued_scoring_jobs() -> int:
             )
         db.commit()
 
+        # Keep failed recordings available for an admin retry for 24 hours.
+        # Reconcile the database marker with the real object so the UI never
+        # advertises a retry for an object which S3 has already lost/deleted.
+        failed_retention_cutoff = datetime.utcnow() - timedelta(hours=24)
+        failed_with_staging = db.query(ScoringJob).filter(
+            ScoringJob.status == "failed",
+            ScoringJob.staging_path.isnot(None),
+        ).all()
+        for failed_job in failed_with_staging:
+            staging_exists = cloud_storage.file_exists(failed_job.staging_path)
+            expired = bool(
+                failed_job.completed_at
+                and failed_job.completed_at < failed_retention_cutoff
+            )
+            if expired:
+                if staging_exists:
+                    cloud_storage.delete_file(failed_job.staging_path)
+                failed_job.staging_path = None
+                failed_job.stage = "retry_expired"
+            elif not staging_exists:
+                failed_job.staging_path = None
+                failed_job.stage = "recording_missing"
+        db.commit()
+
         # A worker can be terminated after claiming a job, leaving the durable
         # row in ``processing`` forever. Only reclaim it after the configured
         # worker hard limit, and only when the staged audio still exists. The
@@ -249,6 +273,16 @@ def recover_stale_queued_scoring_jobs() -> int:
             ).order_by(ScoringJob.started_at.asc()).all()
         ]
         for job_id in stale_processing_ids:
+            stale_job = db.query(ScoringJob).filter(ScoringJob.id == job_id).first()
+            if not stale_job or not stale_job.staging_path or not cloud_storage.file_exists(stale_job.staging_path):
+                if stale_job:
+                    stale_job.status = "failed"
+                    stale_job.stage = "recording_missing"
+                    stale_job.completed_at = datetime.utcnow()
+                    stale_job.error_message = "The staged recording is no longer available; a new recording is required"
+                    stale_job.staging_path = None
+                    db.commit()
+                continue
             leased = db.query(ScoringJob).filter(
                 ScoringJob.id == job_id,
                 ScoringJob.status == "processing",
@@ -292,6 +326,16 @@ def recover_stale_queued_scoring_jobs() -> int:
             ).order_by(ScoringJob.queued_at.asc()).all()
         ]
         for job_id in stale_job_ids:
+            stale_job = db.query(ScoringJob).filter(ScoringJob.id == job_id).first()
+            if not stale_job or not stale_job.staging_path or not cloud_storage.file_exists(stale_job.staging_path):
+                if stale_job:
+                    stale_job.status = "failed"
+                    stale_job.stage = "recording_missing"
+                    stale_job.completed_at = datetime.utcnow()
+                    stale_job.error_message = "The staged recording is no longer available; a new recording is required"
+                    stale_job.staging_path = None
+                    db.commit()
+                continue
             leased = db.query(ScoringJob).filter(
                 ScoringJob.id == job_id,
                 ScoringJob.status == "queued",
@@ -331,6 +375,21 @@ def recover_stale_queued_scoring_jobs() -> int:
     finally:
         db.close()
     return recovered
+
+
+async def scoring_recovery_watchdog(stop_event: asyncio.Event) -> None:
+    """Periodically recover abandoned jobs without waiting for an API deploy."""
+    interval_seconds = max(30, int(os.getenv("SCORING_WATCHDOG_INTERVAL_SECONDS", "60")))
+    while not stop_event.is_set():
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=interval_seconds)
+        except asyncio.TimeoutError:
+            try:
+                recovered = await run_in_threadpool(recover_stale_queued_scoring_jobs)
+                if recovered:
+                    logger.warning("Scoring watchdog recovered %s job(s)", recovered)
+            except Exception:
+                logger.error("Scoring watchdog failed", exc_info=True)
 
 
 def bootstrap_nonproduction_admin() -> bool:
@@ -381,6 +440,9 @@ async def lifespan(app: FastAPI):
     """Handle startup and shutdown events."""
     global vosk_model
 
+    watchdog_stop = asyncio.Event()
+    watchdog_task = None
+
     # Startup
     logger.info("Starting up application...")
     log_email_config_startup()
@@ -397,6 +459,7 @@ async def lifespan(app: FastAPI):
         recovered_jobs = await run_in_threadpool(recover_stale_queued_scoring_jobs)
         if recovered_jobs:
             logger.warning("Startup re-dispatched %s stale scoring job(s)", recovered_jobs)
+        watchdog_task = asyncio.create_task(scoring_recovery_watchdog(watchdog_stop))
     except Exception as e:
         logger.error(f"Database initialization error: {e}", exc_info=True)
         logger.warning("Continuing without database (will use file-based storage)")
@@ -433,6 +496,9 @@ async def lifespan(app: FastAPI):
     yield  # Application runs here
 
     # Shutdown
+    watchdog_stop.set()
+    if watchdog_task is not None:
+        await watchdog_task
     logger.info("Shutting down application...")
     if vosk_model is not None:
         vosk_model = None
@@ -895,20 +961,42 @@ def get_scoring_operations(
         ScoringJob.status.in_(["queued", "processing", "failed"]),
         ScoringJob.queued_at >= now - timedelta(days=1),
     ).order_by(ScoringJob.queued_at.asc()).limit(50).all()
-    return {
-        "p50_total_seconds": _percentile(total_seconds, 0.50),
-        "p95_total_seconds": _percentile(total_seconds, 0.95),
-        "average_total_seconds": round(statistics.fmean(total_seconds), 1) if total_seconds else 0,
-        "jobs": [{
+    stale_seconds = max(
+        int(os.getenv("SCORING_TASK_TIME_LIMIT_SECONDS", "900")) + 30,
+        int(os.getenv("SCORING_STALE_TIMEOUT_SECONDS", "960")),
+    )
+    operation_jobs = []
+    for job, user in attention:
+        age_seconds = max(0, round((now - (job.started_at or job.queued_at)).total_seconds()))
+        abandoned = job.status == "processing" and age_seconds >= stale_seconds
+        may_retry = job.status == "failed" or abandoned
+        # The watchdog reconciles this marker with S3 every minute.  Avoid a
+        # synchronous S3 HEAD request for every row on this five-second admin
+        # polling endpoint, which would make the health API itself slow.
+        staging_available = bool(job.staging_path)
+        operation_jobs.append({
             "job_id": str(job.id),
             "participant": user.full_name or user.email,
             "email": user.email,
             "status": job.status,
             "stage": job.stage,
-            "age_seconds": max(0, round((now - (job.started_at or job.queued_at)).total_seconds())),
+            "age_seconds": age_seconds,
             "queued_at": job.queued_at.isoformat() if job.queued_at else None,
             "error": job.error_message,
-        } for job, user in attention],
+            "retryable": may_retry and staging_available,
+            "action_reason": (
+                "Rakaman asal tersedia untuk dicuba semula"
+                if may_retry and staging_available
+                else "Rakaman asal tiada — peserta perlu rakam semula"
+                if may_retry
+                else "Sedang dipantau"
+            ),
+        })
+    return {
+        "p50_total_seconds": _percentile(total_seconds, 0.50),
+        "p95_total_seconds": _percentile(total_seconds, 0.95),
+        "average_total_seconds": round(statistics.fmean(total_seconds), 1) if total_seconds else 0,
+        "jobs": operation_jobs,
         "captured_at": now.isoformat(),
     }
 
@@ -927,7 +1015,13 @@ def retry_scoring_job(
     job = db.query(ScoringJob).filter(ScoringJob.id == parsed).first()
     if not job:
         raise HTTPException(status_code=404, detail="Scoring job not found")
-    if not job.staging_path:
+    if not job.staging_path or not cloud_storage.file_exists(job.staging_path):
+        job.status = "failed"
+        job.stage = "recording_missing"
+        job.completed_at = job.completed_at or datetime.utcnow()
+        job.error_message = "The staged recording is no longer available; a new recording is required"
+        job.staging_path = None
+        db.commit()
         raise HTTPException(status_code=409, detail="The staged recording is no longer available")
     stale_seconds = max(
         int(os.getenv("SCORING_TASK_TIME_LIMIT_SECONDS", "900")) + 30,
@@ -2184,7 +2278,12 @@ async def score_performance(
                 logger.error(f"✗ Error in database save block (non-fatal): {db_error}", exc_info=True)
                 import traceback
                 logger.error(f"  Full traceback: {traceback.format_exc()}")
-                # Continue with response even if database save fails
+                # Preserve the real persistence error for the durable worker.
+                # The worker requires session/analysis IDs and will mark the
+                # job failed, but admins need the underlying cause instead of
+                # the generic "no durable result" message.
+                response_data["save_error"] = f"Database save failed: {str(db_error)}"
+                response_data["save_warning"] = "Analysis completed but could not be saved to database."
             mark_request_timing("response_and_persistence_ms")
 
         except Exception as e:
