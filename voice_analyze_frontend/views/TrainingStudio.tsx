@@ -3249,7 +3249,7 @@ const TrainingStudio: React.FC = () => {
                               title='Open graph in full-screen mode'
                             >
                               <Maximize2 size={14} />
-                              Mula
+                              Mulakan Latihan
                             </button>
                           </>
                         )}
@@ -3671,7 +3671,7 @@ const TrainingStudio: React.FC = () => {
                       title='Open recording graph in full-screen mode'
                     >
                       <Maximize2 size={14} />
-                      Mula
+                      Mulakan Rakaman
                     </button>
                   </div>
                 </div>

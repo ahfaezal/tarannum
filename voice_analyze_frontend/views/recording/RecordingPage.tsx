@@ -545,7 +545,7 @@ const RecordingPage: React.FC<{embedded?: boolean}> = ({embedded = false}) => {
                     onClick={() => setIsRecordingFullScreenOpen(true)}
                     className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    <Maximize2 size={16}/> Mula
+                    <Maximize2 size={16}/> {embedded ? "Mulakan Rakaman" : "Mula"}
                   </button>
                 </div>
               </div>
