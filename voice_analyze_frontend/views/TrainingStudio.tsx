@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import Waveform from "../components/Waveform";
 import SegmentPractice from "../components/SegmentPractice";
 import LivePitchGraph from "../components/LivePitchGraph";
@@ -52,8 +52,8 @@ import {
 } from "../services/referenceLibraryService";
 import { sendStudentActivityEvent } from "../services/studentActivityService";
 
-// Recording and assessment are intentionally loaded only by /recording.
-// Keep these lazy while the remaining legacy handlers are extracted safely.
+// Legacy recording helpers remain lazy while the active assessment workspace
+// is presented through Studio Latihan 2.0.
 const Recorder = React.lazy(() => import("../components/Recorder"));
 const ScoreExplanation = React.lazy(() => import("../components/ScoreExplanation"));
 
@@ -175,6 +175,7 @@ const float32ToWavBlob = (
 };
 
 const TrainingStudio: React.FC = () => {
+  const [studioParams] = useSearchParams();
   const { user } = useSelector((state: RootState) => state.auth);
   const userRole = user?.role || 'public';
   const [selectedRef, setSelectedRef] = useState<any>(null);
@@ -325,6 +326,31 @@ const TrainingStudio: React.FC = () => {
   const followModeStreamRef = useRef<MediaStream | null>(null); // Microphone stream for follow mode
   const previousRefIdRef = useRef<string | undefined>(undefined); // Track previous reference ID to detect changes
   const pitchDataRefIdRef = useRef<string | undefined>(undefined); // Track which reference ID the current pitch data belongs to
+
+  useEffect(() => {
+    if (selectedRef?.id && !isCustomUploadRefId(selectedRef.id)) {
+      sessionStorage.setItem("tarannum_active_reference_id", selectedRef.id);
+    }
+  }, [selectedRef?.id]);
+
+  useEffect(() => {
+    const preferredId = studioParams.get("reference") || sessionStorage.getItem("tarannum_active_reference_id");
+    if (!preferredId || !referenceLibrary.length || selectedRef?.id === preferredId) return;
+    const preferred = referenceLibrary.find(reference => reference.id === preferredId);
+    if (!preferred) return;
+    let active = true;
+    referenceLibraryService.getReferenceAudioBlobUrl(preferred.id).then(url => {
+      if (!active) return;
+      setUploadedRefUrl(null);
+      setStudentBlob(null);
+      setAnalysisResult(null);
+      setStudentPitchData([]);
+      setFollowModePitchData([]);
+      setReferencePitchData([]);
+      setSelectedRef({...preferred, url, maqam: preferred.maqam || "Library"});
+    }).catch(() => undefined);
+    return () => { active = false; };
+  }, [referenceLibrary, selectedRef?.id, studioParams]);
   const presetTextSegmentsRef = useRef<any[] | null>(null); // Track preset text segments to preserve them
 
   // WaveSurfer references for synchronized playback
@@ -3023,7 +3049,7 @@ const TrainingStudio: React.FC = () => {
         {/* Main Workspace */}
         <div className='lg:col-span-8 space-y-4 sm:space-y-6 min-w-0'>
           {/* Reference Audio Section */}
-          <div className='bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-slate-100'>
+          <div id='reference-audio' className='scroll-mt-24 bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-slate-100'>
             <div className='flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4'>
               <h2 className='text-base sm:text-lg font-semibold text-emerald-700 flex items-center gap-2'>
                 <span className='flex items-center justify-center w-8 h-8 bg-emerald-100 rounded-lg'>
@@ -3216,14 +3242,6 @@ const TrainingStudio: React.FC = () => {
                               </>
                             ) : null}
                             <button
-                              onClick={clearPracticeGraph}
-                              className='flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors text-red-600 bg-red-50 border border-red-200 hover:bg-red-100'
-                              title='Clear student (red) graph'
-                            >
-                              <X size={14} />
-                              Delete Graph
-                            </button>
-                            <button
                               onClick={() => {
                                 setIsPracticeFullScreenOpen(true);
                               }}
@@ -3231,7 +3249,7 @@ const TrainingStudio: React.FC = () => {
                               title='Open graph in full-screen mode'
                             >
                               <Maximize2 size={14} />
-                              Full Screen
+                              Mula
                             </button>
                           </>
                         )}
@@ -3545,14 +3563,14 @@ const TrainingStudio: React.FC = () => {
             </div>
           </div>
 
-          {/* Recording has moved to /recording so Training stays focused and lighter. */}
+          {/* Studio 2.0 keeps recording in the same user journey while loading it lazily. */}
           <div className='rounded-2xl border border-emerald-200 bg-emerald-50 p-5 sm:p-6'>
             <h2 className='text-lg font-bold text-slate-900'>Sudah bersedia untuk merakam?</h2>
             <p className='mt-2 text-sm text-slate-600'>Teruskan ke halaman Rakaman & Penilaian. Graph latihan tidak akan dimuatkan semula di sana.</p>
             {userRole === 'public' ? (
               <button type='button' onClick={() => setIsRecordingFullScreenOpen(true)} className='mt-4 inline-flex rounded-xl bg-emerald-600 px-5 py-3 text-sm font-semibold text-white'>Start Demo Recording</button>
             ) : (
-              <Link to={`/recording${selectedRef?.id ? `?reference=${encodeURIComponent(selectedRef.id)}&mode=R2` : ""}`} className='mt-4 inline-flex rounded-xl bg-emerald-600 px-5 py-3 text-sm font-semibold text-white'>Sedia untuk Merakam</Link>
+              <Link to={`/training?activity=record${selectedRef?.id ? `&reference=${encodeURIComponent(selectedRef.id)}&mode=R2` : ""}`} className='mt-4 inline-flex rounded-xl bg-emerald-600 px-5 py-3 text-sm font-semibold text-white'>Rakam &amp; Nilai</Link>
             )}
           </div>
 
@@ -3646,14 +3664,6 @@ const TrainingStudio: React.FC = () => {
                   </h3>
                   <div className='flex items-center gap-2'>
                     <button
-                      onClick={clearRecordingGraph}
-                      className='flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors text-red-600 bg-red-50 border border-red-200 hover:bg-red-100'
-                      title='Clear student (red) graph'
-                    >
-                      <X size={14} />
-                      Delete Graph
-                    </button>
-                    <button
                       onClick={() => {
                         setIsRecordingFullScreenOpen(true);
                       }}
@@ -3661,7 +3671,7 @@ const TrainingStudio: React.FC = () => {
                       title='Open recording graph in full-screen mode'
                     >
                       <Maximize2 size={14} />
-                      Full Screen
+                      Mula
                     </button>
                   </div>
                 </div>

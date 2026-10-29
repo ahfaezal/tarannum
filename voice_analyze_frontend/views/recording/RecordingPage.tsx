@@ -56,7 +56,7 @@ const getCompletedModes = (): Set<RecordingMode> => {
   }
 };
 
-const RecordingPage: React.FC = () => {
+const RecordingPage: React.FC<{embedded?: boolean}> = ({embedded = false}) => {
   const [params, setParams] = useSearchParams();
   const initialMode = params.get("mode");
   const participantSessionId = useRef(getParticipantSessionId());
@@ -65,7 +65,7 @@ const RecordingPage: React.FC = () => {
   const recordingTimeRef = useRef(0);
   const recordingPitchCountRef = useRef(0);
   const [references, setReferences] = useState<ReferenceOption[]>([]);
-  const [referenceId, setReferenceId] = useState(params.get("reference") || "");
+  const [referenceId, setReferenceId] = useState(params.get("reference") || sessionStorage.getItem("tarannum_active_reference_id") || "");
   const [mode, setMode] = useState<RecordingMode>(initialMode === "R2" ? "R2" : "R1");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -97,6 +97,10 @@ const RecordingPage: React.FC = () => {
     medianProgress: null,
     bestProgress: null,
   });
+
+  useEffect(() => {
+    if (referenceId) sessionStorage.setItem("tarannum_active_reference_id", referenceId);
+  }, [referenceId]);
 
   useEffect(() => {
     sessionStorage.setItem("tarannum_completed_recording_modes", JSON.stringify([...completedModes]));
@@ -227,8 +231,15 @@ const RecordingPage: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (referenceId) setParams({ reference: referenceId, mode }, { replace: true });
-  }, [referenceId, mode, setParams]);
+    if (!referenceId) return;
+    setParams(current => {
+      const next = new URLSearchParams(current);
+      next.set("reference", referenceId);
+      next.set("mode", mode);
+      if (embedded) next.set("activity", "record");
+      return next;
+    }, { replace: true });
+  }, [embedded, referenceId, mode, setParams]);
 
   useEffect(() => {
     let active = true;
@@ -513,7 +524,7 @@ const RecordingPage: React.FC = () => {
                     onClick={() => setIsRecordingFullScreenOpen(true)}
                     className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    <Maximize2 size={16}/> Fullscreen
+                    <Maximize2 size={16}/> Mula
                   </button>
                 </div>
               </div>
@@ -686,11 +697,11 @@ const RecordingPage: React.FC = () => {
       </div>}
       <div className="mt-5 flex flex-col gap-3 sm:flex-row">
         <button type="button" onClick={reset} className="inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-700 bg-white px-5 py-3 font-semibold text-emerald-800 hover:bg-emerald-50"><RotateCcw size={18}/> {result.recordingMode === "R1" ? "Continue to Progress Recording" : "Record Another Progress Attempt"}</button>
-        <Link to={`/training${referenceId ? `?reference=${encodeURIComponent(referenceId)}` : ""}`} className="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-5 py-3 font-semibold text-slate-700 hover:bg-slate-50">Back to Training</Link>
+        <Link to={`/training?activity=practice${referenceId ? `&reference=${encodeURIComponent(referenceId)}` : ""}`} className="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-5 py-3 font-semibold text-slate-700 hover:bg-slate-50">Latih Semula</Link>
       </div>
     </div>}
 
-    {!result && <Link to={`/training${referenceId ? `?reference=${encodeURIComponent(referenceId)}` : ""}`} className="mt-8 inline-block font-semibold text-emerald-700">← Back to Training</Link>}
+    {!result && !embedded && <Link to={`/training?activity=practice${referenceId ? `&reference=${encodeURIComponent(referenceId)}` : ""}`} className="mt-8 inline-block font-semibold text-emerald-700">← Kembali ke Latihan</Link>}
     <Suspense fallback={null}>
       <Countdown
         isActive={showRecordingCountdown}

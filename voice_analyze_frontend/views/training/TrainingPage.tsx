@@ -1,57 +1,60 @@
-import React, { lazy, Suspense, useState } from "react";
-import { Headphones, Mic2, PlayCircle, ShieldCheck } from "lucide-react";
+import React, { lazy, Suspense, useEffect } from "react";
+import { Headphones, Mic2, Radio } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
 
 const TrainingWorkspace = lazy(() => import("../TrainingStudio"));
+const RecordingWorkspace = lazy(() => import("../recording/RecordingPage"));
+
+type StudioActivity = "listen" | "practice" | "record";
 
 const WorkspaceLoader = () => (
   <div className="flex min-h-[55vh] flex-col items-center justify-center gap-4" role="status">
     <div className="h-9 w-9 animate-spin rounded-full border-4 border-emerald-500 border-t-transparent" />
-    <p className="text-sm font-medium text-slate-600">Menyediakan Training Studio…</p>
+    <p className="text-sm font-medium text-slate-600">Menyediakan Studio Latihan 2.0…</p>
   </div>
 );
 
+const activities: Array<{id: StudioActivity; title: string; detail: string; icon: React.ComponentType<{size?: number}>}> = [
+  {id: "listen", title: "Dengar", detail: "Dengar dan perhatikan alunan Qari", icon: Headphones},
+  {id: "practice", title: "Latih", detail: "Ikuti bacaan sambil melihat nada", icon: Mic2},
+  {id: "record", title: "Rakam & Nilai", detail: "Rakam bacaan untuk mendapatkan markah", icon: Radio},
+];
+
 const TrainingPage: React.FC = () => {
-  const [workspaceStarted, setWorkspaceStarted] = useState(false);
+  const [params, setParams] = useSearchParams();
+  const requested = params.get("activity");
+  const activity: StudioActivity = requested === "listen" || requested === "record" ? requested : "practice";
 
-  if (workspaceStarted) {
-    return <Suspense fallback={<WorkspaceLoader />}><TrainingWorkspace /></Suspense>;
-  }
+  useEffect(() => {
+    if (!requested || activity === "record") return;
+    const timer = window.setTimeout(() => {
+      document.getElementById(activity === "listen" ? "reference-audio" : "training-workspace")?.scrollIntoView({behavior: "smooth", block: "start"});
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [activity, requested]);
 
-  return (
-    <section className="mx-auto max-w-5xl px-4 py-10 sm:px-6 sm:py-16">
-      <p className="text-sm font-bold tracking-wide text-emerald-700">PERSEDIAAN LATIHAN</p>
-      <h1 className="mt-3 max-w-3xl text-3xl font-bold leading-tight text-slate-950 sm:text-5xl">
-        Mulakan studio hanya apabila anda bersedia untuk berlatih.
-      </h1>
-      <p className="mt-5 max-w-2xl text-lg leading-8 text-slate-600">
-        Audio rujukan, waveform dan graph pitch belum dimuatkan pada halaman ini. Ini menjadikan akses awal lebih pantas dan mengurangkan beban serentak.
-      </p>
+  const selectActivity = (next: StudioActivity) => {
+    const updated = new URLSearchParams(params);
+    updated.set("activity", next);
+    const savedReference = sessionStorage.getItem("tarannum_active_reference_id");
+    if (savedReference) updated.set("reference", savedReference);
+    setParams(updated);
+  };
 
-      <div className="mt-10 grid gap-4 sm:grid-cols-3">
-        {[
-          [Headphones, "Gunakan headset", "Pastikan Jabra Evolve 30 disambungkan."],
-          [Mic2, "Semak mikrofon", "Benarkan mikrofon hanya apabila mula merakam."],
-          [ShieldCheck, "Ruang yang sesuai", "Kurangkan bunyi persekitaran sebelum latihan."],
-        ].map(([Icon, title, description]) => {
-          const ItemIcon = Icon as React.ComponentType<{ size?: number; className?: string }>;
-          return <div key={String(title)} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <ItemIcon size={24} className="text-emerald-600" />
-            <h2 className="mt-4 font-bold text-slate-900">{String(title)}</h2>
-            <p className="mt-2 text-sm leading-6 text-slate-600">{String(description)}</p>
-          </div>;
-        })}
+  return <section className="mx-auto max-w-[1500px] px-3 py-4 sm:px-6 sm:py-6">
+    <div className="rounded-3xl border border-emerald-100 bg-gradient-to-r from-emerald-950 to-teal-800 p-5 text-white shadow-lg sm:p-7">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div><p className="text-xs font-black uppercase tracking-[0.2em] text-emerald-200">Studio Latihan 2.0</p><h1 className="mt-2 text-2xl font-black sm:text-4xl">Dengar, latih dan rakam di satu tempat.</h1><p className="mt-2 max-w-3xl text-sm leading-6 text-emerald-50 sm:text-base">Pilih Qari dan rujukan sekali. Pilihan anda dikekalkan apabila bertukar aktiviti.</p></div>
+        <span className="rounded-full bg-white/15 px-4 py-2 text-xs font-bold">VERSI 2.0</span>
       </div>
-
-      <button
-        type="button"
-        onClick={() => setWorkspaceStarted(true)}
-        className="mt-8 inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-6 py-3 font-semibold text-white shadow-lg shadow-emerald-600/20 hover:bg-emerald-700"
-      >
-        <PlayCircle size={20} /> Mula Training Studio
-      </button>
-      <p className="mt-3 text-sm text-slate-500">Kandungan qari dan audio rujukan hanya akan diminta selepas butang ini ditekan.</p>
-    </section>
-  );
+      <div className="mt-6 grid gap-3 md:grid-cols-3" aria-label="Pilih aktiviti Studio Latihan">
+        {activities.map(item => { const Icon = item.icon; const active = activity === item.id; return <button key={item.id} type="button" aria-pressed={active} onClick={() => selectActivity(item.id)} className={`flex min-h-24 items-center gap-4 rounded-2xl border p-4 text-left transition ${active ? "border-white bg-white text-slate-950 shadow-xl" : "border-white/20 bg-white/10 text-white hover:bg-white/15"}`}><span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full ${active ? "bg-emerald-100 text-emerald-800" : "bg-white/15"}`}><Icon size={23}/></span><span><span className="block text-lg font-black">{item.title}</span><span className={`mt-1 block text-sm ${active ? "text-slate-600" : "text-emerald-50"}`}>{item.detail}</span></span></button>; })}
+      </div>
+    </div>
+    <Suspense fallback={<WorkspaceLoader />}>
+      {activity === "record" ? <RecordingWorkspace embedded /> : <TrainingWorkspace />}
+    </Suspense>
+  </section>;
 };
 
 export default TrainingPage;
