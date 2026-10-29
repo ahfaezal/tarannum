@@ -79,6 +79,7 @@ const RecordingPage: React.FC<{embedded?: boolean}> = ({embedded = false}) => {
   const [ayahTiming, setAyahTiming] = useState<AyahTiming[]>([]);
   const [loadingReferencePitch, setLoadingReferencePitch] = useState(false);
   const [referencePitchError, setReferencePitchError] = useState<string | null>(null);
+  const [showReferencePicker, setShowReferencePicker] = useState(false);
   const [showRecordingCountdown, setShowRecordingCountdown] = useState(false);
   const [isRecordingFullScreenOpen, setIsRecordingFullScreenOpen] = useState(false);
   const [fullScreenZoom, setFullScreenZoom] = useState(1);
@@ -439,8 +440,21 @@ const RecordingPage: React.FC<{embedded?: boolean}> = ({embedded = false}) => {
     { number: 2, label: "Record", detail: "Follow the Qari graph silently" },
     { number: 3, label: "Result", detail: "Review your assessment" },
   ];
+  const completedRecordingCount = Math.min(3, (assessmentJourney.baseline ? 1 : 0) + assessmentJourney.progressCount);
+  const displayedRecordingNumber = result
+    ? Math.max(1, completedRecordingCount)
+    : Math.min(3, completedRecordingCount + 1);
 
   return <section className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
+    {embedded ? <>
+      <div className="flex flex-col gap-4 rounded-2xl border border-emerald-200 bg-white p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+        <div><p className="text-xs font-black uppercase tracking-[0.16em] text-emerald-700">Rujukan aktif</p><h2 className="mt-1 text-xl font-black text-slate-950">{selected?.title || (loading ? "Memuatkan rujukan…" : "Pilih rujukan latihan")}</h2><p className="mt-1 text-sm text-slate-600">Pilihan daripada aktiviti Dengar dan Latih digunakan secara automatik.</p></div>
+        <div className="flex items-center gap-3"><span className="rounded-full bg-emerald-100 px-4 py-2 text-sm font-black text-emerald-900">Rakaman {displayedRecordingNumber} daripada 3</span><button type="button" onClick={() => setShowReferencePicker(value => !value)} className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-bold text-slate-700">{showReferencePicker ? "Tutup" : "Tukar"}</button></div>
+      </div>
+      {showReferencePicker && <label className="mt-3 block rounded-2xl border bg-white p-4 text-sm font-semibold">Pilih rujukan lain
+        <select disabled={loading || isRecording} value={referenceId} onChange={(event) => { setReferenceId(event.target.value); setShowReferencePicker(false); recordingAttemptRef.current = 0; setRecordingAttempt(0); setCompletedModes(new Set()); setAssessmentJourney({baseline:null, progressCount:0, medianProgress:null, bestProgress:null}); reset(); }} className="mt-2 block w-full rounded-xl border border-slate-300 bg-white p-3 font-normal"><option value="">{loading ? "Memuatkan…" : "Pilih rujukan"}</option>{references.map(reference => <option key={reference.id} value={reference.id}>{reference.title}</option>)}</select>
+      </label>}
+    </> : <>
     <p className="font-semibold tracking-wide text-emerald-700">RECORDING & ASSESSMENT</p>
     <h1 className="mt-3 text-3xl font-bold text-slate-950">Record when you are ready to assess your progress.</h1>
     <p className="mt-3 max-w-3xl text-slate-600">Follow the Qari pitch graph as a silent visual guide. Your recording is assessed using Experimental Score V2.3.</p>
@@ -499,11 +513,12 @@ const RecordingPage: React.FC<{embedded?: boolean}> = ({embedded = false}) => {
         <RotateCcw size={16}/> Start New Assessment
       </button>}
     </div>
+    </>}
 
     <div className="mt-6 rounded-2xl border bg-white p-6">
-      <p className="text-xs font-bold uppercase tracking-wider text-emerald-700">Step 2</p>
-      <h2 className="mt-1 text-xl font-bold">Record Recitation — {mode === "R1" ? "Baseline" : "Progress"}</h2>
-      <p className="mt-2 text-sm text-slate-600">{modeDescription[mode]}</p>
+      <p className="text-xs font-bold uppercase tracking-wider text-emerald-700">{embedded ? `Rakaman ${displayedRecordingNumber} daripada 3` : "Step 2"}</p>
+      <h2 className="mt-1 text-xl font-bold">{embedded ? "Rakam bacaan anda" : `Record Recitation — ${mode === "R1" ? "Baseline" : "Progress"}`}</h2>
+      <p className="mt-2 text-sm text-slate-600">{embedded ? "Ikuti graf rujukan Qari. Rakaman akan dinilai secara automatik selepas selesai." : modeDescription[mode]}</p>
       {error && <div className="mt-4 rounded-xl bg-red-50 p-4 text-sm text-red-800">{error}</div>}
       {!referenceId
         ? <p className="mt-6 rounded-xl bg-amber-50 p-4 text-amber-900">Select a reference audio first.</p>
@@ -511,8 +526,8 @@ const RecordingPage: React.FC<{embedded?: boolean}> = ({embedded = false}) => {
             <div className="mt-6 overflow-hidden rounded-xl border border-slate-200 bg-white p-3">
               <div className="mb-3 flex items-center justify-between gap-3">
                 <div>
-                  <p className="font-semibold text-slate-900">Qari and Student Pitch Comparison</p>
-                  <p className="text-xs text-slate-500">The Qari graph is a visual guide — Qari audio is not played</p>
+                  <p className="font-semibold text-slate-900">Graf Qari dan bacaan anda</p>
+                  <p className="text-xs text-slate-500">Hijau: rujukan Qari · Merah: bacaan anda</p>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className={`rounded-full px-3 py-1 text-xs font-semibold ${isRecording ? "bg-red-100 text-red-700" : "bg-slate-100 text-slate-600"}`}>
@@ -578,9 +593,9 @@ const RecordingPage: React.FC<{embedded?: boolean}> = ({embedded = false}) => {
     </div>
 
     {blob && mode === "R2" && !result && <div className="mt-6 rounded-2xl border border-blue-200 bg-blue-50 p-6">
-      <p className="text-xs font-bold uppercase tracking-wider text-blue-700">Step 3</p>
-      <h2 className="mt-1 text-xl font-bold text-blue-950">Progress · Automatic Scoring</h2>
-      <p className="mt-2 text-sm text-blue-900">Rakaman dihantar untuk scoring secara automatik. Anda tidak perlu menekan butang Score.</p>
+      {!embedded && <p className="text-xs font-bold uppercase tracking-wider text-blue-700">Step 3</p>}
+      <h2 className="mt-1 text-xl font-bold text-blue-950">{embedded ? "Sedang menilai bacaan…" : "Progress · Automatic Scoring"}</h2>
+      <p className="mt-2 text-sm text-blue-900">Rakaman dihantar untuk penilaian secara automatik. Sila kekalkan halaman ini terbuka.</p>
       {submitting && scoringStage !== "idle" && <div className="mt-5 rounded-xl border border-blue-200 bg-blue-50 p-4" role="status" aria-live="polite">
         <div className="flex items-center justify-between gap-4 text-sm font-semibold text-blue-950">
           <span>{scoringJobProgress?.status === "queued"
@@ -593,15 +608,15 @@ const RecordingPage: React.FC<{embedded?: boolean}> = ({embedded = false}) => {
         <div className="mt-3 h-2 overflow-hidden rounded-full bg-blue-100">
           <div className="h-full w-1/3 animate-pulse rounded-full bg-blue-600" />
         </div>
-        {scoringJobProgress?.jobId && <p className="mt-3 break-all text-xs font-medium text-blue-900">Job ID: {scoringJobProgress.jobId}</p>}
+        {!embedded && scoringJobProgress?.jobId && <p className="mt-3 break-all text-xs font-medium text-blue-900">Job ID: {scoringJobProgress.jobId}</p>}
         <p className="mt-2 text-xs text-blue-800">{scoringJobProgress?.stage === "reconnecting" ? "Your recording is safe. The server is recovering and this page will reconnect automatically." : "Once a Job ID appears, your recording is safely acknowledged. Keep this page open while scoring finishes."}</p>
-        {scoringCapacity && <p className="mt-1 text-xs text-blue-700">Scoring service: {scoringCapacity.active}/{scoringCapacity.limit} active{scoringCapacity.waiting > 0 ? ` · ${scoringCapacity.waiting} waiting` : ""}</p>}
+        {!embedded && scoringCapacity && <p className="mt-1 text-xs text-blue-700">Scoring service: {scoringCapacity.active}/{scoringCapacity.limit} active{scoringCapacity.waiting > 0 ? ` · ${scoringCapacity.waiting} waiting` : ""}</p>}
       </div>}
     </div>}
 
     {blob && mode === "R1" && !result && <div className="mt-6 rounded-2xl border border-blue-200 bg-blue-50 p-6">
-      <h2 className="text-xl font-bold text-blue-950">Baseline — Automatic Submission</h2>
-      <p className="mt-2 text-sm text-blue-900">The original recording is not played back, preserving baseline integrity.</p>
+      <h2 className="text-xl font-bold text-blue-950">{embedded ? "Sedang menilai bacaan…" : "Baseline — Automatic Submission"}</h2>
+      <p className="mt-2 text-sm text-blue-900">{embedded ? "Rakaman sedang dihantar untuk penilaian automatik. Sila kekalkan halaman ini terbuka." : "The original recording is not played back, preserving baseline integrity."}</p>
       {submitting
         ? <div className="mt-4" role="status" aria-live="polite">
             <div className="flex items-center justify-between gap-4 font-semibold text-blue-900">
@@ -615,26 +630,26 @@ const RecordingPage: React.FC<{embedded?: boolean}> = ({embedded = false}) => {
             <div className="mt-3 h-2 overflow-hidden rounded-full bg-blue-100">
               <div className="h-full w-1/3 animate-pulse rounded-full bg-blue-700" />
             </div>
-            {scoringJobProgress?.jobId && <p className="mt-3 break-all text-xs font-medium text-blue-900">Job ID: {scoringJobProgress.jobId}</p>}
+            {!embedded && scoringJobProgress?.jobId && <p className="mt-3 break-all text-xs font-medium text-blue-900">Job ID: {scoringJobProgress.jobId}</p>}
             <p className="mt-2 text-xs text-blue-800">{scoringJobProgress?.stage === "reconnecting" ? "Your baseline recording is safe. The server is recovering and this page will reconnect automatically." : "Once a Job ID appears, the original recording is safely acknowledged and will not be uploaded again."}</p>
-            {scoringCapacity && <p className="mt-1 text-xs text-blue-700">Scoring service: {scoringCapacity.active}/{scoringCapacity.limit} active{scoringCapacity.waiting > 0 ? ` · ${scoringCapacity.waiting} waiting` : ""}</p>}
+            {!embedded && scoringCapacity && <p className="mt-1 text-xs text-blue-700">Scoring service: {scoringCapacity.active}/{scoringCapacity.limit} active{scoringCapacity.waiting > 0 ? ` · ${scoringCapacity.waiting} waiting` : ""}</p>}
           </div>
         : r1TechnicalError
         ? <div className="mt-4">
-            <p className="text-sm font-medium text-blue-950">Technical validation failed: {r1TechnicalError}</p>
-            <button type="button" onClick={() => setIsRecordingFullScreenOpen(true)} className="mt-3 rounded-xl bg-blue-700 px-5 py-3 font-semibold text-white">Repeat Technical Capture</button>
+            <p className="text-sm font-medium text-blue-950">Rakaman belum dapat dinilai: {r1TechnicalError}</p>
+            <button type="button" onClick={() => setIsRecordingFullScreenOpen(true)} className="mt-3 rounded-xl bg-blue-700 px-5 py-3 font-semibold text-white">Rakam Semula</button>
           </div>
         : error
-        ? <button type="button" onClick={() => submitAudio(blob)} className="mt-4 rounded-xl bg-blue-700 px-5 py-3 font-semibold text-white">Retry the same file</button>
+        ? <button type="button" onClick={() => submitAudio(blob)} className="mt-4 rounded-xl bg-blue-700 px-5 py-3 font-semibold text-white">Cuba Hantar Semula</button>
         : null}
     </div>}
 
     {result && <div className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50 p-6">
       <div className="flex flex-wrap items-center justify-between gap-3 text-emerald-800">
-        <div className="flex items-center gap-3"><CheckCircle2/><div><p className="text-xs font-bold uppercase tracking-wider">Assessment complete</p><h2 className="text-xl font-bold">Experimental Score V2.3</h2></div></div>
+        <div className="flex items-center gap-3"><CheckCircle2/><div><p className="text-xs font-bold uppercase tracking-wider">{embedded ? `Rakaman ${displayedRecordingNumber} selesai` : "Assessment complete"}</p><h2 className="text-xl font-bold">{embedded ? "Keputusan bacaan anda" : "Experimental Score V2.3"}</h2></div></div>
         <span className="rounded-full bg-white px-4 py-2 text-sm font-bold text-emerald-800 shadow-sm">{Math.round(result.normalizedScore ?? result.score)}% overall</span>
       </div>
-      <p className="mt-3 max-w-2xl text-slate-700">This score supports practice and is not an official result or participant ranking.</p>
+      <p className="mt-3 max-w-2xl text-slate-700">Markah ini membantu mengenal pasti kekuatan dan fokus latihan seterusnya.</p>
       {result.courseCredits?.map((credit) => (
         <div
           key={credit.enrollment_id}
@@ -670,23 +685,23 @@ const RecordingPage: React.FC<{embedded?: boolean}> = ({embedded = false}) => {
             ]}
           />
         </Suspense>
-        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+        {!embedded && <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
           <strong>How the final score is formed:</strong> V2.3 applies weighted graph metrics, assessment-validity checks and any applicable score cap. Component scores are diagnostic indicators and are not averaged equally.
-        </div>
+        </div>}
       </div>}
-      <details className="mt-5 rounded-xl border border-emerald-200 bg-white px-4 py-3 text-sm text-slate-600">
+      {!embedded && <details className="mt-5 rounded-xl border border-emerald-200 bg-white px-4 py-3 text-sm text-slate-600">
         <summary className="cursor-pointer font-semibold text-slate-800">Technical details</summary>
         <dl className="mt-3 grid gap-3 sm:grid-cols-2">
           <div><dt className="font-semibold">Recording ID</dt><dd className="break-all">{result.sessionId || "—"}</dd></div>
           <div><dt className="font-semibold">Assessment metadata</dt><dd>{(result.recordingMode || mode) === "R1" ? "Baseline" : "Progress"} · {result.scoringVersion || "V2.3"} · Attempt {result.recordingAttempt || recordingAttempt}</dd></div>
         </dl>
-      </details>
+      </details>}
       {result.integrityStatus === "complete"
         ? <p className="mt-4 text-sm font-medium text-emerald-800">Data integrity verified: database, audio and score data are complete.</p>
         : result.integrityStatus
         ? <p className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm font-medium text-amber-900">The score is available, but secure data storage requires attention. Status: {result.integrityStatus}.</p>
         : null}
-      {assessmentJourney.baseline && <div className="mt-5 rounded-xl border border-emerald-200 bg-white p-4">
+      {!embedded && assessmentJourney.baseline && <div className="mt-5 rounded-xl border border-emerald-200 bg-white p-4">
         <h3 className="font-bold text-slate-900">Assessment Journey</h3>
         <div className="mt-3 grid gap-3 text-sm sm:grid-cols-3">
           <div><p className="text-slate-500">Baseline</p><p className="text-xl font-bold">{Math.round(assessmentJourney.baseline.score)}%</p></div>
@@ -696,7 +711,7 @@ const RecordingPage: React.FC<{embedded?: boolean}> = ({embedded = false}) => {
         <p className="mt-2 text-xs text-slate-500">All {assessmentJourney.progressCount} progress attempts remain securely stored. Median and best are selected from actual recordings.</p>
       </div>}
       <div className="mt-5 flex flex-col gap-3 sm:flex-row">
-        <button type="button" onClick={reset} className="inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-700 bg-white px-5 py-3 font-semibold text-emerald-800 hover:bg-emerald-50"><RotateCcw size={18}/> {result.recordingMode === "R1" ? "Continue to Progress Recording" : "Record Another Progress Attempt"}</button>
+        <button type="button" onClick={reset} className="inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-700 bg-white px-5 py-3 font-semibold text-emerald-800 hover:bg-emerald-50"><RotateCcw size={18}/> {embedded ? (completedRecordingCount >= 3 ? "Rakam Semula" : "Rakam Seterusnya") : result.recordingMode === "R1" ? "Continue to Progress Recording" : "Record Another Progress Attempt"}</button>
         <Link to={`/training?activity=practice${referenceId ? `&reference=${encodeURIComponent(referenceId)}` : ""}`} className="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-5 py-3 font-semibold text-slate-700 hover:bg-slate-50">Latih Semula</Link>
       </div>
     </div>}
