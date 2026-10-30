@@ -1,4 +1,5 @@
 import React from "react";
+import { MessageCircle } from "lucide-react";
 import { useI18n } from "../../i18n";
 
 const ContactPage: React.FC = () => {
@@ -10,6 +11,6 @@ const ContactPage: React.FC = () => {
     title: "Contact Us",
     description: "For enquiries about training sessions, accounts or using Tarannum.ai, contact Tarannum Technologies. An in-app support form will be added once the monitoring system is available.",
   };
-  return <section className="mx-auto max-w-4xl px-4 py-16 sm:px-6"><h1 className="text-4xl font-bold">{content.title}</h1><p className="mt-5 text-lg leading-8 text-slate-600">{content.description}</p><div className="mt-8 rounded-2xl border bg-white p-6"><p className="font-bold">Tarannum Technologies</p><p className="mt-2 text-slate-600">Bandar Baru Bangi, Selangor</p></div></section>;
+  return <section className="mx-auto max-w-4xl px-4 py-16 sm:px-6"><h1 className="text-4xl font-bold">{content.title}</h1><p className="mt-5 text-lg leading-8 text-slate-600">{content.description}</p><div className="mt-8 rounded-2xl border bg-white p-6"><p className="font-bold">Tarannum Technologies</p><p className="mt-2 text-slate-600">Bandar Baru Bangi, Selangor</p><a href="https://wa.me/60199771983" target="_blank" rel="noreferrer" className="mt-5 inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-3 font-bold text-white transition hover:bg-emerald-700" aria-label="Hubungi Tarannum Technologies melalui WhatsApp di 019-977 1983"><MessageCircle size={19}/> WhatsApp 019-977 1983</a></div></section>;
 };
 export default ContactPage;
