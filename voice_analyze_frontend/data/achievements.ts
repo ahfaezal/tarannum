@@ -28,7 +28,6 @@ export type AchievementRecord = {
   facts: Array<{ label: string; value: string }>;
   gallery: AchievementGalleryItem[];
   certificateImage: string;
-  certificatePdf: string;
 };
 
 const base = "/achievements/knovasi-2026";
@@ -80,7 +79,6 @@ export const achievements: AchievementRecord[] = [
       { src: `${base}/20261001_092217.webp`, alt: "Wakil Tarannum.ai bersama bahan pameran", caption: "Persediaan pameran dan pembentangan Tarannum.ai." },
     ],
     certificateImage: `${base}/sijil-pingat-emas-knovasi-2026.webp`,
-    certificatePdf: `${base}/sijil-pingat-emas-knovasi-2026.pdf`,
   },
 ];
 
