@@ -15,6 +15,8 @@ const DemoInteractivePage = lazy(() => import("./views/public/DemoInteractivePag
 const ContactPage = lazy(() => import("./views/public/ContactPage"));
 const MuazzinCoursePage = lazy(() => import("./views/public/MuazzinCoursePage"));
 const ProfessionalAzanCoursePage = lazy(() => import("./views/public/ProfessionalAzanCoursePage"));
+const ProgramsPage = lazy(() => import("./views/public/ProgramsPage"));
+const ProgramDetailPage = lazy(() => import("./views/public/ProgramDetailPage"));
 const VerifyCertificatePage = lazy(() => import("./views/public/VerifyCertificatePage"));
 const AssetPage = lazy(() => import("./views/public/AssetPage"));
 const Login = lazy(() => import("./components/Login"));
@@ -59,7 +61,7 @@ const App: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { isAuthenticated } = useSelector((state: RootState) => state.auth);
-  const isLightweightPublicPage = ["/", "/about", "/how-to-use", "/demo", "/demo/interactive", "/contact"].includes(location.pathname) || location.pathname.startsWith("/verify/") || /^\/TAR-/i.test(location.pathname);
+  const isLightweightPublicPage = ["/", "/about", "/how-to-use", "/demo", "/demo/interactive", "/contact", "/program"].includes(location.pathname) || location.pathname.startsWith("/program/") || location.pathname.startsWith("/verify/") || /^\/TAR-/i.test(location.pathname);
 
   useEffect(() => {
     if (!isLightweightPublicPage && !isAuthenticated && localStorage.getItem("tarannum_auth_token")) {
@@ -77,6 +79,8 @@ const App: React.FC = () => {
           <Route path="/demo" element={<DemoPage />} />
           <Route path="/demo/interactive" element={<DemoInteractivePage />} />
           <Route path="/contact" element={<ContactPage />} />
+          <Route path="/program" element={<ProgramsPage />} />
+          <Route path="/program/:slug" element={<ProgramDetailPage />} />
           <Route path="/kursus-pemantapan-muazzin/*" element={<MuazzinCoursePage />} />
           <Route path="/kursus-profesional-azan/*" element={<ProfessionalAzanCoursePage />} />
           <Route path="/verify/:token" element={<VerifyCertificatePage />} />
