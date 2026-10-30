@@ -25,8 +25,57 @@ export type ProgramRecord = {
 
 const base = "/programs/kursus-profesional-azan-2026";
 const alAbrarBase = "/programs/bengkel-tarannum-al-fatihah-kelantan-2026";
+const muazzinBase = "/programs/kursus-pemantapan-muazzin-2026";
 
 export const programs: ProgramRecord[] = [
+  {
+    slug: "kursus-pemantapan-muazzin-bandar-seri-putra-2026",
+    title: "Kursus Pemantapan Muazzin",
+    eyebrow: "REKOD PROGRAM TARANNUM.AI",
+    date: "2026-09-19",
+    dateLabel: "19 September 2026",
+    location: "Masjid Bandar Seri Putra, Bangi",
+    facilitator: "Ustaz Dzikri bin Mohd Nor",
+    category: "Azan & Pemantapan Muazzin",
+    excerpt: "Program latihan muazzin yang menggabungkan bimbingan teknik azan, latihan praktikal dan teknologi Tarannum.ai.",
+    introduction: [
+      "Kursus Pemantapan Muazzin dirangka untuk membantu muazzin masjid dan individu yang ingin mempelajari azan meningkatkan kemahiran melalui latihan yang tersusun.",
+      "Peserta menerima bimbingan teknik azan, membuat latihan praktikal menggunakan iPad dan headset, serta diperkenalkan kepada analisis suara dan maklum balas dalam Tarannum.ai. Seramai 22 peserta direkodkan dalam senarai pendaftaran program.",
+    ],
+    heroImage: `${muazzinBase}/20260919_161620.webp`,
+    heroAlt: "Foto berkumpulan Kursus Pemantapan Muazzin di Masjid Bandar Seri Putra",
+    facts: [
+      { label: "Tarikh", value: "Sabtu, 19 September 2026" },
+      { label: "Lokasi", value: "Masjid Bandar Seri Putra, Bangi" },
+      { label: "Pembimbing", value: "Ustaz Dzikri bin Mohd Nor" },
+      { label: "Kepakaran", value: "Bilal Masjid Bandar Seri Putra & Jurulatih Akademi Muazzin Malaysia" },
+    ],
+    journey: [
+      { time: "Sesi 1", title: "Asas dan teknik azan", description: "Penerangan tentang suara, pernafasan, sebutan dan pembawaan azan." },
+      { time: "Sesi 2", title: "Demonstrasi pembimbing", description: "Contoh azan dan penjelasan teknik oleh pembimbing program." },
+      { time: "Sesi 3", title: "Latihan individu", description: "Peserta mencuba bacaan menggunakan peranti dan headset yang disediakan." },
+      { time: "Sesi 4", title: "Analisis dan maklum balas", description: "Rakaman peserta disemak untuk membantu mengenal pasti ruang penambahbaikan." },
+      { time: "Penutup", title: "Rumusan dan hala tuju latihan", description: "Panduan meneruskan latihan agar suara muazzin lebih bermakna untuk ummah." },
+    ],
+    outcomes: [
+      { value: "22", label: "Peserta berdaftar", description: "Penyertaan muazzin dan individu yang berminat meningkatkan kemahiran azan." },
+      { value: "1 hari", label: "Latihan menyeluruh", description: "Gabungan penerangan, demonstrasi, praktikal dan maklum balas." },
+      { value: "3 elemen", label: "Ilmu, teknologi & Qari", description: "Latihan dibina melalui ilmu, bantuan teknologi dan bimbingan pembimbing." },
+    ],
+    gallery: [
+      { src: `${muazzinBase}/poster.webp`, alt: "Poster rasmi Kursus Pemantapan Muazzin", caption: "Poster rasmi Kursus Pemantapan Muazzin 2026." },
+      { src: `${muazzinBase}/20260919_094147.webp`, alt: "Peserta mengikuti penerangan Kursus Pemantapan Muazzin", caption: "Sesi pengenalan dan penerangan teknik azan." },
+      { src: `${muazzinBase}/20260919_094219.webp`, alt: "Pembimbing menyampaikan latihan kepada peserta", caption: "Bimbingan bersemuka bersama peserta kursus." },
+      { src: `${muazzinBase}/20260919_100359.webp`, alt: "Peserta bersedia untuk latihan praktikal", caption: "Persediaan peserta sebelum sesi amali." },
+      { src: `${muazzinBase}/20260919_140056.webp`, alt: "Peserta menggunakan iPad untuk latihan azan", caption: "Latihan menggunakan iPad dan paparan Tarannum.ai." },
+      { src: `${muazzinBase}/20260919_140224.webp`, alt: "Peserta menjalani rakaman suara", caption: "Rakaman suara individu menggunakan headset." },
+      { src: `${muazzinBase}/20260919_140414.webp`, alt: "Latihan azan individu dalam kelas", caption: "Peserta mencuba bacaan secara individu." },
+      { src: `${muazzinBase}/20260919_152524.webp`, alt: "Pembimbing memberi maklum balas kepada peserta", caption: "Maklum balas terus selepas latihan rakaman." },
+      { src: `${muazzinBase}/20260919_152702.webp`, alt: "Suasana latihan praktikal Kursus Muazzin", caption: "Sesi praktikal dilaksanakan dalam kumpulan kecil." },
+      { src: `${muazzinBase}/20260919_152817.webp`, alt: "Peserta menyemak latihan pada peranti", caption: "Peserta menyemak semula latihan dan kemajuan." },
+      { src: `${muazzinBase}/20260919_161448.webp`, alt: "Foto berkumpulan peserta Kursus Pemantapan Muazzin", caption: "Kenangan bersama peserta dan pembimbing program." },
+    ],
+  },
   {
     slug: "bengkel-tarannum-al-fatihah-nahawand-kelantan-2026",
     title: "Bengkel Tarannum Nahawand Surah Al-Fatihah",
