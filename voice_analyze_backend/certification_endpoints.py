@@ -891,10 +891,8 @@ def _competency_eligibility_rows(db: Session, student_id: UUID) -> list[dict]:
         payment = db.query(AssessmentPayment).filter(AssessmentPayment.session_id == session.id).first()
         attended = bool(enrollment and enrollment.attendance_status == "attended")
         practice_complete = bool(enrollment and (
-            enrollment.eligibility_override or (
-                (enrollment.required_recording_count or 0) > 0
-                and (enrollment.valid_recording_count or 0) >= enrollment.required_recording_count
-            )
+            (enrollment.required_recording_count or 0) > 0
+            and (enrollment.valid_recording_count or 0) >= enrollment.required_recording_count
         ))
         can_submit = bool((course and attended and practice_complete) or not course)
         if not course:
@@ -966,7 +964,8 @@ def admin_student_flow_preview(user_id: UUID, admin: User = Depends(get_current_
             "valid_recording_count": valid,
             "display_valid_recording_count": min(valid, required),
             "remaining_recording_count": max(0, required - valid),
-            "eligible": enrollment.attendance_status == "attended" and (
+            "eligible": enrollment.attendance_status == "attended" and valid >= required,
+            "attendance_certificate_eligible": enrollment.attendance_status == "attended" and (
                 valid >= required or bool(enrollment.eligibility_override)
             ),
             "eligibility_override": bool(enrollment.eligibility_override),

@@ -274,13 +274,19 @@ def recalculate_enrollment(db: Session, enrollment: CourseEnrollment, actor_id=N
 
     old_count = enrollment.valid_recording_count or 0
     actual_valid_count = len(unique)
-    credited_count = required if enrollment.eligibility_override else actual_valid_count
+    # An override releases the attendance certificate only. It must never
+    # manufacture practice repetitions or qualify a student for competency.
+    credited_count = actual_valid_count
     enrollment.required_recording_count = required
     enrollment.valid_recording_count = credited_count
     enrollment.credited_practice_seconds = min(credited_count, required) * int(math.ceil(reference.duration))
-    eligible = enrollment.attendance_status == "attended" and credited_count >= required
+    practice_complete = credited_count >= required
+    attendance_certificate_eligible = (
+        enrollment.attendance_status == "attended"
+        and (practice_complete or bool(enrollment.eligibility_override))
+    )
     certificate = None
-    if eligible:
+    if attendance_certificate_eligible:
         if not enrollment.practice_completed_at:
             enrollment.practice_completed_at = datetime.utcnow()
         student = db.query(User).filter(User.id == enrollment.student_id).first()
@@ -332,7 +338,8 @@ def recalculate_enrollment(db: Session, enrollment: CourseEnrollment, actor_id=N
         "minimum_recording_duration_seconds": round(minimum_duration, 1),
         "valid_recording_count": credited_count,
         "remaining_recording_count": max(0, required - credited_count),
-        "eligible": eligible,
+        "eligible": attendance_certificate_eligible,
+        "practice_complete": practice_complete,
         "eligibility_override": bool(enrollment.eligibility_override),
         "certificate_id": str(certificate.id) if certificate else None,
         "deadline": deadline.isoformat(),
@@ -370,7 +377,13 @@ def submit_competency_application(db: Session, student: User, session_id, certif
         raise ValueError('Enrollment in a managed course is required for competency assessment')
     enrollment = db.query(CourseEnrollment).filter(CourseEnrollment.course_id == course.id,
         CourseEnrollment.student_id == student.id).first()
-    if not enrollment or not recalculate_enrollment(db, enrollment, actor_id=student.id)['eligible']:
+    progress = recalculate_enrollment(db, enrollment, actor_id=student.id) if enrollment else None
+    if (
+        not enrollment
+        or enrollment.attendance_status != "attended"
+        or not progress
+        or not progress["practice_complete"]
+    ):
         raise ValueError('Verified attendance and 60 minutes of course practice are required')
     expected = 'competency_azan' if course.certificate_category == 'azan' else 'competency_tarannum'
     if certificate_type != expected: raise ValueError('Certificate type does not match course category')

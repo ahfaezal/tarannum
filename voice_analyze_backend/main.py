@@ -2177,8 +2177,7 @@ async def score_performance(
                                     credit = recalculate_enrollment(db, enrollment, actor_id=user_id)
                                     credit["current_recording_duration_seconds"] = round(float(user_session.duration or 0), 1)
                                     credit["current_recording_credited"] = (
-                                        bool(enrollment.eligibility_override)
-                                        or float(user_session.duration or 0) >= float(credit["minimum_recording_duration_seconds"])
+                                        float(user_session.duration or 0) >= float(credit["minimum_recording_duration_seconds"])
                                     )
                                     course_credit_results.append(credit)
                                 if course_credit_results:

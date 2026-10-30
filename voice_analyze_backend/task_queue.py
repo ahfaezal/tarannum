@@ -4,6 +4,7 @@ Uses Celery for background job processing.
 """
 import os
 import time
+from pathlib import Path
 from typing import Optional, Dict, Any
 import logging
 
@@ -164,9 +165,22 @@ if CELERY_AVAILABLE and celery_app:
             # Allocate the file only for the task that won the atomic claim.
             # NamedTemporaryFile supplies a process-safe unique name, which
             # also isolates Celery retries and simultaneous worker processes.
+            # Preserve the uploaded container extension. Saving WebM/WebM-Opus
+            # bytes under a .wav name can make duration probes return 0 even
+            # though the scorer can still decode and assess the recording.
+            original_suffix = Path(job.original_filename or "").suffix.lower()
+            if original_suffix not in {".wav", ".webm", ".ogg", ".mp3", ".m4a", ".mp4", ".aac"}:
+                content_type = (job.content_type or "").lower()
+                original_suffix = (
+                    ".webm" if "webm" in content_type else
+                    ".ogg" if "ogg" in content_type else
+                    ".mp3" if "mpeg" in content_type or "mp3" in content_type else
+                    ".m4a" if "mp4" in content_type or "m4a" in content_type else
+                    ".wav"
+                )
             temp_audio = tempfile.NamedTemporaryFile(
                 prefix=f"scoring_job_{job_id}_",
-                suffix=".wav",
+                suffix=original_suffix,
                 delete=False,
             )
             local_path = Path(temp_audio.name)

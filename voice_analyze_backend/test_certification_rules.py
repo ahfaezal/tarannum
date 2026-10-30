@@ -41,6 +41,9 @@ class CertificationRuleTests(unittest.TestCase):
         with patch("certification_service.issue_certificate", return_value=certificate) as issue:
             progress = recalculate_enrollment(db, enrollment)
         self.assertTrue(progress["eligible"])
+        self.assertFalse(progress["practice_complete"])
+        self.assertEqual(progress["actual_valid_recording_count"], 0)
+        self.assertEqual(enrollment.valid_recording_count, 0)
         self.assertEqual(progress["certificate_id"], str(certificate.id))
         self.assertEqual(enrollment.practice_completed_at, completed_at)
         issue.assert_called_once()
