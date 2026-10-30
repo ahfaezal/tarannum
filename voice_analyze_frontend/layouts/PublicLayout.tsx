@@ -6,7 +6,7 @@ import { LanguageSelector, useI18n } from "../i18n";
 const PublicLayout: React.FC = () => {
   const [open, setOpen] = useState(false);
   const { t } = useI18n();
-  const links = [["/", t("home")], ["/about", t("about")], ["/program", "Program"], ["/how-to-use", t("howToUse")], ["/demo", t("demo")], ["/contact", t("contact")]];
+  const links = [["/", t("home")], ["/about", t("about")], ["/program", "Program"], ["/pencapaian", "Pencapaian"], ["/how-to-use", t("howToUse")], ["/demo", t("demo")], ["/contact", t("contact")]];
   return <div className="min-h-screen bg-slate-50 text-slate-900">
     <header className="sticky top-0 z-50 border-b border-slate-200 bg-white/95 backdrop-blur">
       <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6">

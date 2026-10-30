@@ -17,6 +17,8 @@ const MuazzinCoursePage = lazy(() => import("./views/public/MuazzinCoursePage"))
 const ProfessionalAzanCoursePage = lazy(() => import("./views/public/ProfessionalAzanCoursePage"));
 const ProgramsPage = lazy(() => import("./views/public/ProgramsPage"));
 const ProgramDetailPage = lazy(() => import("./views/public/ProgramDetailPage"));
+const AchievementsPage = lazy(() => import("./views/public/AchievementsPage"));
+const AchievementDetailPage = lazy(() => import("./views/public/AchievementDetailPage"));
 const VerifyCertificatePage = lazy(() => import("./views/public/VerifyCertificatePage"));
 const AssetPage = lazy(() => import("./views/public/AssetPage"));
 const Login = lazy(() => import("./components/Login"));
@@ -61,7 +63,7 @@ const App: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { isAuthenticated } = useSelector((state: RootState) => state.auth);
-  const isLightweightPublicPage = ["/", "/about", "/how-to-use", "/demo", "/demo/interactive", "/contact", "/program"].includes(location.pathname) || location.pathname.startsWith("/program/") || location.pathname.startsWith("/verify/") || /^\/TAR-/i.test(location.pathname);
+  const isLightweightPublicPage = ["/", "/about", "/how-to-use", "/demo", "/demo/interactive", "/contact", "/program", "/pencapaian"].includes(location.pathname) || location.pathname.startsWith("/program/") || location.pathname.startsWith("/pencapaian/") || location.pathname.startsWith("/verify/") || /^\/TAR-/i.test(location.pathname);
 
   useEffect(() => {
     if (!isLightweightPublicPage && !isAuthenticated && localStorage.getItem("tarannum_auth_token")) {
@@ -81,6 +83,8 @@ const App: React.FC = () => {
           <Route path="/contact" element={<ContactPage />} />
           <Route path="/program" element={<ProgramsPage />} />
           <Route path="/program/:slug" element={<ProgramDetailPage />} />
+          <Route path="/pencapaian" element={<AchievementsPage />} />
+          <Route path="/pencapaian/:slug" element={<AchievementDetailPage />} />
           <Route path="/kursus-pemantapan-muazzin/*" element={<MuazzinCoursePage />} />
           <Route path="/kursus-profesional-azan/*" element={<ProfessionalAzanCoursePage />} />
           <Route path="/verify/:token" element={<VerifyCertificatePage />} />
