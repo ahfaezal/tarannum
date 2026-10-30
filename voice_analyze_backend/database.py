@@ -63,6 +63,9 @@ class User(Base):
     email = Column(String, unique=True, nullable=False, index=True)
     hashed_password = Column(String, nullable=True)  # Nullable for public users
     role = Column(String, nullable=False, default=UserRole.STUDENT)
+    # Public-facing identity. Keep the legacy technical role intact so
+    # existing dashboards and student relationships remain compatible.
+    account_type = Column(String, nullable=False, default="student")
     is_active = Column(Boolean, default=True)
     is_approved = Column(Boolean, default=False)  # For Qari approval by Admin
     full_name = Column(String, nullable=True)
@@ -1132,12 +1135,25 @@ def ensure_user_profile_columns():
         "state": "VARCHAR",
         "bio": "TEXT",
         "maqam_specialization": "VARCHAR",
+        "account_type": "VARCHAR DEFAULT 'student' NOT NULL",
     }
 
     with engine.begin() as conn:
         for column_name, column_def in columns.items():
             if not _column_exists(conn, "users", column_name):
                 conn.execute(text(f"ALTER TABLE users ADD COLUMN {column_name} {column_def}"))
+        conn.execute(text("""
+            UPDATE users
+            SET account_type = CASE
+                WHEN role = 'admin' THEN 'admin'
+                WHEN role = 'qari' THEN 'qari'
+                ELSE 'student'
+            END
+            WHERE account_type IS NULL
+               OR account_type = ''
+               OR (account_type = 'student' AND role IN ('admin', 'qari'))
+        """))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_users_account_type ON users (account_type)"))
 
 
 def ensure_user_session_metadata_columns():

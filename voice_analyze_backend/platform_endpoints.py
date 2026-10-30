@@ -1333,6 +1333,7 @@ def get_available_qaris(
         from database import User, UserRole
         qaris = db.query(User).filter(
             User.role == UserRole.QARI,
+            User.account_type == "qari",
             User.is_approved == True,
             User.is_active == True
         ).all()
@@ -1342,6 +1343,7 @@ def get_available_qaris(
                     "id": str(q.id),
                     "email": q.email,
                     "full_name": q.full_name,
+                    "account_type": q.account_type,
                     "is_approved": q.is_approved,
                     "is_active": q.is_active,
                     "created_at": q.created_at.isoformat() if q.created_at else None
@@ -1646,6 +1648,7 @@ async def list_all_users(
                     "email": u.email,
                     "full_name": u.full_name,
                     "role": u.role,
+                    "account_type": u.account_type,
                     "is_approved": u.is_approved,
                     "is_active": u.is_active,
                     "referral_code": u.referral_code,
@@ -1865,6 +1868,7 @@ async def get_user(
             "email": user.email,
             "full_name": user.full_name,
             "role": user.role,
+            "account_type": user.account_type,
             "is_approved": user.is_approved,
             "is_active": user.is_active,
             "referral_code": user.referral_code,
@@ -1882,6 +1886,7 @@ async def get_user(
 class UpdateUserRequest(BaseModel):
     full_name: Optional[str] = None
     role: Optional[str] = None
+    account_type: Optional[str] = None
     is_approved: Optional[bool] = None
     is_active: Optional[bool] = None
     commission_rate: Optional[float] = None
@@ -1948,6 +1953,16 @@ async def update_user(
             if user_data.role not in ["admin", "qari", "student", "public"]:
                 raise HTTPException(status_code=400, detail="Invalid role")
             user.role = user_data.role
+        if user_data.account_type is not None:
+            if user_data.account_type not in {"admin", "student", "qari", "mentor", "guardian"}:
+                raise HTTPException(status_code=400, detail="Invalid account type")
+            user.account_type = user_data.account_type
+            if user_data.account_type == "student":
+                user.role = "student"
+            elif user_data.account_type == "admin":
+                user.role = "admin"
+            elif user_data.account_type in {"qari", "mentor", "guardian"}:
+                user.role = "qari"
         if user_data.is_approved is not None:
             user.is_approved = user_data.is_approved
             # Generate referral code when approving Qari
@@ -1974,6 +1989,7 @@ async def update_user(
             "email": user.email,
             "full_name": user.full_name,
             "role": user.role,
+            "account_type": user.account_type,
             "is_approved": user.is_approved,
             "is_active": user.is_active,
             "referral_code": user.referral_code,
@@ -1994,6 +2010,7 @@ class CreateUserRequest(BaseModel):
     password: str
     full_name: Optional[str] = None
     role: str = "student"
+    account_type: Optional[str] = None
     is_approved: Optional[bool] = None
     is_active: bool = True
     commission_rate: Optional[float] = None
@@ -2022,9 +2039,13 @@ async def create_user(
         # Hash password
         hashed_password = get_password_hash(user_data.password)
         
-        # Set approval status
-        is_approved = user_data.is_approved if user_data.is_approved is not None else (user_data.role != "qari")
-        
+        account_type = user_data.account_type or user_data.role
+        if account_type not in {"admin", "student", "qari", "mentor", "guardian"}:
+            raise HTTPException(status_code=400, detail="Invalid account type")
+        technical_role = "student" if account_type == "student" else ("admin" if account_type == "admin" else "qari")
+        # All monitoring/professional account types require Admin approval.
+        is_approved = user_data.is_approved if user_data.is_approved is not None else (technical_role != "qari")
+
         # Create user
         new_user = User(
             email=normalized_email,
@@ -2032,7 +2053,8 @@ async def create_user(
             admin_provisioned=True,
             email_verified=False,
             full_name=_normalize_full_name(user_data.full_name),
-            role=user_data.role,
+            role=technical_role,
+            account_type=account_type,
             is_active=user_data.is_active,
             is_approved=is_approved,
             commission_rate=user_data.commission_rate or 0.0

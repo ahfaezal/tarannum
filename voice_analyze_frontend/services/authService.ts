@@ -5,6 +5,7 @@ export interface User {
   id: string;
   email: string;
   role: "admin" | "qari" | "student" | "public";
+  account_type?: "admin" | "student" | "qari" | "mentor" | "guardian";
   full_name?: string;
   ic_number?: string | null;
   address?: string | null;
@@ -30,7 +31,8 @@ export interface RegisterData {
   address?: string;
   referral_code?: string;
   course_registration_token?: string;
-  role: "student" | "qari"; // Allow both student and qari registration
+  role: "student" | "qari";
+  account_type: "student" | "qari" | "mentor" | "guardian";
 }
 
 export interface MessageResponse {

@@ -190,6 +190,7 @@ def _joinable_course(db: Session, token: str) -> tuple[Course, Reference, User]:
     qari = db.query(User).filter(
         User.id == course.qari_id,
         User.role == "qari",
+        User.account_type == "qari",
         User.is_active == True,
         User.is_approved == True,
     ).first()
@@ -236,6 +237,14 @@ def _course_manager(user):
         raise HTTPException(403, 'Only Admin or Qari may manage courses')
     if user.role == 'qari' and not user.is_approved:
         raise HTTPException(403, 'Qari approval required')
+    if user.role == 'qari' and user.account_type != 'qari':
+        raise HTTPException(403, 'Only a verified Qari may manage courses')
+
+
+def _professional_qari(qari: User = Depends(get_current_qari_user)) -> User:
+    if qari.account_type != 'qari':
+        raise HTTPException(403, 'Only a verified Qari may perform this action')
+    return qari
 
 
 def _managed_course(db, course_id, user):
@@ -247,7 +256,7 @@ def _managed_course(db, course_id, user):
 
 
 def _validate_course_qari(db, qari_id, reference_id):
-    qari = db.query(User).filter(User.id == qari_id, User.role == 'qari',
+    qari = db.query(User).filter(User.id == qari_id, User.role == 'qari', User.account_type == 'qari',
         User.is_active == True, User.is_approved == True).first()
     content = db.query(QariContent).filter(QariContent.qari_id == qari_id,
         QariContent.reference_id == reference_id, QariContent.is_active == True).first()
@@ -393,7 +402,7 @@ def managed_course_context(qari_id: Optional[UUID] = None, search: str = '',
         user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _course_manager(user)
     owner = user.id if user.role == 'qari' else qari_id
-    qaris = db.query(User).filter(User.role == 'qari', User.is_active == True, User.is_approved == True)
+    qaris = db.query(User).filter(User.role == 'qari', User.account_type == 'qari', User.is_active == True, User.is_approved == True)
     if user.role == 'qari': qaris = qaris.filter(User.id == user.id)
     students = db.query(User).filter(User.role == 'student', User.is_active == True)
     if user.role == 'qari':
@@ -996,7 +1005,7 @@ def admin_student_flow_preview(user_id: UUID, admin: User = Depends(get_current_
 
 
 @router.get("/qari/applications")
-def qari_applications(qari: User = Depends(get_current_qari_user), db: Session = Depends(get_db)):
+def qari_applications(qari: User = Depends(_professional_qari), db: Session = Depends(get_db)):
     return _qari_application_rows(db, qari.id)
 
 
@@ -1045,7 +1054,7 @@ def admin_qari_flow_preview(user_id: UUID, admin: User = Depends(get_current_adm
 
 
 @router.post("/qari/applications/{application_id}/decision")
-def qari_decision(application_id: UUID, payload: QariDecision, qari: User = Depends(get_current_qari_user), db: Session = Depends(get_db)):
+def qari_decision(application_id: UUID, payload: QariDecision, qari: User = Depends(_professional_qari), db: Session = Depends(get_db)):
     application = db.query(CertificateApplication).filter(CertificateApplication.id == application_id).first()
     if not application:
         raise HTTPException(404, "Application not found")
@@ -1102,7 +1111,7 @@ async def upload_ceo_signature(file: UploadFile = File(...),
 
 
 @router.post("/qari/signature")
-async def upload_qari_signature(file: UploadFile = File(...), qari: User = Depends(get_current_qari_user), db: Session = Depends(get_db)):
+async def upload_qari_signature(file: UploadFile = File(...), qari: User = Depends(_professional_qari), db: Session = Depends(get_db)):
     from ceo_signature_service import normalize_signature, MAX_SIGNATURE_BYTES
     content = await file.read(MAX_SIGNATURE_BYTES + 1)
     try:

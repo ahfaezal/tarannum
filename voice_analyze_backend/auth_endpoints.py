@@ -48,6 +48,7 @@ class UserRegister(BaseModel):
     address: Optional[str] = None
     referral_code: Optional[str] = None
     role: str = "student"  # Default to student (allow both "student" and "qari")
+    account_type: Optional[str] = None
     course_registration_token: Optional[str] = None
 
 
@@ -89,6 +90,7 @@ class UserResponse(BaseModel):
     id: str
     email: str
     role: str
+    account_type: Optional[str] = None
     full_name: Optional[str]
     ic_number: Optional[str] = None
     address: Optional[str] = None
@@ -583,19 +585,20 @@ def register(
                 detail="Email already registered"
             )
         
-        # Validate role - allow student and qari registration
-        if user_data.role not in ["student", "qari"]:
+        account_type = (user_data.account_type or user_data.role or "student").strip().lower()
+        if account_type not in {"student", "qari", "mentor", "guardian"}:
             raise HTTPException(
                 status_code=403,
-                detail="Only student and qari accounts can be created through registration."
+                detail="Invalid account type."
             )
+        technical_role = "student" if account_type == "student" else "qari"
         
         # Set approval status based on role
         # Students: approved immediately (no admin approval needed)
         # Qaris: require admin approval
-        if user_data.role == "student":
+        if technical_role == "student":
             is_approved = True  # Students don't need approval
-        elif user_data.role == "qari":
+        elif technical_role == "qari":
             is_approved = False  # Qaris need admin approval
         else:
             is_approved = False  # Default to False for safety
@@ -613,7 +616,7 @@ def register(
         ic_number = user_data.ic_number.strip() if user_data.ic_number else None
         address = user_data.address.strip() if user_data.address else None
         pending_referral_code = None
-        if user_data.role == "student":
+        if technical_role == "student":
             normalized_referral_code = _normalize_referral_code(user_data.referral_code)
             if normalized_referral_code and _find_valid_qari_by_referral_code(db, normalized_referral_code):
                 pending_referral_code = normalized_referral_code
@@ -624,7 +627,8 @@ def register(
         new_user = User(
             email=normalized_email,
             hashed_password=hashed_password,
-            role=user_data.role,
+            role=technical_role,
+            account_type=account_type,
             full_name=_normalize_full_name(user_data.full_name),
             ic_number=ic_number or None,
             address=address or None,
@@ -658,6 +662,7 @@ def register(
             "id": str(new_user.id),
             "email": new_user.email,
             "role": new_user.role,
+            "account_type": new_user.account_type,
             "full_name": new_user.full_name,
             "is_active": new_user.is_active,
             "is_approved": new_user.is_approved,

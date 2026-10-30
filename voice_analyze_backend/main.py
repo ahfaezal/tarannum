@@ -2704,6 +2704,9 @@ async def upload_reference(
                 detail="Only Admin and Qari can upload reference audio files"
             )
 
+        if current_user.role == UserRole.QARI and current_user.account_type != "qari":
+            raise HTTPException(status_code=403, detail="Only a verified Qari can upload reference audio files")
+
         # Qari must be approved
         if current_user.role == UserRole.QARI and not current_user.is_approved:
             raise HTTPException(
@@ -2724,7 +2727,7 @@ async def upload_reference(
             except (ValueError, AttributeError):
                 raise HTTPException(status_code=404, detail="Target Qari not found")
             target_qari = db.query(User).filter(User.id == target_qari_uuid).first()
-            if not target_qari or target_qari.role != UserRole.QARI:
+            if not target_qari or target_qari.role != UserRole.QARI or target_qari.account_type != "qari":
                 raise HTTPException(status_code=404, detail="Target Qari not found")
 
         if not title:
@@ -3249,6 +3252,8 @@ async def trim_reference_audio(
             raise HTTPException(status_code=401, detail="Authentication required")
         if current_user.role not in [UserRole.ADMIN, UserRole.QARI]:
             raise HTTPException(status_code=403, detail="Only Admin and Qari can trim reference audio")
+        if current_user.role == UserRole.QARI and current_user.account_type != "qari":
+            raise HTTPException(status_code=403, detail="Only a verified Qari can trim reference audio")
 
         from uuid import UUID
         from database import Reference, TextSegment, PitchCache
@@ -3462,6 +3467,8 @@ async def delete_reference(
         # Check access: Only Admin and Qari can delete
         if current_user.role not in [UserRole.ADMIN, UserRole.QARI]:
             raise HTTPException(status_code=403, detail="Only Admin and Qari can delete references")
+        if current_user.role == UserRole.QARI and current_user.account_type != "qari":
+            raise HTTPException(status_code=403, detail="Only a verified Qari can delete references")
 
         # Get reference to check ownership
         ref_data = db_reference_library.get_reference(ref_id, db=db)

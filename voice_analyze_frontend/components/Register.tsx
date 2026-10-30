@@ -27,6 +27,7 @@ const Register: React.FC<RegisterProps> = ({ onSwitchToLogin, onSuccess, onClose
   const [icNumber, setIcNumber] = useState("");
   const [address, setAddress] = useState("");
   const [role, setRole] = useState<"student" | "qari">("student");
+  const [accountType, setAccountType] = useState<"student" | "qari" | "mentor" | "guardian">("student");
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [referralCode, setReferralCode] = useState<string | null>(null);
   const [referralQariName, setReferralQariName] = useState<string | null>(null);
@@ -74,6 +75,7 @@ const Register: React.FC<RegisterProps> = ({ onSwitchToLogin, onSuccess, onClose
     if (courseEmail) setEmail(courseEmail.trim().toLowerCase());
     if (courseName) setFullName(normalizeFullName(courseName));
     setRole("student");
+    setAccountType("student");
   }, [courseRegistrationToken, searchParams]);
 
   // Password validation rules
@@ -109,6 +111,7 @@ const Register: React.FC<RegisterProps> = ({ onSwitchToLogin, onSuccess, onClose
           referral_code: role === "student" ? referralCode || undefined : undefined,
           course_registration_token: courseRegistrationToken || undefined,
           role: role, // Use selected role (student or qari)
+          account_type: accountType,
         })
       ).unwrap();
       setSuccessMessage("OTP has been sent to your email.");
@@ -227,19 +230,23 @@ const Register: React.FC<RegisterProps> = ({ onSwitchToLogin, onSuccess, onClose
             </label>
             <div className="relative">
               <select
-                value={role}
-                onChange={(e) => setRole(e.target.value as "student" | "qari")}
+                value={accountType}
+                onChange={(e) => { const value=e.target.value as "student" | "qari" | "mentor" | "guardian"; setAccountType(value); setRole(value === "student" ? "student" : "qari"); }}
                 required
                 className="w-full pl-4 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
               >
-                <option value="student">Student</option>
+                <option value="student">Pelajar</option>
+                <option value="mentor">Pembimbing / Guru</option>
+                <option value="guardian">Ibu Bapa / Penjaga</option>
                 <option value="qari">Qari</option>
               </select>
             </div>
             <p className="mt-1 text-xs text-gray-500">
-              {role === "student" 
-                ? "Students can log in after email verification."
-                : "Qari accounts require admin approval before you can log in."}
+              {accountType === "student"
+                ? "Pelajar boleh menggunakan sistem selepas pengesahan e-mel."
+                : accountType === "qari"
+                  ? "Permohonan Qari memerlukan pengesahan profesional oleh pentadbir."
+                  : "Akaun pemantauan memerlukan kelulusan pentadbir dan tidak dipaparkan sebagai Qari."}
             </p>
           </div>}
 

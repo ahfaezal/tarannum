@@ -783,6 +783,7 @@ export interface AdminUser {
   email: string;
   full_name?: string;
   role: "admin" | "qari" | "student" | "public";
+  account_type?: "admin" | "student" | "qari" | "mentor" | "guardian";
   is_approved: boolean;
   is_active: boolean;
   referral_code?: string;
@@ -836,6 +837,7 @@ export const updateUser = async (
   data: {
     full_name?: string;
     role?: string;
+    account_type?: string;
     is_approved?: boolean;
     is_active?: boolean;
     commission_rate?: number;
@@ -866,6 +868,7 @@ export const createUser = async (data: {
   password: string;
   full_name?: string;
   role: "admin" | "qari" | "student";
+  account_type?: "admin" | "student" | "qari" | "mentor" | "guardian";
   is_approved?: boolean;
   is_active?: boolean;
   commission_rate?: number;

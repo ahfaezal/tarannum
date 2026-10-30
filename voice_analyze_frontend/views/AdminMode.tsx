@@ -76,6 +76,7 @@ const AdminMode: React.FC<AdminModeProps> = ({ view = 'presets' }) => {
     password: '',
     full_name: '',
     role: 'student' as 'admin' | 'qari' | 'student',
+    account_type: 'student' as 'admin' | 'student' | 'qari' | 'mentor' | 'guardian',
     is_approved: false,
     is_active: true,
     commission_rate: 0.0
@@ -428,6 +429,7 @@ const AdminMode: React.FC<AdminModeProps> = ({ view = 'presets' }) => {
       password: '', // Don't pre-fill password
       full_name: user.full_name || '',
       role: user.role as 'admin' | 'qari' | 'student',
+      account_type: user.account_type || (user.role as 'admin' | 'student' | 'qari'),
       is_approved: user.is_approved,
       is_active: user.is_active,
       commission_rate: user.commission_rate
@@ -442,6 +444,7 @@ const AdminMode: React.FC<AdminModeProps> = ({ view = 'presets' }) => {
       password: '',
       full_name: '',
       role: 'student',
+      account_type: 'student',
       is_approved: false,
       is_active: true,
       commission_rate: 0.0
@@ -455,6 +458,7 @@ const AdminMode: React.FC<AdminModeProps> = ({ view = 'presets' }) => {
         await updateUser(editingUser.id, {
           full_name: userFormData.full_name.trim().toUpperCase() || undefined,
           role: userFormData.role,
+          account_type: userFormData.account_type,
           is_approved: userFormData.is_approved,
           is_active: userFormData.is_active,
           commission_rate: userFormData.commission_rate
@@ -470,6 +474,7 @@ const AdminMode: React.FC<AdminModeProps> = ({ view = 'presets' }) => {
           password: userFormData.password,
           full_name: userFormData.full_name.trim().toUpperCase() || undefined,
           role: userFormData.role,
+          account_type: userFormData.account_type,
           is_approved: userFormData.is_approved,
           is_active: userFormData.is_active,
           commission_rate: userFormData.commission_rate
@@ -696,6 +701,16 @@ const AdminMode: React.FC<AdminModeProps> = ({ view = 'presets' }) => {
               </h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Jenis Akaun</label>
+                  <select
+                    value={userFormData.account_type}
+                    onChange={(e) => { const account_type=e.target.value as 'admin' | 'student' | 'qari' | 'mentor' | 'guardian'; const role=account_type==='student'?'student':account_type==='admin'?'admin':'qari'; setUserFormData({...userFormData,account_type,role}); }}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                  >
+                    <option value="student">Pelajar</option><option value="mentor">Pembimbing / Guru</option><option value="guardian">Ibu Bapa / Penjaga</option><option value="qari">Qari</option><option value="admin">Admin</option>
+                  </select>
+                </div>
+                <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
                   <input
                     type="email"
@@ -841,7 +856,7 @@ const AdminMode: React.FC<AdminModeProps> = ({ view = 'presets' }) => {
                             user.role === 'student' ? 'bg-green-100 text-green-800' :
                             'bg-gray-100 text-gray-800'
                           }`}>
-                            {user.role}
+                            {user.account_type === 'mentor' ? 'pembimbing' : user.account_type === 'guardian' ? 'penjaga' : (user.account_type || user.role)}
                           </span>
                           {user.role === 'qari' && user.commission_rate > 0 && (
                             <div className="text-xs text-slate-500 mt-1">

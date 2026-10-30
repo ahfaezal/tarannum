@@ -349,7 +349,7 @@ def admin_qari_options(
 ):
     qaris = (
         db.query(User)
-        .filter(User.role == UserRole.QARI.value, User.is_active.is_(True), User.is_approved.is_(True))
+        .filter(User.role == UserRole.QARI.value, User.account_type == "qari", User.is_active.is_(True), User.is_approved.is_(True))
         .order_by(User.full_name.asc(), User.email.asc())
         .all()
     )
@@ -394,7 +394,7 @@ def create_batch(
 
     evaluators = db.query(User).filter(User.id.in_(payload.evaluator_ids)).all()
     if len(evaluators) != len(payload.evaluator_ids) or any(
-        evaluator.role != UserRole.QARI.value or not evaluator.is_active or not evaluator.is_approved
+        evaluator.role != UserRole.QARI.value or evaluator.account_type != "qari" or not evaluator.is_active or not evaluator.is_approved
         for evaluator in evaluators
     ):
         raise HTTPException(status_code=400, detail="All evaluators must be active, approved Qari accounts")
@@ -493,7 +493,7 @@ def add_batch_evaluator(
         raise HTTPException(status_code=409, detail="This Qari is already assigned to the batch")
 
     evaluator = db.query(User).filter(User.id == payload.evaluator_id).first()
-    if not evaluator or evaluator.role != UserRole.QARI.value or not evaluator.is_active or not evaluator.is_approved:
+    if not evaluator or evaluator.role != UserRole.QARI.value or evaluator.account_type != "qari" or not evaluator.is_active or not evaluator.is_approved:
         raise HTTPException(status_code=400, detail="The evaluator must be an active, approved Qari account")
     items = db.query(ExpertEvaluationItem).filter(
         ExpertEvaluationItem.batch_id == batch.id,

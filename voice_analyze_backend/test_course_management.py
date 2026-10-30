@@ -67,8 +67,18 @@ class CourseManagementTests(unittest.TestCase):
 
     def test_students_and_unapproved_qari_cannot_manage_courses(self):
         fn=load_function('certification_endpoints.py','_course_manager',{'HTTPException':HTTPException})
-        for user in [SimpleNamespace(role='student',is_active=True),SimpleNamespace(role='qari',is_active=True,is_approved=False)]:
+        for user in [
+            SimpleNamespace(role='student', is_active=True),
+            SimpleNamespace(role='qari', account_type='qari', is_active=True, is_approved=False),
+            SimpleNamespace(role='qari', account_type='mentor', is_active=True, is_approved=True),
+            SimpleNamespace(role='qari', account_type='guardian', is_active=True, is_approved=True),
+        ]:
             with self.assertRaises(HTTPException):fn(user)
+
+    def test_registration_exposes_all_public_account_types(self):
+        source = Path(__file__).parents[1].joinpath('voice_analyze_frontend', 'components', 'Register.tsx').read_text(encoding='utf-8')
+        for account_type in ('student', 'mentor', 'guardian', 'qari'):
+            self.assertIn(f"value=\"{account_type}\"", source)
 
     def test_course_board_rejects_nonmembers_even_for_admin(self):
         owner=uuid4(); student=uuid4(); now=datetime.utcnow()
@@ -96,12 +106,12 @@ class CourseManagementTests(unittest.TestCase):
         queries[0].filter.return_value.first.return_value=session
         queries[1].filter.return_value.first.return_value=SimpleNamespace(score=85)
         queries[2].filter.return_value.order_by.return_value.all.return_value=[course]
-        queries[3].filter.return_value.first.return_value=object()
+        queries[3].filter.return_value.first.return_value=SimpleNamespace(attendance_status='attended')
         db.query.side_effect=queries
         env={n:MagicMock() for n in ['UserSession','AnalysisResult','Course','CourseEnrollment']}
         env['Course'].starts_at.__le__.return_value=True
         env.update(_as_uuid=lambda v:UUID(str(v)),grade_for_score=lambda s:'mumtaz',timedelta=timedelta,
-            recalculate_enrollment=lambda *args,**kwargs:{'eligible':False})
+            recalculate_enrollment=lambda *args,**kwargs:{'eligible':False, 'practice_complete':False})
         fn=load_function('certification_service.py','submit_competency_application',env)
         with self.assertRaisesRegex(ValueError,'60 minutes'):fn(db,student,uuid4(),'competency_azan',cid)
 
