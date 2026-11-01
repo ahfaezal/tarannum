@@ -74,7 +74,7 @@ export const achievements: AchievementRecord[] = [
       { src: `${base}/20261001_224809.webp`, alt: "Pingat Emas kNOVASI 2026", caption: "Pingat Emas yang diterima oleh Tarannum.ai.", portrait: true },
       { src: `${base}/98261024-ca53-459a-bf91-38a3f1a63fcd.webp`, alt: "Foto rasmi peserta kNOVASI 2026", caption: "Foto rasmi peserta dan penganjur kNOVASI 2026." },
       { src: `${base}/014a9a15-eb77-4acf-bf74-9102eb394d72.webp`, alt: "Demonstrasi Tarannum.ai kepada pelawat", caption: "Demonstrasi pengalaman latihan Tarannum.ai." },
-      { src: `${base}/20261001_172750.webp`, alt: "Kenangan di majlis kNOVASI 2026", caption: "Kenangan bersama warga inovasi di kNOVASI 2026.", portrait: true },
+      { src: `${base}/knovasi-award-with-participant-2026.webp`, alt: "Ts. Ah Faezal Husni Arshad bersama peserta kNOVASI 2026 memegang anugerah Pingat Emas", caption: "Kenangan bersama warga inovasi di kNOVASI 2026.", portrait: true },
       { src: `${base}/938fdf61-c8b8-4443-9c00-93fe10cefdc9.webp`, alt: "Tarannum.ai di ruang acara kNOVASI", caption: "Membawa teknologi latihan tarannum ke pentas inovasi pendidikan." },
       { src: `${base}/20261001_092217.webp`, alt: "Wakil Tarannum.ai bersama bahan pameran", caption: "Persediaan pameran dan pembentangan Tarannum.ai." },
     ],
