@@ -412,7 +412,9 @@ def _draw_transcript_page(c: canvas.Canvas, db, certificate: Certificate, snapsh
     _centered(c, "AZAN MAQAM HIJJAZ", height - 113, "Times-Bold", 15, GOLD)
     _centered(c, "REKOD PENILAIAN QARI BERAUTORITI", height - 130, "Helvetica-Bold", 7.5, NAVY)
 
-    top_y = 304
+    # Lift the content suite closer to the title while preserving the locked spacing
+    # between the participant panels, rubric, summary and verification footer.
+    top_y = 326
     _draw_transcript_box(c, 28, top_y, 310, 118, "MAKLUMAT PESERTA")
     details = (
         ("Nama", snapshot.get("student_name") or ""),
@@ -458,7 +460,7 @@ def _draw_transcript_page(c: canvas.Canvas, db, certificate: Certificate, snapsh
     c.setFont("Times-Bold", 12)
     c.drawCentredString(720.5, top_y + 19, grade_malay)
 
-    table_x, table_y, table_w, row_h = 28, 127, 786, 17
+    table_x, table_y, table_w, row_h = 28, 149, 786, 17
     table_top = table_y + row_h * 9
     c.setFillColor(EMERALD)
     c.rect(table_x, table_top, table_w, 22, fill=1, stroke=0)
@@ -495,27 +497,27 @@ def _draw_transcript_page(c: canvas.Canvas, db, certificate: Certificate, snapsh
     for row_index in range(10):
         c.line(table_x, table_y + row_h * row_index, table_x + table_w, table_y + row_h * row_index)
 
-    _draw_transcript_box(c, 28, 69, 500, 48, "RUMUSAN KEPUTUSAN")
+    _draw_transcript_box(c, 28, 91, 500, 48, "RUMUSAN KEPUTUSAN")
     summary = (("Jumlah", f"{qari_score:.0f}/100"), ("Keputusan", "LULUS"), ("Pangkat", grade_roman), ("Tahap", grade_malay))
     for index, (label, value) in enumerate(summary):
         center = 28 + (index + 0.5) * 125
         c.setFillColor(NAVY)
         c.setFont("Helvetica", 6.7)
-        c.drawCentredString(center, 88, label)
+        c.drawCentredString(center, 110, label)
         c.setFont("Times-Bold", _fit_font(value, "Times-Bold", 12, 105, 8))
-        c.drawCentredString(center, 75, value)
+        c.drawCentredString(center, 97, value)
 
-    _draw_transcript_box(c, 540, 69, 274, 48, "SKALA PENILAIAN QARI")
+    _draw_transcript_box(c, 540, 91, 274, 48, "SKALA PENILAIAN QARI")
     c.setFillColor(NAVY)
     c.setFont("Helvetica", 7)
     c.setFont("Helvetica", 6.4)
-    c.drawCentredString(677, 80, "1 Lemah | 2 Memadai | 3 Baik | 4 Sangat Baik | 5 Cemerlang")
+    c.drawCentredString(677, 102, "1 Lemah | 2 Memadai | 3 Baik | 4 Sangat Baik | 5 Cemerlang")
 
-    _draw_transcript_box(c, 28, 18, 372, 42, "ULASAN QARI")
+    _draw_transcript_box(c, 28, 40, 372, 42, "ULASAN QARI")
     comment = qari_notes or "Penilaian kompetensi telah disahkan berdasarkan rubrik rasmi oleh Qari Penilai."
-    _draw_wrapped(c, comment, 39, 31, 350, size=5.8, leading=7, max_lines=2)
-    _draw_transcript_box(c, 410, 18, 112, 42)
-    _draw_wrapped(c, "Skor AI menyokong latihan; keputusan kompetensi disahkan oleh Qari Penilai.", 420, 45, 92, size=5.8, leading=6.5, max_lines=4)
+    _draw_wrapped(c, comment, 39, 53, 350, size=5.8, leading=7, max_lines=2)
+    _draw_transcript_box(c, 410, 40, 112, 42)
+    _draw_wrapped(c, "Skor AI menyokong latihan; keputusan kompetensi disahkan oleh Qari Penilai.", 420, 67, 92, size=5.8, leading=6.5, max_lines=4)
 
     qari_signature = None
     qari_id = getattr(certificate, "qari_id", None)
@@ -533,13 +535,13 @@ def _draw_transcript_page(c: canvas.Canvas, db, certificate: Certificate, snapsh
         elif qari_signature.storage_path and Path(qari_signature.storage_path).exists():
             signature_image = qari_signature.storage_path
         if signature_image:
-            c.drawImage(signature_image, 535, 28, 90, 30,
+            c.drawImage(signature_image, 535, 50, 90, 30,
                         preserveAspectRatio=True, anchor="c", mask="auto")
     c.setFillColor(NAVY)
     c.setFont("Helvetica-Bold", _fit_font(snapshot.get("qari_name") or "Qari Penilai", "Helvetica-Bold", 6.5, 120, 5.2))
-    c.drawCentredString(580, 20, snapshot.get("qari_name") or "Qari Penilai")
+    c.drawCentredString(580, 42, snapshot.get("qari_name") or "Qari Penilai")
     c.setFont("Helvetica", _fit_font(qari_title, "Helvetica", 5.2, 120, 4.2))
-    c.drawCentredString(580, 13, qari_title)
+    c.drawCentredString(580, 35, qari_title)
     qr = qrcode.QRCode(version=None, box_size=3, border=1)
     qr.add_data(snapshot.get("verification_url", "https://tarannum.ai"))
     qr.make(fit=True)
@@ -547,11 +549,7 @@ def _draw_transcript_page(c: canvas.Canvas, db, certificate: Certificate, snapsh
     qr_stream = io.BytesIO()
     qr_image.save(qr_stream, format="PNG")
     qr_stream.seek(0)
-    c.drawImage(ImageReader(qr_stream), 660, 18, 42, 42, preserveAspectRatio=True, mask="auto")
-    c.setFillColor(NAVY)
-    c.setFont("Helvetica", 6)
-    c.drawString(710, 42, "Pengesahan ketulenan")
-    c.drawString(710, 29, transcript_number)
+    c.drawImage(ImageReader(qr_stream), 704, 40, 42, 42, preserveAspectRatio=True, mask="auto")
 
 
 def render_certificate_pdf(db, certificate: Certificate) -> Path:
