@@ -13,11 +13,25 @@ from certification_endpoints import (
     my_certificates,
     verify_certificate,
 )
-from certification_service import calculate_qari_score, grade_for_score, recalculate_enrollment, required_recording_count
+from certification_service import calculate_qari_score, decide_application, grade_for_score, recalculate_enrollment, required_recording_count
 from database import Course, TrainingChallenge
 
 
 class CertificationRuleTests(unittest.TestCase):
+    def test_qari_comment_is_required_for_approved_transcript(self):
+        qari_id = UUID("00000000-0000-0000-0000-000000000020")
+        application = SimpleNamespace(qari_id=qari_id, status="pending")
+        assessment = {
+            "lafaz_completion": 4, "pronunciation": 4, "melodic_contour": 4,
+            "contour_detail": 4, "pitch_control": 4, "timing": 4,
+            "vocal_breath": 4, "overall_azan": 4,
+        }
+        with self.assertRaisesRegex(ValueError, "Ulasan qari diperlukan"):
+            decide_application(
+                MagicMock(), application, SimpleNamespace(id=qari_id), "approved",
+                notes="   ", assessment=assessment,
+            )
+
     def test_completed_enrollment_recovers_missing_attendance_certificate(self):
         completed_at = datetime(2026, 9, 21, 3, 59)
         enrollment = SimpleNamespace(

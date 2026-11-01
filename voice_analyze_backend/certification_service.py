@@ -427,8 +427,8 @@ def decide_application(db: Session, application: CertificateApplication, qari: U
     if decision not in {"approved", "rejected", "resubmission_requested"}:
         raise ValueError("Invalid decision")
     qari_score = calculate_qari_score(assessment or {})
-    if decision != "approved" and not (notes or "").strip():
-        raise ValueError("Catatan qari diperlukan untuk keputusan ini")
+    if not (notes or "").strip():
+        raise ValueError("Ulasan qari diperlukan untuk melengkapkan transkrip penilaian")
     if decision == "approved" and critical_error:
         raise ValueError("Rakaman dengan kesilapan kritikal tidak boleh diluluskan")
     if decision == "approved" and qari_score < 60:

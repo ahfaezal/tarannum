@@ -129,9 +129,10 @@ const CertificatesPage: React.FC = () => {
         {!profileIncomplete && certificates.map((certificate) => <article key={certificate.id} className="rounded-2xl border border-emerald-100 bg-white p-5 shadow-sm">
           <Award className="h-9 w-9 text-amber-500" />
           <h3 className="mt-3 font-bold text-slate-900">{labels[certificate.certificate_type]}</h3>
+          {certificate.certificate_type === "competency_azan" && <p className="mt-1 text-sm font-semibold text-emerald-800">Termasuk transkrip penilaian Qari</p>}
           <p className="mt-1 font-mono text-xs text-slate-500">{certificate.certificate_number}</p>
           <p className="mt-2 flex items-center gap-2 text-sm text-emerald-700"><CheckCircle2 size={16} /> Status: {certificate.status}</p>
-          <button onClick={() => downloadCertificate(certificate.id, certificate.certificate_number).catch((err) => setError(err.message))} className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-2.5 font-semibold text-white hover:bg-emerald-800"><Download size={17} /> Muat turun PDF</button>
+          <button onClick={() => downloadCertificate(certificate.id, certificate.certificate_number).catch((err) => setError(err.message))} className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-2.5 font-semibold text-white hover:bg-emerald-800"><Download size={17} /> {certificate.certificate_type === "competency_azan" ? "Muat turun Sijil + Transkrip" : "Muat turun PDF"}</button>
         </article>)}
       </div>
     </section>

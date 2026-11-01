@@ -16,7 +16,7 @@ from reportlab.lib.utils import ImageReader
 from PIL import Image
 
 from certificate_display import certificate_display_snapshot
-from database import Certificate, QariSignature, CEOSignature
+from database import Certificate, CertificateApplication, QariSignature, CEOSignature, User
 
 
 EMERALD = HexColor("#07543D")
@@ -26,6 +26,23 @@ CREAM = HexColor("#FFFDF5")
 NAVY = HexColor("#132A45")
 RED = HexColor("#B91C1C")
 PALE = HexColor("#E7E2D4")
+
+TRANSCRIPT_RUBRIC = (
+    ("lafaz_completion", "Kelengkapan dan susunan lafaz", 15),
+    ("pronunciation", "Ketepatan lafaz dan sebutan", 20),
+    ("melodic_contour", "Bentuk melodi keseluruhan", 15),
+    ("contour_detail", "Perincian lenggok setiap frasa", 10),
+    ("pitch_control", "Kedudukan dan kawalan nada", 10),
+    ("timing", "Tempo, jeda dan kesinambungan", 10),
+    ("vocal_breath", "Kestabilan suara dan kawalan nafas", 10),
+    ("overall_azan", "Kesesuaian persembahan azan keseluruhan", 10),
+)
+
+GRADE_DETAILS = {
+    "mumtaz": ("MUMTAZ", "Cemerlang", "grade-mumtaz.png"),
+    "jayyid_jiddan": ("JAYYID JIDDAN", "Sangat Baik", "grade-jayyid-jiddan.png"),
+    "jayyid": ("JAYYID", "Baik", "grade-jayyid.png"),
+}
 
 
 def _fit_font(text: str, font: str, maximum: float, max_width: float, minimum: float = 12) -> float:
@@ -325,6 +342,189 @@ def _draw_signature(c: canvas.Canvas, x: float, y: float, name: str, title_lines
         c.drawCentredString(x, y - 15 - index * 10, line)
 
 
+def _masked_identity(value: str | None) -> str:
+    digits = "".join(character for character in (value or "") if character.isdigit())
+    return f"******-**-{digits[-4:]}" if len(digits) >= 4 else "Tidak dipaparkan"
+
+
+def _draw_wrapped(c: canvas.Canvas, text: str, x: float, y: float, width: float,
+                  font: str = "Helvetica", size: float = 8.5, leading: float = 11,
+                  max_lines: int = 4, color=NAVY) -> float:
+    lines = _wrap_text_to_width((text or "").strip(), font, size, width)[:max_lines]
+    c.setFillColor(color)
+    c.setFont(font, size)
+    for line in lines:
+        c.drawString(x, y, line)
+        y -= leading
+    return y
+
+
+def _draw_transcript_box(c: canvas.Canvas, x: float, y: float, width: float, height: float,
+                         title: str | None = None):
+    c.setFillColor(CREAM)
+    c.setStrokeColor(GOLD)
+    c.setLineWidth(0.8)
+    c.roundRect(x, y, width, height, 8, fill=1, stroke=1)
+    if title:
+        c.setFillColor(EMERALD)
+        c.roundRect(x, y + height - 22, width, 22, 8, fill=1, stroke=0)
+        c.rect(x, y + height - 22, width, 11, fill=1, stroke=0)
+        c.setFillColor(CREAM)
+        c.setFont("Times-Bold", 11)
+        c.drawString(x + 10, y + height - 15, title)
+
+
+def _draw_transcript_page(c: canvas.Canvas, db, certificate: Certificate, snapshot: dict,
+                          width: float, height: float):
+    """Append the locked competency transcript as page two of the certificate PDF."""
+    application = db.get(CertificateApplication, certificate.application_id) if certificate.application_id else None
+    student = db.get(User, certificate.student_id)
+    assessment = dict(application.qari_assessment_json or {}) if application else {}
+    qari_score = float(application.qari_score or 0) if application else 0.0
+    qari_notes = (application.qari_notes or "").strip() if application else ""
+    grade_key = certificate.final_grade or "jayyid"
+    grade_roman, grade_malay, grade_asset = GRADE_DETAILS.get(grade_key, GRADE_DETAILS["jayyid"])
+    transcript_number = f"{certificate.certificate_number}-T"
+
+    c.setFillColor(CREAM)
+    c.rect(0, 0, width, height, fill=1, stroke=0)
+    c.setStrokeColor(EMERALD)
+    c.setLineWidth(6)
+    c.rect(10, 10, width - 20, height - 20, fill=0, stroke=1)
+    c.setStrokeColor(GOLD)
+    c.setLineWidth(1.2)
+    c.rect(17, 17, width - 34, height - 34, fill=0, stroke=1)
+    logo_path = Path(__file__).resolve().parent / "assets" / "tarannum-logo.png"
+    c.drawImage(str(logo_path), width / 2 - 25, height - 62, 50, 50,
+                preserveAspectRatio=True, mask="auto")
+
+    c.setFillColor(NAVY)
+    c.setFont("Helvetica", 7.5)
+    c.drawString(width - 218, height - 38, f"No. Transkrip: {transcript_number}")
+    c.drawString(width - 218, height - 50, f"No. Sijil: {certificate.certificate_number}")
+    c.drawString(width - 218, height - 62, f"Tarikh Dikeluarkan: {_course_date_label(certificate.issued_at.isoformat())}")
+    _centered(c, "TRANSKRIP PENILAIAN KOMPETENSI AZAN", height - 91, "Times-Bold", 23, EMERALD)
+    _centered(c, "AZAN MAQAM HIJJAZ", height - 113, "Times-Bold", 15, GOLD)
+    _centered(c, "REKOD PENILAIAN QARI BERAUTORITI", height - 130, "Helvetica-Bold", 7.5, NAVY)
+
+    top_y = 304
+    _draw_transcript_box(c, 28, top_y, 310, 118, "MAKLUMAT PESERTA")
+    details = (
+        ("Nama", snapshot.get("student_name") or ""),
+        ("No. Kad Pengenalan", _masked_identity(getattr(student, "ic_number", None))),
+        ("Program", snapshot.get("certificate_course_title") or snapshot.get("course_title") or ""),
+        ("Tarikh Kursus", _course_date_label(snapshot.get("course_date") or "")),
+        ("Lokasi", snapshot.get("course_location") or ""),
+        ("Qari Penilai", snapshot.get("qari_name") or "Qari Berautoriti"),
+    )
+    y = top_y + 83
+    for label, value in details:
+        c.setFillColor(NAVY)
+        c.setFont("Helvetica", 7.5)
+        c.drawString(39, y, label)
+        c.drawString(118, y, ":")
+        c.setFont("Helvetica-Bold" if label in {"Nama", "Qari Penilai"} else "Helvetica", 7.5)
+        c.drawString(128, y, str(value)[:52])
+        y -= 13
+    qari_title = snapshot.get("qari_title") or "Qari Penilai"
+    c.setFont("Helvetica", 6.5)
+    c.drawString(128, y + 7, str(qari_title)[:66])
+
+    _draw_transcript_box(c, 350, top_y, 265, 118, "PENGANUGERAHAN")
+    c.setFillColor(NAVY)
+    c.setFont("Times-Roman", 10)
+    c.drawCentredString(482.5, top_y + 84, "Dengan ini disahkan bahawa")
+    c.setFont("Times-Bold", _fit_font(snapshot.get("student_name") or "", "Times-Bold", 14, 235, 9))
+    c.drawCentredString(482.5, top_y + 61, snapshot.get("student_name") or "")
+    c.setFont("Times-Roman", 8.5)
+    c.drawCentredString(482.5, top_y + 42, "telah menunjukkan kompetensi dalam melafazkan azan")
+    c.drawCentredString(482.5, top_y + 29, "mengikut Maqam Hijjaz melalui penilaian Qari berautoriti.")
+
+    _draw_transcript_box(c, 627, top_y, 187, 118, "TAHAP KOMPETENSI")
+    c.setFillColor(EMERALD)
+    c.roundRect(642, top_y + 39, 157, 50, 14, fill=1, stroke=0)
+    c.setFillColor(LIGHT_GOLD)
+    c.setFont("Times-Bold", _fit_font(grade_roman, "Times-Bold", 16, 145, 10))
+    c.drawCentredString(720.5, top_y + 68, grade_roman)
+    arabic_path = Path(__file__).resolve().parent / "assets" / grade_asset
+    if arabic_path.is_file():
+        c.drawImage(str(arabic_path), 682, top_y + 43, 77, 19, preserveAspectRatio=True, mask="auto")
+    c.setFillColor(NAVY)
+    c.setFont("Times-Bold", 12)
+    c.drawCentredString(720.5, top_y + 19, grade_malay)
+
+    table_x, table_y, table_w, row_h = 28, 127, 786, 17
+    table_top = table_y + row_h * 9
+    c.setFillColor(EMERALD)
+    c.rect(table_x, table_top, table_w, 22, fill=1, stroke=0)
+    c.setFillColor(CREAM)
+    c.setFont("Times-Bold", 10)
+    c.drawString(table_x + 10, table_top + 7, "PERINCIAN PENILAIAN QARI")
+    columns = (table_x, table_x + 42, table_x + 445, table_x + 574, table_x + 662, table_x + table_w)
+    headers = ("Bil.", "Elemen Kompetensi", "Skala Qari (1-5)", "Wajaran", "Markah Berwajaran")
+    c.setFillColor(HexColor("#E8F0EB"))
+    c.rect(table_x, table_top - row_h, table_w, row_h, fill=1, stroke=0)
+    c.setFillColor(NAVY)
+    c.setFont("Helvetica-Bold", 7.4)
+    for index, header in enumerate(headers):
+        c.drawCentredString((columns[index] + columns[index + 1]) / 2, table_top - 13, header)
+    scale_labels = {1: "Lemah", 2: "Memadai", 3: "Baik", 4: "Sangat Baik", 5: "Cemerlang"}
+    for row_index, (key, label, weight) in enumerate(TRANSCRIPT_RUBRIC, start=1):
+        y0 = table_top - row_h * (row_index + 1)
+        if row_index % 2 == 0:
+            c.setFillColor(HexColor("#F2F5F2"))
+            c.rect(table_x, y0, table_w, row_h, fill=1, stroke=0)
+        rating = int(assessment.get(key) or 0)
+        weighted = (rating / 5) * weight
+        values = (str(row_index), label, f"{rating} - {scale_labels.get(rating, '-')}", f"{weight}%", f"{weighted:.0f}")
+        c.setFillColor(NAVY)
+        c.setFont("Helvetica", 7.1)
+        c.drawCentredString((columns[0] + columns[1]) / 2, y0 + 5, values[0])
+        c.drawString(columns[1] + 8, y0 + 5, values[1])
+        for column_index in range(2, 5):
+            c.drawCentredString((columns[column_index] + columns[column_index + 1]) / 2, y0 + 5, values[column_index])
+    c.setStrokeColor(HexColor("#A8B8AF"))
+    c.setLineWidth(0.35)
+    for x in columns:
+        c.line(x, table_y, x, table_top)
+    for row_index in range(10):
+        c.line(table_x, table_y + row_h * row_index, table_x + table_w, table_y + row_h * row_index)
+
+    _draw_transcript_box(c, 28, 69, 500, 48, "RUMUSAN KEPUTUSAN")
+    summary = (("Jumlah", f"{qari_score:.0f}/100"), ("Keputusan", "LULUS"), ("Pangkat", grade_roman), ("Tahap", grade_malay))
+    for index, (label, value) in enumerate(summary):
+        center = 28 + (index + 0.5) * 125
+        c.setFillColor(NAVY)
+        c.setFont("Helvetica", 6.7)
+        c.drawCentredString(center, 88, label)
+        c.setFont("Times-Bold", _fit_font(value, "Times-Bold", 12, 105, 8))
+        c.drawCentredString(center, 75, value)
+
+    _draw_transcript_box(c, 540, 69, 274, 48, "SKALA PENILAIAN QARI")
+    c.setFillColor(NAVY)
+    c.setFont("Helvetica", 7)
+    c.setFont("Helvetica", 6.4)
+    c.drawCentredString(677, 80, "1 Lemah | 2 Memadai | 3 Baik | 4 Sangat Baik | 5 Cemerlang")
+
+    _draw_transcript_box(c, 28, 18, 500, 42, "ULASAN QARI")
+    comment = qari_notes or "Penilaian kompetensi telah disahkan berdasarkan rubrik rasmi oleh Qari Penilai."
+    _draw_wrapped(c, comment, 39, 31, 478, size=5.8, leading=7, max_lines=2)
+    _draw_transcript_box(c, 540, 18, 130, 42)
+    _draw_wrapped(c, "Skor AI menyokong latihan; keputusan kompetensi disahkan oleh Qari Penilai.", 550, 45, 110, size=6.2, leading=7, max_lines=4)
+    qr = qrcode.QRCode(version=None, box_size=3, border=1)
+    qr.add_data(snapshot.get("verification_url", "https://tarannum.ai"))
+    qr.make(fit=True)
+    qr_image = qr.make_image(fill_color="black", back_color="white")
+    qr_stream = io.BytesIO()
+    qr_image.save(qr_stream, format="PNG")
+    qr_stream.seek(0)
+    c.drawImage(ImageReader(qr_stream), 686, 18, 42, 42, preserveAspectRatio=True, mask="auto")
+    c.setFillColor(NAVY)
+    c.setFont("Helvetica", 6)
+    c.drawString(736, 42, "Pengesahan ketulenan")
+    c.drawString(736, 29, transcript_number)
+
+
 def render_certificate_pdf(db, certificate: Certificate) -> Path:
     """Render and persist a certificate PDF, then store its SHA-256 hash."""
     output_dir = Path(os.getenv("CERTIFICATE_OUTPUT_DIR", "data/private/certificates")).resolve()
@@ -412,6 +612,9 @@ def render_certificate_pdf(db, certificate: Certificate) -> Path:
     c.setFillColor(NAVY)
     c.drawCentredString(719 if is_attendance else (722 if is_azan else 743), 67 if is_attendance else (72 if is_azan else 49), "tarannum.ai" if is_attendance else certificate.certificate_number)
     c.showPage()
+    if is_azan:
+        _draw_transcript_page(c, db, certificate, snapshot, width, height)
+        c.showPage()
     c.save()
 
     digest = hashlib.sha256(output_path.read_bytes()).hexdigest()
