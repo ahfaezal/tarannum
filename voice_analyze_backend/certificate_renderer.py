@@ -386,14 +386,19 @@ def _draw_transcript_page(c: canvas.Canvas, db, certificate: Certificate, snapsh
     grade_roman, grade_malay, grade_asset = GRADE_DETAILS.get(grade_key, GRADE_DETAILS["jayyid"])
     transcript_number = f"{certificate.certificate_number}-T"
 
-    c.setFillColor(CREAM)
-    c.rect(0, 0, width, height, fill=1, stroke=0)
-    c.setStrokeColor(EMERALD)
-    c.setLineWidth(6)
-    c.rect(10, 10, width - 20, height - 20, fill=0, stroke=1)
-    c.setStrokeColor(GOLD)
-    c.setLineWidth(1.2)
-    c.rect(17, 17, width - 34, height - 34, fill=0, stroke=1)
+    transcript_background = Path(__file__).resolve().parent / "assets" / "azan-transcript-background.png"
+    if transcript_background.is_file():
+        c.drawImage(str(transcript_background), 0, 0, width, height,
+                    preserveAspectRatio=False, mask="auto")
+    else:
+        c.setFillColor(CREAM)
+        c.rect(0, 0, width, height, fill=1, stroke=0)
+        c.setStrokeColor(EMERALD)
+        c.setLineWidth(6)
+        c.rect(10, 10, width - 20, height - 20, fill=0, stroke=1)
+        c.setStrokeColor(GOLD)
+        c.setLineWidth(1.2)
+        c.rect(17, 17, width - 34, height - 34, fill=0, stroke=1)
     logo_path = Path(__file__).resolve().parent / "assets" / "tarannum-logo.png"
     c.drawImage(str(logo_path), width / 2 - 25, height - 62, 50, 50,
                 preserveAspectRatio=True, mask="auto")
@@ -506,11 +511,31 @@ def _draw_transcript_page(c: canvas.Canvas, db, certificate: Certificate, snapsh
     c.setFont("Helvetica", 6.4)
     c.drawCentredString(677, 80, "1 Lemah | 2 Memadai | 3 Baik | 4 Sangat Baik | 5 Cemerlang")
 
-    _draw_transcript_box(c, 28, 18, 500, 42, "ULASAN QARI")
+    _draw_transcript_box(c, 28, 18, 372, 42, "ULASAN QARI")
     comment = qari_notes or "Penilaian kompetensi telah disahkan berdasarkan rubrik rasmi oleh Qari Penilai."
-    _draw_wrapped(c, comment, 39, 31, 478, size=5.8, leading=7, max_lines=2)
-    _draw_transcript_box(c, 540, 18, 130, 42)
-    _draw_wrapped(c, "Skor AI menyokong latihan; keputusan kompetensi disahkan oleh Qari Penilai.", 550, 45, 110, size=6.2, leading=7, max_lines=4)
+    _draw_wrapped(c, comment, 39, 31, 350, size=5.8, leading=7, max_lines=2)
+    _draw_transcript_box(c, 410, 18, 112, 42)
+    _draw_wrapped(c, "Skor AI menyokong latihan; keputusan kompetensi disahkan oleh Qari Penilai.", 420, 45, 92, size=5.8, leading=6.5, max_lines=4)
+
+    qari_signature = None
+    qari_id = getattr(certificate, "qari_id", None)
+    if qari_id:
+        qari_signature = (
+            db.query(QariSignature)
+            .filter(QariSignature.qari_id == qari_id, QariSignature.is_active.is_(True))
+            .order_by(QariSignature.updated_at.desc())
+            .first()
+        )
+    if qari_signature:
+        signature_reader = _transparent_signature_reader(qari_signature.signature_path)
+        if signature_reader:
+            c.drawImage(signature_reader, 535, 28, 90, 30,
+                        preserveAspectRatio=True, anchor="c", mask="auto")
+    c.setFillColor(NAVY)
+    c.setFont("Helvetica-Bold", _fit_font(snapshot.get("qari_name") or "Qari Penilai", "Helvetica-Bold", 6.5, 120, 5.2))
+    c.drawCentredString(580, 20, snapshot.get("qari_name") or "Qari Penilai")
+    c.setFont("Helvetica", _fit_font(qari_title, "Helvetica", 5.2, 120, 4.2))
+    c.drawCentredString(580, 13, qari_title)
     qr = qrcode.QRCode(version=None, box_size=3, border=1)
     qr.add_data(snapshot.get("verification_url", "https://tarannum.ai"))
     qr.make(fit=True)
@@ -518,11 +543,11 @@ def _draw_transcript_page(c: canvas.Canvas, db, certificate: Certificate, snapsh
     qr_stream = io.BytesIO()
     qr_image.save(qr_stream, format="PNG")
     qr_stream.seek(0)
-    c.drawImage(ImageReader(qr_stream), 686, 18, 42, 42, preserveAspectRatio=True, mask="auto")
+    c.drawImage(ImageReader(qr_stream), 660, 18, 42, 42, preserveAspectRatio=True, mask="auto")
     c.setFillColor(NAVY)
     c.setFont("Helvetica", 6)
-    c.drawString(736, 42, "Pengesahan ketulenan")
-    c.drawString(736, 29, transcript_number)
+    c.drawString(710, 42, "Pengesahan ketulenan")
+    c.drawString(710, 29, transcript_number)
 
 
 def render_certificate_pdf(db, certificate: Certificate) -> Path:
