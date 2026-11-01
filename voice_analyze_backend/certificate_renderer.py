@@ -527,9 +527,13 @@ def _draw_transcript_page(c: canvas.Canvas, db, certificate: Certificate, snapsh
             .first()
         )
     if qari_signature:
-        signature_reader = _transparent_signature_reader(qari_signature.signature_path)
-        if signature_reader:
-            c.drawImage(signature_reader, 535, 28, 90, 30,
+        signature_image = None
+        if qari_signature.image_data:
+            signature_image = _transparent_signature_reader(bytes(qari_signature.image_data))
+        elif qari_signature.storage_path and Path(qari_signature.storage_path).exists():
+            signature_image = qari_signature.storage_path
+        if signature_image:
+            c.drawImage(signature_image, 535, 28, 90, 30,
                         preserveAspectRatio=True, anchor="c", mask="auto")
     c.setFillColor(NAVY)
     c.setFont("Helvetica-Bold", _fit_font(snapshot.get("qari_name") or "Qari Penilai", "Helvetica-Bold", 6.5, 120, 5.2))
