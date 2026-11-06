@@ -11,6 +11,7 @@ from auth import get_current_student_user
 from database import IqraAttempt, IqraProgress, User, get_db
 from iqra.config import is_azure_speech_configured, is_iqra_enabled
 from iqra.azure_speech import AzureSpeechAssessmentError, assess_pronunciation
+from iqra.fastconformer import compare_transcription
 from iqra.samples import SAMPLES, get_sample
 from iqra.scoring import apply_level_word_diagnostics, align_word_results, decide_iqra_attempt
 from iqra.schemas import (
@@ -152,6 +153,14 @@ async def assess_iqra_sample(
         except AzureSpeechAssessmentError as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
 
+        fastconformer_shadow = None
+        if sample.level == 6:
+            fastconformer_shadow = await run_in_threadpool(
+                compare_transcription,
+                source_path,
+                sample.reference_text,
+            )
+
     result["words"] = apply_level_word_diagnostics(
         sample.level,
         align_word_results(sample.reference_text, result.get("words", [])),
@@ -234,4 +243,5 @@ async def assess_iqra_sample(
         decision_reason=decision.reason,
         credited_seconds=credited_seconds,
         next_stage=next_stage,
+        fastconformer_shadow=fastconformer_shadow,
     )

@@ -2,7 +2,7 @@ import os
 import unittest
 from unittest.mock import patch
 
-from iqra.config import is_azure_speech_configured, is_iqra_enabled
+from iqra.config import is_azure_speech_configured, is_fastconformer_shadow_enabled, is_iqra_enabled
 
 
 class IqraConfigTests(unittest.TestCase):
@@ -51,6 +51,15 @@ class IqraConfigTests(unittest.TestCase):
 
         with patch.dict(os.environ, {"AZURE_SPEECH_KEY": "test-key"}, clear=True):
             self.assertFalse(is_azure_speech_configured())
+
+    def test_fastconformer_shadow_requires_flag_and_endpoint(self):
+        with patch.dict(os.environ, {"IQRA_FASTCONFORMER_ENABLED": "true"}, clear=True):
+            self.assertFalse(is_fastconformer_shadow_enabled())
+        with patch.dict(os.environ, {
+            "IQRA_FASTCONFORMER_ENABLED": "true",
+            "IQRA_FASTCONFORMER_ENDPOINT": "https://example.test/asr",
+        }, clear=True):
+            self.assertTrue(is_fastconformer_shadow_enabled())
 
 
 if __name__ == "__main__":

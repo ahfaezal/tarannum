@@ -24,3 +24,11 @@ def is_azure_speech_configured() -> bool:
         os.getenv("AZURE_SPEECH_KEY", "").strip()
         and os.getenv("AZURE_SPEECH_REGION", "").strip()
     )
+
+
+def is_fastconformer_shadow_enabled() -> bool:
+    """Enable the optional IQRA 6 comparison engine only when fully configured."""
+    return bool(
+        _enabled(os.getenv("IQRA_FASTCONFORMER_ENABLED", "false"))
+        and os.getenv("IQRA_FASTCONFORMER_ENDPOINT", "").strip()
+    )

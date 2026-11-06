@@ -65,3 +65,4 @@ class IqraAssessmentResponse(BaseModel):
     decision_reason: Optional[str] = None
     credited_seconds: float = 0
     next_stage: Optional[str] = None
+    fastconformer_shadow: Optional[dict] = None
