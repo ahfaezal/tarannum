@@ -3142,6 +3142,102 @@ async def get_reference_audio(
         from database import Reference
         ref_record = db.query(Reference).filter(Reference.id == ref_id).first()
 
+        if (
+            ref_record
+            and ref_record.cloud_storage_type == "external_http"
+            and ref_record.cloud_storage_path
+        ):
+            # Closed-staging references may reuse a public Tarannum.ai audio
+            # endpoint without writing into the production S3 bucket. Keep the
+            # proxy deliberately allow-listed to avoid turning this endpoint
+            # into a general-purpose SSRF primitive.
+            try:
+                from urllib.parse import urlparse
+                from fastapi.responses import FileResponse
+                import requests
+
+                external_url = ref_record.cloud_storage_path
+                parsed_url = urlparse(external_url)
+                allowed_hosts = {
+                    host.strip().lower()
+                    for host in os.getenv(
+                        "EXTERNAL_REFERENCE_HOSTS", "tarannum.ai,www.tarannum.ai"
+                    ).split(",")
+                    if host.strip()
+                }
+                if (
+                    parsed_url.scheme != "https"
+                    or (parsed_url.hostname or "").lower() not in allowed_hosts
+                    or not parsed_url.path.startswith("/api/references/")
+                    or not parsed_url.path.endswith("/audio")
+                ):
+                    raise HTTPException(
+                        status_code=400,
+                        detail="External reference URL is not allowed",
+                    )
+
+                extension = Path(ref_record.filename).suffix if ref_record.filename else ".mp3"
+                cache_version = f"{int(ref_record.file_size or 0)}_{int(ref_record.upload_date.timestamp()) if ref_record.upload_date else 0}"
+                temp_audio_path = REFERENCE_AUDIO_CACHE_DIR / f"{ref_id}_{cache_version}{extension}"
+
+                with _reference_audio_cache_locks_guard:
+                    cache_lock = _reference_audio_cache_locks.setdefault(ref_id, threading.Lock())
+
+                with cache_lock:
+                    cache_ready = temp_audio_path.exists() and temp_audio_path.stat().st_size > 0
+                    if not cache_ready:
+                        partial_path = temp_audio_path.with_suffix(
+                            f"{temp_audio_path.suffix}.{uuid.uuid4().hex}.part"
+                        )
+                        try:
+                            with requests.get(
+                                external_url,
+                                stream=True,
+                                timeout=(10, 120),
+                                allow_redirects=False,
+                            ) as response:
+                                response.raise_for_status()
+                                downloaded = 0
+                                with open(partial_path, "wb") as output:
+                                    for chunk in response.iter_content(chunk_size=1024 * 256):
+                                        if not chunk:
+                                            continue
+                                        downloaded += len(chunk)
+                                        if downloaded > MAX_FILE_SIZE:
+                                            raise ValueError("External reference file is too large")
+                                        output.write(chunk)
+                            cache_ready = downloaded > 0
+                            if cache_ready:
+                                partial_path.replace(temp_audio_path)
+                        finally:
+                            partial_path.unlink(missing_ok=True)
+
+                if not cache_ready:
+                    raise HTTPException(status_code=404, detail="External reference audio is empty")
+
+                return FileResponse(
+                    path=str(temp_audio_path),
+                    media_type="audio/mpeg",
+                    filename=ref_record.filename or temp_audio_path.name,
+                    headers={
+                        "Cache-Control": "private, max-age=3600",
+                        "X-Content-Type-Options": "nosniff",
+                    },
+                )
+            except HTTPException:
+                raise
+            except Exception as external_error:
+                logger.error(
+                    "Error proxying external reference %s: %s",
+                    ref_id,
+                    external_error,
+                    exc_info=True,
+                )
+                raise HTTPException(
+                    status_code=502,
+                    detail="External reference audio is unavailable",
+                )
+
         if ref_record and ref_record.cloud_storage_type and ref_record.cloud_storage_path:
             # Proxy S3 file through backend to avoid CORS issues
             try:
