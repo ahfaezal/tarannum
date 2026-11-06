@@ -521,12 +521,14 @@ try:
     from expert_validation_endpoints import router as expert_validation_router
     from certification_endpoints import router as certification_router
     from promotion_endpoints import router as promotion_router
+    from iqra.router import router as iqra_router
     app.include_router(auth_router)
     app.include_router(auth_debug_router)
     app.include_router(platform_router)
     app.include_router(expert_validation_router)
     app.include_router(certification_router)
     app.include_router(promotion_router)
+    app.include_router(iqra_router)
 except ImportError as e:
     logger.warning(f"Could not import routers: {e}")
 
