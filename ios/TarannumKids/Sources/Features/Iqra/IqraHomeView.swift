@@ -13,7 +13,9 @@ struct IqraHomeView: View {
                     .foregroundStyle(Color.iqraInk)
 
                 ForEach(samples) { sample in
-                    NavigationLink(value: sample) {
+                    NavigationLink {
+                        IqraSampleView(sample: sample)
+                    } label: {
                         IqraLevelCard(sample: sample)
                     }
                     .buttonStyle(.plain)
@@ -42,9 +44,6 @@ struct IqraHomeView: View {
             .ignoresSafeArea()
         )
         .navigationTitle("IQRA")
-        .navigationDestination(for: IqraSample.self) { sample in
-            IqraSampleView(sample: sample)
-        }
     }
 
     private var header: some View {

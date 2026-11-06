@@ -36,7 +36,7 @@ struct IqraWordAssessment: Decodable, Equatable, Identifiable {
 }
 
 struct IqraAssessmentResult: Decodable, Equatable {
-    let sampleID: String
+    let sampleId: String
     let level: Int
     let referenceText: String
     let recognizedText: String
