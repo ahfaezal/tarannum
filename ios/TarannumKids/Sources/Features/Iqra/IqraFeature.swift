@@ -23,6 +23,31 @@ struct IqraSample: Identifiable, Equatable, Hashable {
     var words: [String] {
         arabicText.split(whereSeparator: { $0.isWhitespace }).map(String.init)
     }
+
+    var guideRanges: [Range<Int>] {
+        let counts: [Int]
+        if level == .three {
+            counts = Array(repeating: 1, count: words.count)
+        } else if level == .six {
+            switch sequence {
+            case 1, 2, 5: counts = [2, 2]
+            case 3: counts = [2]
+            case 4: counts = [2, 1]
+            case 6: counts = [1, 2]
+            case 7: counts = [3, 3, 3]
+            default: counts = [words.count]
+            }
+        } else {
+            counts = [words.count]
+        }
+        var start = 0
+        return counts.compactMap { count in
+            guard start < words.count else { return nil }
+            let end = min(start + count, words.count)
+            defer { start = end }
+            return start..<end
+        }
+    }
 }
 
 struct IqraPhonemeAssessment: Decodable, Equatable {
@@ -65,6 +90,25 @@ struct IqraAssessmentResult: Decodable, Equatable {
             .trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
         return !cleaned.isEmpty && (pronunciationScore ?? 0) > 0
     }
+}
+
+struct IqraProgressItem: Decodable, Equatable, Identifiable {
+    let sampleId: String
+    let level: Int
+    let sequence: Int
+    let bestScore: Double
+    let passed: Bool
+    let attemptCount: Int
+
+    var id: String { sampleId }
+}
+
+struct IqraProgressResponse: Decodable, Equatable {
+    let nextStage: String
+    let iqra3Completed: Bool
+    let iqra6Completed: Bool
+    let tarannumRecommended: Bool
+    let items: [IqraProgressItem]
 }
 
 enum IqraFeature {
@@ -120,4 +164,10 @@ enum IqraFeature {
         IqraSample(id: "iqra-6-ayah-6", level: .six, arabicText: "اهْدِنَا الصِّرَاطَ الْمُسْتَقِيمَ", instruction: "Baca ayat keenam dengan jelas.", title: "Al-Fatihah · Ayat 6", sequence: 6),
         IqraSample(id: "iqra-6-ayah-7", level: .six, arabicText: "صِرَاطَ الَّذِينَ أَنْعَمْتَ عَلَيْهِمْ غَيْرِ الْمَغْضُوبِ عَلَيْهِمْ وَلَا الضَّالِّينَ", instruction: "Lengkapkan surah dengan ayat ketujuh.", title: "Al-Fatihah · Ayat 7", sequence: 7),
     ]
+
+    static func nextSample(after sample: IqraSample) -> IqraSample? {
+        guard let index = samples.firstIndex(where: { $0.id == sample.id }) else { return nil }
+        let nextIndex = samples.index(after: index)
+        return nextIndex < samples.endIndex ? samples[nextIndex] : nil
+    }
 }

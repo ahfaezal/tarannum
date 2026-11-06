@@ -9,7 +9,7 @@ final class IqraPracticeViewModel: NSObject, ObservableObject {
     @Published private(set) var result: IqraAssessmentResult?
     @Published private(set) var message = "Tekan Mula Baca apabila bersedia."
     @Published private(set) var countdownValue: Int?
-    @Published private(set) var activeWordIndex: Int?
+    @Published private(set) var activeWordRange: Range<Int>?
     @Published private(set) var isPreparing = false
 
     private let api = KidsAPIClient()
@@ -68,8 +68,10 @@ final class IqraPracticeViewModel: NSObject, ObservableObject {
             recordingURL = url
             isRecording = true
             isPreparing = false
-            message = "Ikut penanda hijau dan sebut satu perkataan pada satu masa."
-            startWordGuide(sample.words)
+            message = sample.level == .six
+                ? "Baca ayat secara bersambung mengikut frasa yang ditandakan."
+                : "Ikut penanda hijau dan sebut satu perkataan pada satu masa."
+            startReadingGuide(for: sample)
         } catch {
             countdownValue = nil
             isPreparing = false
@@ -77,17 +79,23 @@ final class IqraPracticeViewModel: NSObject, ObservableObject {
         }
     }
 
-    private func startWordGuide(_ words: [String]) {
+    private func startReadingGuide(for sample: IqraSample) {
         guideTask?.cancel()
         guideTask = Task { @MainActor [weak self] in
-            for index in words.indices {
+            // Keep the recorder open briefly before the first cue so the
+            // beginning of a connected ayah is not clipped by audio-session
+            // activation or by the child's first breath.
+            self?.activeWordRange = nil
+            try? await Task.sleep(for: .milliseconds(700))
+            for range in sample.guideRanges {
                 guard !Task.isCancelled, self?.isRecording == true else { return }
-                self?.activeWordIndex = index
-                AudioServicesPlaySystemSound(1104)
-                try? await Task.sleep(for: .milliseconds(2200))
+                self?.activeWordRange = range
+                if sample.level == .three { AudioServicesPlaySystemSound(1104) }
+                let milliseconds = sample.level == .six ? 3400 : 2200
+                try? await Task.sleep(for: .milliseconds(milliseconds))
             }
             guard !Task.isCancelled else { return }
-            self?.activeWordIndex = nil
+            self?.activeWordRange = nil
             self?.message = "Selesai membaca? Tekan Selesai & Semak."
         }
     }
@@ -96,7 +104,7 @@ final class IqraPracticeViewModel: NSObject, ObservableObject {
         recorder?.stop()
         guideTask?.cancel()
         guideTask = nil
-        activeWordIndex = nil
+        activeWordRange = nil
         recorder = nil
         isRecording = false
         try? AVAudioSession.sharedInstance().setActive(

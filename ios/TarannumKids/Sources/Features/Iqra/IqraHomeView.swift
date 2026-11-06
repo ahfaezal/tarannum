@@ -2,6 +2,8 @@ import SwiftUI
 
 struct IqraHomeView: View {
     private let samples = IqraFeature.samples
+    private let api = KidsAPIClient()
+    @State private var progressBySample: [String: IqraProgressItem] = [:]
 
     var body: some View {
         ScrollView {
@@ -39,6 +41,8 @@ struct IqraHomeView: View {
             .ignoresSafeArea()
         )
         .navigationTitle("IQRA")
+        .task { await loadProgress() }
+        .onAppear { Task { await loadProgress() } }
     }
 
     private func levelSection(title: String, subtitle: String, level: IqraLevel) -> some View {
@@ -48,12 +52,20 @@ struct IqraHomeView: View {
                 Text(subtitle).font(.subheadline).foregroundStyle(.secondary)
             }
             ForEach(samples.filter { $0.level == level }) { sample in
-                NavigationLink { IqraSampleView(sample: sample) } label: { IqraLevelCard(sample: sample) }
+                NavigationLink { IqraSampleView(sample: sample) } label: {
+                    IqraLevelCard(sample: sample, progress: progressBySample[sample.id])
+                }
                     .buttonStyle(.plain)
             }
         }
         .padding(16)
         .background(.white.opacity(0.55), in: RoundedRectangle(cornerRadius: 20))
+    }
+
+    @MainActor
+    private func loadProgress() async {
+        guard let response = try? await api.fetchIqraProgress() else { return }
+        progressBySample = Dictionary(uniqueKeysWithValues: response.items.map { ($0.sampleId, $0) })
     }
 
     private var header: some View {
@@ -79,6 +91,7 @@ struct IqraHomeView: View {
 
 private struct IqraLevelCard: View {
     let sample: IqraSample
+    let progress: IqraProgressItem?
 
     var body: some View {
         HStack(spacing: 20) {
@@ -92,7 +105,12 @@ private struct IqraLevelCard: View {
                 HStack {
                     Text(sample.title)
                     Spacer()
-                    Text(sample.level.title).font(.caption.bold()).foregroundStyle(levelColor)
+                    if progress?.passed == true {
+                        Label("Lulus · \(Int((progress?.bestScore ?? 0).rounded()))", systemImage: "checkmark.seal.fill")
+                            .font(.caption.bold()).foregroundStyle(.green)
+                    } else {
+                        Text(sample.level.title).font(.caption.bold()).foregroundStyle(levelColor)
+                    }
                 }
                     .font(.title2.bold())
                     .foregroundStyle(Color.iqraInk)
@@ -160,7 +178,12 @@ private struct IqraSampleView: View {
                                 .foregroundStyle(Color.iqraEmerald)
                         }
                     } else if model.isRecording {
-                        Label("Sebut satu perkataan setiap kali penanda hijau bergerak.", systemImage: "lightbulb.fill")
+                        Label(
+                            sample.level == .six
+                                ? "Baca ayat secara bersambung mengikut frasa hijau."
+                                : "Sebut satu perkataan setiap kali penanda hijau bergerak.",
+                            systemImage: "lightbulb.fill"
+                        )
                             .font(.headline).foregroundStyle(Color.iqraEmerald)
                     }
                     assessmentControls
@@ -188,7 +211,7 @@ private struct IqraSampleView: View {
         var output = AttributedString()
         for (index, word) in sample.words.enumerated() {
             var token = AttributedString(word)
-            if model.activeWordIndex == index {
+            if model.activeWordRange?.contains(index) == true {
                 token.backgroundColor = .green.opacity(0.28)
                 token.foregroundColor = .iqraEmerald
             } else if model.isRecording {
@@ -226,7 +249,19 @@ private struct IqraSampleView: View {
             }
 
             if let result = model.result {
-                IqraScoreGrid(result: result)
+                IqraScoreGrid(result: result, level: sample.level)
+                if result.passed == true, let next = IqraFeature.nextSample(after: sample) {
+                    NavigationLink {
+                        IqraSampleView(sample: next)
+                    } label: {
+                        Label("Teruskan ke \(next.title)", systemImage: "arrow.right.circle.fill")
+                            .font(.title3.bold())
+                            .frame(maxWidth: 420)
+                            .padding(.vertical, 15)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Color.iqraEmerald)
+                }
             }
         }
     }
@@ -234,6 +269,7 @@ private struct IqraSampleView: View {
 
 private struct IqraScoreGrid: View {
     let result: IqraAssessmentResult
+    let level: IqraLevel
 
     var body: some View {
         VStack(spacing: 12) {
@@ -324,9 +360,13 @@ private struct IqraScoreGrid: View {
         if result.passed ?? false {
             message = result.nextStage == "tarannum" ? "Tahniah. Anda bersedia meneruskan latihan Tarannum." : "Bacaan ini lulus. Teruskan latihan seterusnya."
         } else if !focus.isEmpty {
-            message = "Fokus semula pada: \(focus.joined(separator: "، ")). Sebut satu demi satu mengikut penanda hijau."
+            message = level == .six
+                ? "Fokus semula pada: \(focus.joined(separator: "، ")). Baca semula ayat secara bersambung mengikut frasa hijau."
+                : "Fokus semula pada: \(focus.joined(separator: "، ")). Sebut satu demi satu mengikut penanda hijau."
         } else {
-            message = "Cuba lagi dengan tempo sederhana dan pastikan setiap perkataan disebut lengkap."
+            message = level == .six
+                ? "Cuba lagi dengan tempo ayat yang sederhana, bersambung dan jelas."
+                : "Cuba lagi dengan tempo sederhana dan pastikan setiap perkataan disebut lengkap."
         }
         return HStack(alignment: .top, spacing: 12) {
             Image(systemName: "sparkles").font(.title2).foregroundStyle(Color.iqraEmerald)

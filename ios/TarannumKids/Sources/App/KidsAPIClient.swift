@@ -290,6 +290,25 @@ struct KidsAPIClient {
         return try decoder.decode(IqraAssessmentResult.self, from: data)
     }
 
+    func fetchIqraProgress() async throws -> IqraProgressResponse {
+        guard let session = savedSession else { throw KidsAPIError.sessionExpired }
+        var request = URLRequest(url: baseURL.appending(path: "/api/kids/iqra/progress"))
+        request.setValue("Bearer \(session.accessToken)", forHTTPHeaderField: "Authorization")
+        request.timeoutInterval = 20
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
+        if http.statusCode == 401 {
+            KidsKeychain.deleteSession()
+            throw KidsAPIError.sessionExpired
+        }
+        guard http.statusCode == 200 else {
+            throw KidsAPIError.server("Kemajuan IQRA tidak dapat dimuatkan.")
+        }
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        return try decoder.decode(IqraProgressResponse.self, from: data)
+    }
+
     private static func scoringSummary(from value: Any?) -> ScoringResultSummary? {
         guard let result = value as? [String: Any] else { return nil }
         let rawScore = result["normalizedScore"] ?? result["score"]
