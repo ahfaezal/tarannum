@@ -254,6 +254,42 @@ struct KidsAPIClient {
         )
     }
 
+    func assessIqra(sampleID: String, fileURL: URL) async throws -> IqraAssessmentResult {
+        guard let session = savedSession else { throw KidsAPIError.sessionExpired }
+        let boundary = "TarannumKids-Iqra-\(UUID().uuidString)"
+        var request = URLRequest(url: baseURL.appending(path: "/api/kids/iqra/assess"))
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(session.accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 90
+
+        var body = Data()
+        body.appendFormField("sample_id", value: sampleID, boundary: boundary)
+        body.append("--\(boundary)\r\n")
+        body.append("Content-Disposition: form-data; name=\"audio\"; filename=\"iqra.m4a\"\r\n")
+        body.append("Content-Type: audio/mp4\r\n\r\n")
+        body.append(try Data(contentsOf: fileURL))
+        body.append("\r\n--\(boundary)--\r\n")
+        request.httpBody = body
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw URLError(.badServerResponse)
+        }
+        if http.statusCode == 401 {
+            KidsKeychain.deleteSession()
+            throw KidsAPIError.sessionExpired
+        }
+        guard http.statusCode == 200 else {
+            let detail = (try? JSONDecoder().decode(ErrorResponse.self, from: data))?.detail
+            throw KidsAPIError.server(detail ?? "Penilaian IQRA tidak dapat diselesaikan.")
+        }
+
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        return try decoder.decode(IqraAssessmentResult.self, from: data)
+    }
+
     private static func scoringSummary(from value: Any?) -> ScoringResultSummary? {
         guard let result = value as? [String: Any] else { return nil }
         let rawScore = result["normalizedScore"] ?? result["score"]

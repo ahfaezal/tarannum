@@ -114,6 +114,7 @@ private struct IqraLevelCard: View {
 
 private struct IqraSampleView: View {
     let sample: IqraSample
+    @StateObject private var model = IqraPracticeViewModel()
 
     var body: some View {
         VStack(spacing: 24) {
@@ -137,12 +138,16 @@ private struct IqraSampleView: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
 
-            Label("Penilaian suara belum diaktifkan", systemImage: "mic.slash.circle.fill")
-                .font(.headline)
-                .foregroundStyle(Color.iqraEmerald)
-                .padding(.horizontal, 22)
-                .padding(.vertical, 14)
-                .background(Color.iqraEmerald.opacity(0.10), in: Capsule())
+            if sample.level == .three {
+                assessmentControls
+            } else {
+                Label("Penilaian suara akan ditambah pada fasa seterusnya", systemImage: "clock.fill")
+                    .font(.headline)
+                    .foregroundStyle(Color.iqraEmerald)
+                    .padding(.horizontal, 22)
+                    .padding(.vertical, 14)
+                    .background(Color.iqraEmerald.opacity(0.10), in: Capsule())
+            }
 
             Spacer()
         }
@@ -151,6 +156,80 @@ private struct IqraSampleView: View {
         .background(Color(red: 0.95, green: 1.0, blue: 0.98).ignoresSafeArea())
         .navigationTitle(sample.level.title)
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private var assessmentControls: some View {
+        VStack(spacing: 16) {
+            Button {
+                Task { await model.toggleRecording(for: sample) }
+            } label: {
+                Label(
+                    model.isRecording ? "Selesai & Semak" : "Mula Baca",
+                    systemImage: model.isRecording ? "stop.circle.fill" : "mic.circle.fill"
+                )
+                .font(.title3.bold())
+                .frame(maxWidth: 420)
+                .padding(.vertical, 15)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(model.isRecording ? .red : Color.iqraEmerald)
+            .disabled(model.isSubmitting)
+
+            if model.isSubmitting {
+                ProgressView(model.message)
+            } else {
+                Text(model.message)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+
+            if let result = model.result {
+                IqraScoreGrid(result: result)
+            }
+        }
+    }
+}
+
+private struct IqraScoreGrid: View {
+    let result: IqraAssessmentResult
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Text("Keputusan latihan")
+                .font(.title3.bold())
+                .foregroundStyle(Color.iqraInk)
+
+            HStack(spacing: 12) {
+                scoreCard("Sebutan", result.accuracyScore)
+                scoreCard("Lengkap", result.completenessScore)
+                scoreCard("Lancar", result.fluencyScore)
+                scoreCard("Keseluruhan", result.pronunciationScore)
+            }
+
+            if !result.recognizedText.isEmpty {
+                Text("Dikesan: \(result.recognizedText)")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .environment(\.layoutDirection, .rightToLeft)
+            }
+        }
+        .padding(18)
+        .background(.white, in: RoundedRectangle(cornerRadius: 18))
+        .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.iqraEmerald.opacity(0.22)))
+    }
+
+    private func scoreCard(_ title: String, _ score: Double?) -> some View {
+        VStack(spacing: 4) {
+            Text(score.map { "\(Int($0.rounded()))" } ?? "—")
+                .font(.title2.bold())
+                .foregroundStyle(Color.iqraEmerald)
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 12)
+        .background(Color.iqraEmerald.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
     }
 }
 

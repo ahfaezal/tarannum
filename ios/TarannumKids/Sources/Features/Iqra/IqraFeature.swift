@@ -19,6 +19,36 @@ struct IqraSample: Identifiable, Equatable, Hashable {
     let instruction: String
 }
 
+struct IqraPhonemeAssessment: Decodable, Equatable {
+    let phoneme: String?
+    let accuracyScore: Double?
+}
+
+struct IqraWordAssessment: Decodable, Equatable, Identifiable {
+    let word: String?
+    let accuracyScore: Double?
+    let errorType: String
+    let phonemes: [IqraPhonemeAssessment]
+
+    var id: String {
+        "\(word ?? "word")-\(accuracyScore ?? -1)-\(errorType)"
+    }
+}
+
+struct IqraAssessmentResult: Decodable, Equatable {
+    let sampleID: String
+    let level: Int
+    let referenceText: String
+    let recognizedText: String
+    let accuracyScore: Double?
+    let fluencyScore: Double?
+    let completenessScore: Double?
+    let pronunciationScore: Double?
+    let words: [IqraWordAssessment]
+    let provider: String
+    let locale: String
+}
+
 enum IqraFeature {
     static var isEnabled: Bool { KidsFeatureFlags.iqraEnabled }
 
