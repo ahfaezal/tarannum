@@ -1249,6 +1249,8 @@ async def get_kids_daily_access(
 ):
     """Return the server-authoritative Tarannum Kids unlock decision."""
     from kids_access_service import access_window, daily_access_response
+    from database import IqraAttempt
+    from sqlalchemy import func
     from student_activity_analytics_service import sum_practice_seconds
 
     window = access_window()
@@ -1266,7 +1268,17 @@ async def get_kids_daily_access(
     reference_ids = {event.reference_id for event in events if event.reference_id}
     references = db.query(Reference).filter(Reference.id.in_(reference_ids)).all() if reference_ids else []
     durations = {str(reference.id): reference.duration for reference in references}
-    return daily_access_response(sum_practice_seconds(events, durations), window)
+    iqra_seconds = (
+        db.query(func.coalesce(func.sum(IqraAttempt.credited_seconds), 0.0))
+        .filter(
+            IqraAttempt.student_id == current_user.id,
+            IqraAttempt.valid_attempt.is_(True),
+            IqraAttempt.created_at >= window.starts_at_utc_naive,
+            IqraAttempt.created_at < window.expires_at_utc_naive,
+        )
+        .scalar()
+    )
+    return daily_access_response(sum_practice_seconds(events, durations) + float(iqra_seconds or 0), window)
 
 
 @router.post("/student/activity-events")

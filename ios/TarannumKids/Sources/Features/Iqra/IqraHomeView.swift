@@ -8,7 +8,7 @@ struct IqraHomeView: View {
             VStack(alignment: .leading, spacing: 20) {
                 header
 
-                Text("PILIH TAHAP CONTOH")
+                Text("PILIH LATIHAN")
                     .font(.headline)
                     .foregroundStyle(Color.iqraInk)
 
@@ -22,7 +22,7 @@ struct IqraHomeView: View {
                 }
 
                 Label(
-                    "Kandungan ini ialah sampel demonstrasi dan akan disemak sebelum menjadi silibus akhir.",
+                    "Lengkapkan IQRA 3, kemudian Al-Fatihah dalam IQRA 6 sebelum meneruskan latihan Tarannum.",
                     systemImage: "info.circle.fill"
                 )
                 .font(.footnote)
@@ -79,7 +79,7 @@ private struct IqraLevelCard: View {
                 .background(levelColor, in: Circle())
 
             VStack(alignment: .leading, spacing: 7) {
-                Text(sample.level.title)
+                Text(sample.title)
                     .font(.title2.bold())
                     .foregroundStyle(Color.iqraInk)
                 Text(sample.instruction)
@@ -120,7 +120,7 @@ private struct IqraSampleView: View {
             VStack(spacing: 24) {
                 Spacer(minLength: 42)
 
-                Text(sample.level.title)
+                Text(sample.title)
                     .font(.title.bold())
                     .foregroundStyle(Color.iqraInk)
 
@@ -138,10 +138,10 @@ private struct IqraSampleView: View {
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
 
-                if sample.level == .three {
+                if sample.level == .three || sample.level == .six {
                     assessmentControls
                 } else {
-                    Label("Penilaian suara akan ditambah pada fasa seterusnya", systemImage: "clock.fill")
+                    Label("Penilaian suara IQRA 1 akan ditambah pada fasa seterusnya", systemImage: "clock.fill")
                         .font(.headline)
                         .foregroundStyle(Color.iqraEmerald)
                         .padding(.horizontal, 22)
@@ -206,6 +206,23 @@ private struct IqraScoreGrid: View {
                 scoreCard("Lengkap", result.completenessScore)
                 scoreCard("Lancar", result.fluencyScore)
                 scoreCard("Keseluruhan", result.pronunciationScore)
+            }
+
+            if let unitScore = result.unitScore {
+                HStack {
+                    Label(
+                        (result.passed ?? false) ? "Lulus" : "Perlu ulang",
+                        systemImage: (result.passed ?? false) ? "checkmark.seal.fill" : "arrow.clockwise.circle.fill"
+                    )
+                    .font(.headline)
+                    Spacer()
+                    Text("Markah unit: \(Int(unitScore.rounded()))")
+                        .font(.headline)
+                }
+                .foregroundStyle((result.passed ?? false) ? .green : .orange)
+                if let reason = result.decisionReason {
+                    Text(reason).font(.subheadline).foregroundStyle(.secondary)
+                }
             }
 
             if result.hasDetectedSpeech {

@@ -9,6 +9,32 @@ class IqraStatusResponse(BaseModel):
     sample_levels: list[int]
 
 
+class IqraCatalogItem(BaseModel):
+    id: str
+    level: int
+    title: str
+    sequence: int
+    unit_id: str
+    reference_text: str
+
+
+class IqraProgressItem(BaseModel):
+    sample_id: str
+    level: int
+    sequence: int
+    best_score: float
+    passed: bool
+    attempt_count: int
+
+
+class IqraProgressResponse(BaseModel):
+    next_stage: str
+    iqra_3_completed: bool
+    iqra_6_completed: bool
+    tarannum_recommended: bool
+    items: list[IqraProgressItem]
+
+
 class IqraPhonemeResult(BaseModel):
     phoneme: Optional[str] = None
     accuracy_score: Optional[float] = None
@@ -33,3 +59,9 @@ class IqraAssessmentResponse(BaseModel):
     words: list[IqraWordResult]
     provider: str
     locale: str
+    attempt_id: Optional[str] = None
+    unit_score: Optional[float] = None
+    passed: bool = False
+    decision_reason: Optional[str] = None
+    credited_seconds: float = 0
+    next_stage: Optional[str] = None

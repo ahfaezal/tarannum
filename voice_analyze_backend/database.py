@@ -220,6 +220,52 @@ class StudentActivityEvent(Base):
     session = relationship("UserSession", foreign_keys=[session_id])
 
 
+class IqraAttempt(Base):
+    """Immutable result of one valid or invalid IQRA reading attempt."""
+    __tablename__ = "iqra_attempts"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    student_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    sample_id = Column(String, nullable=False, index=True)
+    unit_id = Column(String, nullable=False, index=True)
+    level = Column(Integer, nullable=False, index=True)
+    sequence = Column(Integer, nullable=False)
+    reference_text = Column(Text, nullable=False)
+    recognized_text = Column(Text, nullable=True)
+    accuracy_score = Column(Float, nullable=True)
+    completeness_score = Column(Float, nullable=True)
+    fluency_score = Column(Float, nullable=True)
+    pronunciation_score = Column(Float, nullable=True)
+    unit_score = Column(Float, nullable=False)
+    passed = Column(Boolean, nullable=False, default=False, index=True)
+    valid_attempt = Column(Boolean, nullable=False, default=False, index=True)
+    duration_seconds = Column(Float, nullable=False, default=0)
+    credited_seconds = Column(Float, nullable=False, default=0)
+    word_results = Column(JSON, nullable=False, default=list)
+    provider = Column(String, nullable=False)
+    decision_reason = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+
+class IqraProgress(Base):
+    """Best result and completion state for one IQRA sample per student."""
+    __tablename__ = "iqra_progress"
+    __table_args__ = (UniqueConstraint("student_id", "sample_id", name="uq_iqra_progress_student_sample"),)
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    student_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    sample_id = Column(String, nullable=False, index=True)
+    unit_id = Column(String, nullable=False, index=True)
+    level = Column(Integer, nullable=False, index=True)
+    sequence = Column(Integer, nullable=False)
+    best_score = Column(Float, nullable=False, default=0)
+    passed = Column(Boolean, nullable=False, default=False, index=True)
+    attempt_count = Column(Integer, nullable=False, default=0)
+    last_attempt_id = Column(UUID(as_uuid=True), ForeignKey("iqra_attempts.id", ondelete="SET NULL"), nullable=True)
+    first_passed_at = Column(DateTime, nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
 class Reference(Base):
     """Reference audio file metadata."""
     __tablename__ = "references"

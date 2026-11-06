@@ -6,10 +6,10 @@ from iqra.samples import get_sample
 
 class IqraAzureSpeechTests(unittest.TestCase):
     def test_iqra_three_sample_is_server_controlled(self):
-        sample = get_sample("iqra-3-demo")
+        sample = get_sample("iqra-3-unit-1")
         self.assertIsNotNone(sample)
         self.assertEqual(sample.level, 3)
-        self.assertEqual(sample.reference_text, "كَتَبَ ذَهَبَ فَتَحَ")
+        self.assertEqual(sample.reference_text, "شَهِدَ لَعِبَ عَلِمَ رَضِيَ")
 
     def test_parse_word_and_phoneme_scores(self):
         words = parse_detailed_result(
