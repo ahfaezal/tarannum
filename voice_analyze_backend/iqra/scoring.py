@@ -52,12 +52,54 @@ def _value(score: Optional[float]) -> float:
     return max(0.0, min(float(score or 0), 100.0))
 
 
+def apply_level_word_diagnostics(level: int, words: list[dict]) -> list[dict]:
+    """Expose a child-facing score that reflects weak phonemes in IQRA 6.
+
+    Azure's word score can remain high even when one or more phonemes are
+    clearly weak. Keep the raw word score for audit, but cap the displayed
+    score at the average phoneme score for connected ayah reading.
+    """
+    if level != 6:
+        return words
+    diagnosed: list[dict] = []
+    for item in words:
+        word = dict(item)
+        phoneme_scores = [
+            _value(phoneme.get("accuracy_score"))
+            for phoneme in word.get("phonemes") or []
+            if phoneme.get("accuracy_score") is not None
+        ]
+        if phoneme_scores:
+            phoneme_average = sum(phoneme_scores) / len(phoneme_scores)
+            raw_word_score = word.get("accuracy_score")
+            word["azure_accuracy_score"] = raw_word_score
+            word["phoneme_average_score"] = round(phoneme_average, 2)
+            if raw_word_score is not None:
+                word["accuracy_score"] = round(min(_value(raw_word_score), phoneme_average), 2)
+        diagnosed.append(word)
+    return diagnosed
+
+
+def _word_phoneme_averages(words: list[dict]) -> list[float]:
+    averages: list[float] = []
+    for word in words:
+        scores = [
+            _value(phoneme.get("accuracy_score"))
+            for phoneme in word.get("phonemes") or []
+            if phoneme.get("accuracy_score") is not None
+        ]
+        if scores:
+            averages.append(sum(scores) / len(scores))
+    return averages
+
+
 def decide_iqra_attempt(
     level: int,
     accuracy: Optional[float],
     completeness: Optional[float],
     fluency: Optional[float],
     word_scores: list[Optional[float]],
+    words: Optional[list[dict]] = None,
 ) -> IqraDecision:
     accuracy_value = _value(accuracy)
     completeness_value = _value(completeness)
@@ -69,9 +111,26 @@ def decide_iqra_attempt(
         passed = total >= 70 and completeness_value >= 80 and weakest >= 60
         reason = "Lulus unit IQRA 3." if passed else "Ulang perkataan lemah sehingga semua perkataan mencapai sekurang-kurangnya 60."
     elif level == 6:
-        total = 0.50 * accuracy_value + 0.30 * completeness_value + 0.20 * fluency_value
-        passed = total >= 65 and completeness_value >= 85
-        reason = "Lulus ayat." if passed else "Ulang ayat dengan sebutan yang lebih lengkap dan jelas."
+        base_total = 0.50 * accuracy_value + 0.30 * completeness_value + 0.20 * fluency_value
+        phoneme_averages = _word_phoneme_averages(words or [])
+        overall_phoneme = (
+            sum(phoneme_averages) / len(phoneme_averages)
+            if phoneme_averages
+            else accuracy_value
+        )
+        weakest_word_phoneme = min(phoneme_averages) if phoneme_averages else accuracy_value
+        total = min(base_total, overall_phoneme)
+        passed = (
+            total >= 70
+            and completeness_value >= 85
+            and overall_phoneme >= 75
+            and weakest_word_phoneme >= 65
+        )
+        reason = (
+            "Lulus ayat."
+            if passed
+            else "Ulang ayat; perkemas makhraj dan baris pada perkataan yang ditandakan."
+        )
     else:
         total = accuracy_value
         passed = False

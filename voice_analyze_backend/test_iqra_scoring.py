@@ -1,7 +1,7 @@
 import unittest
 
 from iqra.samples import SAMPLES, get_sample
-from iqra.scoring import align_word_results, decide_iqra_attempt
+from iqra.scoring import apply_level_word_diagnostics, align_word_results, decide_iqra_attempt
 
 
 class IqraScoringTests(unittest.TestCase):
@@ -27,6 +27,30 @@ class IqraScoringTests(unittest.TestCase):
     def test_iqra_six_ayah_requires_completeness(self):
         decision = decide_iqra_attempt(6, 92, 80, 90, [92])
         self.assertFalse(decision.passed)
+
+    def test_iqra_six_rejects_high_word_scores_with_weak_phonemes(self):
+        words = [
+            {"accuracy_score": 80, "phonemes": [{"accuracy_score": value} for value in [62, 75, 72, 84, 69, 50]]},
+            {"accuracy_score": 92, "phonemes": [{"accuracy_score": value} for value in [19, 29, 72, 100, 89, 100]]},
+        ]
+        diagnosed = apply_level_word_diagnostics(6, words)
+        decision = decide_iqra_attempt(6, 86, 100, 71, [item["accuracy_score"] for item in diagnosed], diagnosed)
+        self.assertFalse(decision.passed)
+        self.assertLess(decision.score, 70)
+        self.assertEqual(diagnosed[1]["azure_accuracy_score"], 92)
+        self.assertLess(diagnosed[1]["accuracy_score"], 70)
+
+    def test_iqra_six_passes_balanced_connected_reading(self):
+        words = [
+            {"accuracy_score": 86, "phonemes": [{"accuracy_score": value} for value in [65, 79, 83, 88]]},
+            {"accuracy_score": 90, "phonemes": [{"accuracy_score": value} for value in [70, 76, 84, 89]]},
+            {"accuracy_score": 99, "phonemes": [{"accuracy_score": value} for value in [99, 100]]},
+            {"accuracy_score": 96, "phonemes": [{"accuracy_score": value} for value in [69, 88, 94, 100]]},
+        ]
+        diagnosed = apply_level_word_diagnostics(6, words)
+        decision = decide_iqra_attempt(6, 93, 100, 98, [item["accuracy_score"] for item in diagnosed], diagnosed)
+        self.assertTrue(decision.passed)
+        self.assertGreaterEqual(decision.score, 75)
 
     def test_azure_insertions_do_not_create_extra_child_facing_cards(self):
         aligned = align_word_results(

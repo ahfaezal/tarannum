@@ -12,7 +12,7 @@ from database import IqraAttempt, IqraProgress, User, get_db
 from iqra.config import is_azure_speech_configured, is_iqra_enabled
 from iqra.azure_speech import AzureSpeechAssessmentError, assess_pronunciation
 from iqra.samples import SAMPLES, get_sample
-from iqra.scoring import align_word_results, decide_iqra_attempt
+from iqra.scoring import apply_level_word_diagnostics, align_word_results, decide_iqra_attempt
 from iqra.schemas import (
     IqraAssessmentResponse,
     IqraCatalogItem,
@@ -152,7 +152,10 @@ async def assess_iqra_sample(
         except AzureSpeechAssessmentError as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
 
-    result["words"] = align_word_results(sample.reference_text, result.get("words", []))
+    result["words"] = apply_level_word_diagnostics(
+        sample.level,
+        align_word_results(sample.reference_text, result.get("words", [])),
+    )
     word_scores = [word.get("accuracy_score") for word in result["words"]]
     decision = decide_iqra_attempt(
         sample.level,
@@ -160,6 +163,7 @@ async def assess_iqra_sample(
         result.get("completeness_score"),
         result.get("fluency_score"),
         word_scores,
+        result["words"],
     )
     recognized_text = (result.get("recognized_text") or "").strip()
     valid_attempt = bool(recognized_text) and duration_seconds >= 0.5 and decision.score > 0
