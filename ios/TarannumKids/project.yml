@@ -12,7 +12,7 @@ targets:
   TarannumKids:
     type: application
     platform: iOS
-    sources: [Sources/App, Sources/Core, Sources/Shared]
+    sources: [Sources/App, Sources/Core, Sources/Features, Sources/Shared]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: ai.tarannum.kids
@@ -21,6 +21,7 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         CODE_SIGN_ENTITLEMENTS: Configuration/TarannumKids.entitlements
         KIDS_API_BASE_URL: https://tarannum-production.up.railway.app
+        KIDS_IQRA_ENABLED: NO
       configs:
         Release:
           CODE_SIGN_STYLE: Manual
@@ -35,6 +36,7 @@ targets:
         CFBundleShortVersionString: "1.0"
         CFBundleIconName: AppIcon
         KidsAPIBaseURL: $(KIDS_API_BASE_URL)
+        KidsIqraEnabled: $(KIDS_IQRA_ENABLED)
         ITSAppUsesNonExemptEncryption: false
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
