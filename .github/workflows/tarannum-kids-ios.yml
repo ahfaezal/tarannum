@@ -2,6 +2,21 @@ name: Tarannum Kids iOS
 
 on:
   workflow_dispatch:
+    inputs:
+      staging_api_base_url:
+        description: "Closed staging API URL (leave blank for compile-only build)"
+        required: false
+        type: string
+      enable_iqra:
+        description: "Compile the closed staging build with IQRA enabled"
+        required: true
+        default: false
+        type: boolean
+      upload_testflight:
+        description: "Explicitly archive and upload to TestFlight"
+        required: true
+        default: false
+        type: boolean
   push:
     branches:
       - codex/tarannum-kids-iqra-foundation
@@ -25,11 +40,26 @@ jobs:
         working-directory: ios/TarannumKids
     steps:
       - uses: actions/checkout@v4
+      - name: Validate closed staging inputs
+        if: github.event_name == 'workflow_dispatch' && inputs.enable_iqra == true
+        env:
+          STAGING_API_BASE_URL: ${{ inputs.staging_api_base_url }}
+        run: |
+          test -n "$STAGING_API_BASE_URL"
+          case "$STAGING_API_BASE_URL" in
+            *tarannum-production*|*tarannum-backend-production*)
+              echo "IQRA staging builds must not target the production API." >&2
+              exit 1
+              ;;
+          esac
       - name: Install XcodeGen
         run: brew install xcodegen
       - name: Generate Xcode project
         run: xcodegen generate
       - name: Build for iPad simulator
+        env:
+          STAGING_API_BASE_URL: ${{ inputs.staging_api_base_url }}
+          ENABLE_IQRA: ${{ inputs.enable_iqra }}
         run: >-
           xcodebuild
           -project TarannumKids.xcodeproj
@@ -37,6 +67,8 @@ jobs:
           -sdk iphonesimulator
           -destination "generic/platform=iOS Simulator"
           CODE_SIGNING_ALLOWED=NO
+          KIDS_API_BASE_URL="${STAGING_API_BASE_URL:-https://tarannum-production.up.railway.app}"
+          KIDS_IQRA_ENABLED="$([ "$ENABLE_IQRA" = "true" ] && echo YES || echo NO)"
           build
       - name: Upload generated project
         if: always()
@@ -47,9 +79,7 @@ jobs:
           if-no-files-found: warn
 
   testflight-upload:
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'push' && contains(github.event.head_commit.message, '[testflight]'))
+    if: github.event_name == 'workflow_dispatch' && inputs.upload_testflight == true
     runs-on: macos-26
     timeout-minutes: 30
     defaults:

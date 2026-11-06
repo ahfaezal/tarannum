@@ -17,6 +17,30 @@ class IqraConfigTests(unittest.TestCase):
             ):
                 self.assertTrue(is_iqra_enabled())
 
+    def test_iqra_stays_disabled_in_production_without_separate_approval(self):
+        for marker in (
+            {"ENVIRONMENT": "production"},
+            {"RAILWAY_ENVIRONMENT_NAME": "production"},
+        ):
+            with self.subTest(marker=marker), patch.dict(
+                os.environ,
+                {"IQRA_ENABLED": "true", **marker},
+                clear=True,
+            ):
+                self.assertFalse(is_iqra_enabled())
+
+    def test_iqra_production_requires_explicit_approval(self):
+        with patch.dict(
+            os.environ,
+            {
+                "IQRA_ENABLED": "true",
+                "ENVIRONMENT": "production",
+                "IQRA_PRODUCTION_APPROVED": "true",
+            },
+            clear=True,
+        ):
+            self.assertTrue(is_iqra_enabled())
+
     def test_azure_requires_key_and_region(self):
         with patch.dict(
             os.environ,
