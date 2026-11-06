@@ -12,7 +12,7 @@ enum IqraLevel: Int, CaseIterable, Codable, Identifiable {
     }
 }
 
-struct IqraSample: Identifiable, Equatable {
+struct IqraSample: Identifiable, Equatable, Hashable {
     let id: String
     let level: IqraLevel
     let arabicText: String
@@ -23,4 +23,25 @@ enum IqraFeature {
     static var isEnabled: Bool { KidsFeatureFlags.iqraEnabled }
 
     static let sampleLevels = IqraLevel.allCases
+
+    static let samples: [IqraSample] = [
+        IqraSample(
+            id: "iqra-1-demo",
+            level: .one,
+            arabicText: "بَ  تَ  ثَ",
+            instruction: "Kenal dan sebut bunyi huruf bersama baris atas."
+        ),
+        IqraSample(
+            id: "iqra-3-demo",
+            level: .three,
+            arabicText: "كَتَبَ  ذَهَبَ  فَتَحَ",
+            instruction: "Baca rangkaian huruf dan perkataan dengan jelas."
+        ),
+        IqraSample(
+            id: "iqra-6-demo",
+            level: .six,
+            arabicText: "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ",
+            instruction: "Baca frasa dengan lancar serta perhatikan mad dan waqaf."
+        ),
+    ]
 }

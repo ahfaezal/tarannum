@@ -902,6 +902,9 @@ struct KidsHomeView: View {
             dashboardHeader
             studentProgressCard
             taskCard
+            if IqraFeature.isEnabled {
+                iqraEntryCard
+            }
             activitySelection
             guidanceBanner
             primaryActivityButton
@@ -987,6 +990,39 @@ struct KidsHomeView: View {
             .buttonStyle(.bordered).tint(kidsTeal).controlSize(.large)
         }
         .dashboardCard()
+    }
+
+    private var iqraEntryCard: some View {
+        NavigationLink {
+            IqraHomeView()
+        } label: {
+            HStack(spacing: 18) {
+                Image(systemName: "text.book.closed.fill")
+                    .font(.system(size: 38))
+                    .foregroundStyle(kidsEmerald)
+                    .frame(width: 72, height: 72)
+                    .background(Color.green.opacity(0.10), in: Circle())
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("LATIHAN IQRA")
+                        .font(.caption.bold())
+                        .foregroundStyle(.secondary)
+                    Text("Dari huruf kepada bacaan")
+                        .font(.title2.bold())
+                        .foregroundStyle(Color(red: 0.04, green: 0.10, blue: 0.28))
+                    Text("Cuba sampel IQRA 1, 3 dan 6")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right.circle.fill")
+                    .font(.title)
+                    .foregroundStyle(kidsEmerald)
+            }
+            .padding(20)
+            .background(Color.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 18))
+            .overlay(RoundedRectangle(cornerRadius: 18).stroke(kidsEmerald.opacity(0.24)))
+        }
+        .buttonStyle(.plain)
     }
 
     private var activitySelection: some View {
