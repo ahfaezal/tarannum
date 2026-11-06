@@ -140,7 +140,8 @@ async def assess_iqra_sample(
             raise HTTPException(status_code=400, detail="The audio recording is empty.")
 
         try:
-            duration_seconds = round(len(AudioSegment.from_file(source_path)) / 1000.0, 2)
+            audio_segment = AudioSegment.from_file(source_path)
+            duration_seconds = round(len(audio_segment) / 1000.0, 2)
         except Exception as exc:
             raise HTTPException(status_code=422, detail="The audio duration could not be read.") from exc
 
@@ -155,9 +156,14 @@ async def assess_iqra_sample(
 
         fastconformer_shadow = None
         if sample.level == 6:
+            shadow_audio_path = Path(directory) / "fastconformer-input.wav"
+            audio_segment.set_channels(1).set_frame_rate(16000).set_sample_width(2).export(
+                shadow_audio_path,
+                format="wav",
+            )
             fastconformer_shadow = await run_in_threadpool(
                 compare_transcription,
-                source_path,
+                shadow_audio_path,
                 sample.reference_text,
             )
 
