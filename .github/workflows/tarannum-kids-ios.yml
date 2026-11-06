@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - codex/tarannum-kids-foundation
+      - codex/tarannum-kids-iqra-foundation
     paths:
       - "ios/TarannumKids/**"
       - ".github/workflows/tarannum-kids-ios.yml"
