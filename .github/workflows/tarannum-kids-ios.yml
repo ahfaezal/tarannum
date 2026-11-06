@@ -87,6 +87,19 @@ jobs:
         working-directory: ios/TarannumKids
     steps:
       - uses: actions/checkout@v4
+      - name: Validate closed staging inputs
+        env:
+          STAGING_API_BASE_URL: ${{ inputs.staging_api_base_url }}
+          ENABLE_IQRA: ${{ inputs.enable_iqra }}
+        run: |
+          test "$ENABLE_IQRA" = "true"
+          test -n "$STAGING_API_BASE_URL"
+          case "$STAGING_API_BASE_URL" in
+            *tarannum-production*|*tarannum-backend-production*)
+              echo "IQRA TestFlight builds must not target the production API." >&2
+              exit 1
+              ;;
+          esac
       - name: Install XcodeGen
         run: brew install xcodegen
       - name: Install signing materials
@@ -118,6 +131,9 @@ jobs:
       - name: Generate Xcode project
         run: xcodegen generate
       - name: Archive Tarannum Kids
+        env:
+          STAGING_API_BASE_URL: ${{ inputs.staging_api_base_url }}
+          ENABLE_IQRA: ${{ inputs.enable_iqra }}
         run: >-
           xcodebuild
           -project TarannumKids.xcodeproj
@@ -125,6 +141,9 @@ jobs:
           -configuration Release
           -destination "generic/platform=iOS"
           -archivePath "$RUNNER_TEMP/TarannumKids.xcarchive"
+          CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER"
+          KIDS_API_BASE_URL="$STAGING_API_BASE_URL"
+          KIDS_IQRA_ENABLED="$([ "$ENABLE_IQRA" = "true" ] && echo YES || echo NO)"
           archive
       - name: Export IPA
         run: >-

@@ -6,6 +6,7 @@ options:
 settings:
   base:
     SWIFT_VERSION: 6.0
+    CURRENT_PROJECT_VERSION: 36
     DEVELOPMENT_TEAM: L3W5TMTJRJ
     CODE_SIGN_STYLE: Automatic
 targets:
@@ -32,7 +33,7 @@ targets:
       path: Configuration/TarannumKids-Info.plist
       properties:
         CFBundleDevelopmentRegion: ms
-        CFBundleVersion: "36"
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         CFBundleShortVersionString: "1.0"
         CFBundleIconName: AppIcon
         KidsAPIBaseURL: $(KIDS_API_BASE_URL)
