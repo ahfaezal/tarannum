@@ -47,6 +47,12 @@ struct IqraAssessmentResult: Decodable, Equatable {
     let words: [IqraWordAssessment]
     let provider: String
     let locale: String
+
+    var hasDetectedSpeech: Bool {
+        let cleaned = recognizedText
+            .trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
+        return !cleaned.isEmpty && (pronunciationScore ?? 0) > 0
+    }
 }
 
 enum IqraFeature {

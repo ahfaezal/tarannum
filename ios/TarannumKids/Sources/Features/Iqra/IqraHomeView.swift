@@ -116,41 +116,44 @@ private struct IqraSampleView: View {
     @StateObject private var model = IqraPracticeViewModel()
 
     var body: some View {
-        VStack(spacing: 24) {
-            Spacer()
+        ScrollView {
+            VStack(spacing: 24) {
+                Spacer(minLength: 42)
 
-            Text(sample.level.title)
-                .font(.title.bold())
-                .foregroundStyle(Color.iqraInk)
+                Text(sample.level.title)
+                    .font(.title.bold())
+                    .foregroundStyle(Color.iqraInk)
 
-            Text(sample.arabicText)
-                .font(.system(size: sample.level == .six ? 46 : 60, weight: .medium))
-                .multilineTextAlignment(.center)
-                .environment(\.layoutDirection, .rightToLeft)
-                .padding(34)
-                .frame(maxWidth: 900, minHeight: 220)
-                .background(.white, in: RoundedRectangle(cornerRadius: 24))
-                .overlay(RoundedRectangle(cornerRadius: 24).stroke(Color.iqraEmerald, lineWidth: 2))
+                Text(sample.arabicText)
+                    .font(.system(size: sample.level == .six ? 46 : 60, weight: .medium))
+                    .multilineTextAlignment(.center)
+                    .environment(\.layoutDirection, .rightToLeft)
+                    .padding(34)
+                    .frame(maxWidth: 900, minHeight: 220)
+                    .background(.white, in: RoundedRectangle(cornerRadius: 24))
+                    .overlay(RoundedRectangle(cornerRadius: 24).stroke(Color.iqraEmerald, lineWidth: 2))
 
-            Text(sample.instruction)
-                .font(.title3)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
+                Text(sample.instruction)
+                    .font(.title3)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
 
-            if sample.level == .three {
-                assessmentControls
-            } else {
-                Label("Penilaian suara akan ditambah pada fasa seterusnya", systemImage: "clock.fill")
-                    .font(.headline)
-                    .foregroundStyle(Color.iqraEmerald)
-                    .padding(.horizontal, 22)
-                    .padding(.vertical, 14)
-                    .background(Color.iqraEmerald.opacity(0.10), in: Capsule())
+                if sample.level == .three {
+                    assessmentControls
+                } else {
+                    Label("Penilaian suara akan ditambah pada fasa seterusnya", systemImage: "clock.fill")
+                        .font(.headline)
+                        .foregroundStyle(Color.iqraEmerald)
+                        .padding(.horizontal, 22)
+                        .padding(.vertical, 14)
+                        .background(Color.iqraEmerald.opacity(0.10), in: Capsule())
+                }
+
+                Spacer(minLength: 42)
             }
-
-            Spacer()
+            .padding(30)
+            .frame(maxWidth: .infinity)
         }
-        .padding(30)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(red: 0.95, green: 1.0, blue: 0.98).ignoresSafeArea())
         .navigationTitle(sample.level.title)
@@ -205,11 +208,48 @@ private struct IqraScoreGrid: View {
                 scoreCard("Keseluruhan", result.pronunciationScore)
             }
 
-            if !result.recognizedText.isEmpty {
+            if result.hasDetectedSpeech {
                 Text("Dikesan: \(result.recognizedText)")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .environment(\.layoutDirection, .rightToLeft)
+            } else {
+                Label(
+                    "Bacaan tidak dapat dikesan. Dekatkan mikrofon dan cuba semula.",
+                    systemImage: "waveform.slash"
+                )
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.red)
+                .padding(.vertical, 8)
+            }
+
+            if !result.words.isEmpty {
+                Divider()
+
+                Text("Semakan setiap perkataan")
+                    .font(.headline)
+                    .foregroundStyle(Color.iqraInk)
+
+                LazyVGrid(
+                    columns: [GridItem(.adaptive(minimum: 120), spacing: 10)],
+                    alignment: .leading,
+                    spacing: 10
+                ) {
+                    ForEach(Array(result.words.enumerated()), id: \.offset) { _, word in
+                        wordCard(word)
+                    }
+                }
+                .environment(\.layoutDirection, .rightToLeft)
+
+                HStack(spacing: 14) {
+                    legendItem("80–100", color: .green)
+                    legendItem("60–79", color: .yellow)
+                    legendItem("40–59", color: .orange)
+                    legendItem("0–39", color: .red)
+                    legendItem("Tidak dikesan", color: .gray)
+                }
+                .font(.caption)
+                .frame(maxWidth: .infinity, alignment: .center)
             }
         }
         .padding(18)
@@ -229,6 +269,42 @@ private struct IqraScoreGrid: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, 12)
         .background(Color.iqraEmerald.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private func wordCard(_ word: IqraWordAssessment) -> some View {
+        let omitted = word.errorType.caseInsensitiveCompare("Omission") == .orderedSame
+        let color = omitted ? Color.gray : scoreColor(word.accuracyScore)
+        let isYellow = !omitted && (60..<80).contains(word.accuracyScore ?? -1)
+        return VStack(spacing: 5) {
+            Text((word.word?.isEmpty == false ? word.word : nil) ?? "—")
+                .font(.system(size: 26, weight: .semibold))
+                .foregroundStyle(Color.iqraInk)
+            Text(omitted ? "Tidak dikesan" : word.accuracyScore.map { "\(Int($0.rounded()))" } ?? "Tiada markah")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(isYellow ? Color.iqraInk : .white)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 10)
+        .padding(.horizontal, 8)
+        .background(color.opacity(isYellow ? 0.55 : 0.86), in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(color.opacity(0.9)))
+    }
+
+    private func scoreColor(_ score: Double?) -> Color {
+        guard let score else { return .gray }
+        switch score {
+        case 80...: return .green
+        case 60..<80: return .yellow
+        case 40..<60: return .orange
+        default: return .red
+        }
+    }
+
+    private func legendItem(_ text: String, color: Color) -> some View {
+        HStack(spacing: 4) {
+            Circle().fill(color).frame(width: 9, height: 9)
+            Text(text).foregroundStyle(.secondary)
+        }
     }
 }
 
