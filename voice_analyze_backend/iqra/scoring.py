@@ -1,4 +1,6 @@
 from dataclasses import dataclass
+from difflib import SequenceMatcher
+import re
 from typing import Optional
 
 
@@ -7,6 +9,43 @@ class IqraDecision:
     score: float
     passed: bool
     reason: str
+
+
+_ARABIC_MARKS = re.compile(r"[\u0610-\u061a\u0640\u064b-\u065f\u0670\u06d6-\u06ed]")
+
+
+def _normalise_arabic(value: str) -> str:
+    return _ARABIC_MARKS.sub("", value or "").strip(" .،؟؛")
+
+
+def align_word_results(reference_text: str, words: list[dict]) -> list[dict]:
+    """Align Azure output to the server-controlled reference word order.
+
+    Azure may repeat or insert words. The child-facing result must always have
+    exactly one card per expected word so feedback remains understandable.
+    """
+    expected = reference_text.split()
+    available = list(words)
+    aligned: list[dict] = []
+    cursor = 0
+    for reference_word in expected:
+        best_index = None
+        best_ratio = 0.0
+        target = _normalise_arabic(reference_word)
+        for index in range(cursor, min(len(available), cursor + 3)):
+            candidate = _normalise_arabic(str(available[index].get("word") or ""))
+            ratio = SequenceMatcher(None, target, candidate).ratio() if candidate else 0.0
+            if ratio > best_ratio:
+                best_ratio = ratio
+                best_index = index
+        if best_index is None or best_ratio < 0.55:
+            aligned.append({"word": reference_word, "accuracy_score": None, "error_type": "Omission", "phonemes": []})
+            continue
+        selected = dict(available[best_index])
+        selected["word"] = reference_word
+        aligned.append(selected)
+        cursor = best_index + 1
+    return aligned
 
 
 def _value(score: Optional[float]) -> float:

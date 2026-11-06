@@ -1,7 +1,7 @@
 import unittest
 
 from iqra.samples import SAMPLES, get_sample
-from iqra.scoring import decide_iqra_attempt
+from iqra.scoring import align_word_results, decide_iqra_attempt
 
 
 class IqraScoringTests(unittest.TestCase):
@@ -27,6 +27,20 @@ class IqraScoringTests(unittest.TestCase):
     def test_iqra_six_ayah_requires_completeness(self):
         decision = decide_iqra_attempt(6, 92, 80, 90, [92])
         self.assertFalse(decision.passed)
+
+    def test_azure_insertions_do_not_create_extra_child_facing_cards(self):
+        aligned = align_word_results(
+            "جِهَادٌ جَامِدٌ غَفَّارٌ غَافِرٌ",
+            [
+                {"word": "جهاد", "accuracy_score": 73, "error_type": "None", "phonemes": []},
+                {"word": "جامد", "accuracy_score": 82, "error_type": "None", "phonemes": []},
+                {"word": "غفار", "accuracy_score": 86, "error_type": "None", "phonemes": []},
+                {"word": "غفار", "accuracy_score": 84, "error_type": "None", "phonemes": []},
+                {"word": "غافر", "accuracy_score": 88, "error_type": "None", "phonemes": []},
+            ],
+        )
+        self.assertEqual([item["word"] for item in aligned], ["جِهَادٌ", "جَامِدٌ", "غَفَّارٌ", "غَافِرٌ"])
+        self.assertEqual(len(aligned), 4)
 
 
 if __name__ == "__main__":

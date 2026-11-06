@@ -1,4 +1,5 @@
 import AVFoundation
+import AudioToolbox
 import SwiftUI
 
 @MainActor
@@ -7,20 +8,24 @@ final class IqraPracticeViewModel: NSObject, ObservableObject {
     @Published private(set) var isSubmitting = false
     @Published private(set) var result: IqraAssessmentResult?
     @Published private(set) var message = "Tekan Mula Baca apabila bersedia."
+    @Published private(set) var countdownValue: Int?
+    @Published private(set) var activeWordIndex: Int?
+    @Published private(set) var isPreparing = false
 
     private let api = KidsAPIClient()
     private var recorder: AVAudioRecorder?
     private var recordingURL: URL?
+    private var guideTask: Task<Void, Never>?
 
     func toggleRecording(for sample: IqraSample) async {
         if isRecording {
             await stopAndAssess(sample: sample)
-        } else {
-            await startRecording()
+        } else if !isPreparing {
+            await startRecording(for: sample)
         }
     }
 
-    private func startRecording() async {
+    private func startRecording(for sample: IqraSample) async {
         let permitted = await AVAudioApplication.requestRecordPermission()
         guard permitted else {
             message = "Benarkan akses mikrofon dalam Settings untuk membuat latihan IQRA."
@@ -29,6 +34,14 @@ final class IqraPracticeViewModel: NSObject, ObservableObject {
 
         do {
             result = nil
+            isPreparing = true
+            message = "Bersedia. Bacakan satu perkataan apabila ia berwarna hijau."
+            for value in stride(from: 3, through: 1, by: -1) {
+                countdownValue = value
+                AudioServicesPlaySystemSound(1104)
+                try await Task.sleep(for: .seconds(1))
+            }
+            countdownValue = nil
             let session = AVAudioSession.sharedInstance()
             try session.setCategory(
                 .playAndRecord,
@@ -54,14 +67,36 @@ final class IqraPracticeViewModel: NSObject, ObservableObject {
             self.recorder = recorder
             recordingURL = url
             isRecording = true
-            message = "Sedang merakam… Baca teks yang dipaparkan."
+            isPreparing = false
+            message = "Ikut penanda hijau dan sebut satu perkataan pada satu masa."
+            startWordGuide(sample.words)
         } catch {
+            countdownValue = nil
+            isPreparing = false
             message = error.localizedDescription
+        }
+    }
+
+    private func startWordGuide(_ words: [String]) {
+        guideTask?.cancel()
+        guideTask = Task { @MainActor [weak self] in
+            for index in words.indices {
+                guard !Task.isCancelled, self?.isRecording == true else { return }
+                self?.activeWordIndex = index
+                AudioServicesPlaySystemSound(1104)
+                try? await Task.sleep(for: .milliseconds(2200))
+            }
+            guard !Task.isCancelled else { return }
+            self?.activeWordIndex = nil
+            self?.message = "Selesai membaca? Tekan Selesai & Semak."
         }
     }
 
     private func stopAndAssess(sample: IqraSample) async {
         recorder?.stop()
+        guideTask?.cancel()
+        guideTask = nil
+        activeWordIndex = nil
         recorder = nil
         isRecording = false
         try? AVAudioSession.sharedInstance().setActive(

@@ -12,14 +12,9 @@ struct IqraHomeView: View {
                     .font(.headline)
                     .foregroundStyle(Color.iqraInk)
 
-                ForEach(samples) { sample in
-                    NavigationLink {
-                        IqraSampleView(sample: sample)
-                    } label: {
-                        IqraLevelCard(sample: sample)
-                    }
-                    .buttonStyle(.plain)
-                }
+                levelSection(title: "IQRA 1 · Pengenalan Huruf", subtitle: "Kenal huruf dan bunyi asas.", level: .one)
+                levelSection(title: "IQRA 3 · Latihan Perkataan", subtitle: "Selesaikan Perkataan 1 hingga 3 mengikut urutan.", level: .three)
+                levelSection(title: "IQRA 6 · Surah Al-Fatihah", subtitle: "Baca ayat 1 hingga 7, satu ayat pada satu masa.", level: .six)
 
                 Label(
                     "Lengkapkan IQRA 3, kemudian Al-Fatihah dalam IQRA 6 sebelum meneruskan latihan Tarannum.",
@@ -44,6 +39,21 @@ struct IqraHomeView: View {
             .ignoresSafeArea()
         )
         .navigationTitle("IQRA")
+    }
+
+    private func levelSection(title: String, subtitle: String, level: IqraLevel) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title).font(.title3.bold()).foregroundStyle(Color.iqraInk)
+                Text(subtitle).font(.subheadline).foregroundStyle(.secondary)
+            }
+            ForEach(samples.filter { $0.level == level }) { sample in
+                NavigationLink { IqraSampleView(sample: sample) } label: { IqraLevelCard(sample: sample) }
+                    .buttonStyle(.plain)
+            }
+        }
+        .padding(16)
+        .background(.white.opacity(0.55), in: RoundedRectangle(cornerRadius: 20))
     }
 
     private var header: some View {
@@ -72,14 +82,18 @@ private struct IqraLevelCard: View {
 
     var body: some View {
         HStack(spacing: 20) {
-            Text("\(sample.level.rawValue)")
+            Text(sample.level == .one ? "1" : "\(sample.sequence)")
                 .font(.system(size: 30, weight: .heavy, design: .rounded))
                 .foregroundStyle(.white)
                 .frame(width: 64, height: 64)
                 .background(levelColor, in: Circle())
 
             VStack(alignment: .leading, spacing: 7) {
-                Text(sample.title)
+                HStack {
+                    Text(sample.title)
+                    Spacer()
+                    Text(sample.level.title).font(.caption.bold()).foregroundStyle(levelColor)
+                }
                     .font(.title2.bold())
                     .foregroundStyle(Color.iqraInk)
                 Text(sample.instruction)
@@ -124,7 +138,7 @@ private struct IqraSampleView: View {
                     .font(.title.bold())
                     .foregroundStyle(Color.iqraInk)
 
-                Text(sample.arabicText)
+                Text(guidedArabicText)
                     .font(.system(size: sample.level == .six ? 46 : 60, weight: .medium))
                     .multilineTextAlignment(.center)
                     .environment(\.layoutDirection, .rightToLeft)
@@ -139,6 +153,16 @@ private struct IqraSampleView: View {
                     .multilineTextAlignment(.center)
 
                 if sample.level == .three || sample.level == .six {
+                    if let countdown = model.countdownValue {
+                        VStack(spacing: 6) {
+                            Text("Bersedia").font(.headline)
+                            Text("\(countdown)").font(.system(size: 72, weight: .heavy, design: .rounded))
+                                .foregroundStyle(Color.iqraEmerald)
+                        }
+                    } else if model.isRecording {
+                        Label("Sebut satu perkataan setiap kali penanda hijau bergerak.", systemImage: "lightbulb.fill")
+                            .font(.headline).foregroundStyle(Color.iqraEmerald)
+                    }
                     assessmentControls
                 } else {
                     Label("Penilaian suara IQRA 1 akan ditambah pada fasa seterusnya", systemImage: "clock.fill")
@@ -160,6 +184,22 @@ private struct IqraSampleView: View {
         .navigationBarTitleDisplayMode(.inline)
     }
 
+    private var guidedArabicText: AttributedString {
+        var output = AttributedString()
+        for (index, word) in sample.words.enumerated() {
+            var token = AttributedString(word)
+            if model.activeWordIndex == index {
+                token.backgroundColor = .green.opacity(0.28)
+                token.foregroundColor = .iqraEmerald
+            } else if model.isRecording {
+                token.foregroundColor = .gray
+            }
+            output.append(token)
+            if index < sample.words.count - 1 { output.append(AttributedString("  ")) }
+        }
+        return output
+    }
+
     private var assessmentControls: some View {
         VStack(spacing: 16) {
             Button {
@@ -175,7 +215,7 @@ private struct IqraSampleView: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(model.isRecording ? .red : Color.iqraEmerald)
-            .disabled(model.isSubmitting)
+            .disabled(model.isSubmitting || model.isPreparing)
 
             if model.isSubmitting {
                 ProgressView(model.message)
@@ -225,6 +265,8 @@ private struct IqraScoreGrid: View {
                 }
             }
 
+            coachCard
+
             if result.hasDetectedSpeech {
                 Text("Dikesan: \(result.recognizedText)")
                     .font(.footnote)
@@ -272,6 +314,30 @@ private struct IqraScoreGrid: View {
         .padding(18)
         .background(.white, in: RoundedRectangle(cornerRadius: 18))
         .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.iqraEmerald.opacity(0.22)))
+    }
+
+    private var coachCard: some View {
+        let omitted = result.words.filter { $0.errorType.caseInsensitiveCompare("Omission") == .orderedSame }
+        let weak = result.words.filter { ($0.accuracyScore ?? 0) < 60 && $0.errorType.caseInsensitiveCompare("Omission") != .orderedSame }
+        let focus = (omitted + weak).compactMap(\.word)
+        let message: String
+        if result.passed ?? false {
+            message = result.nextStage == "tarannum" ? "Tahniah. Anda bersedia meneruskan latihan Tarannum." : "Bacaan ini lulus. Teruskan latihan seterusnya."
+        } else if !focus.isEmpty {
+            message = "Fokus semula pada: \(focus.joined(separator: "، ")). Sebut satu demi satu mengikut penanda hijau."
+        } else {
+            message = "Cuba lagi dengan tempo sederhana dan pastikan setiap perkataan disebut lengkap."
+        }
+        return HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "sparkles").font(.title2).foregroundStyle(Color.iqraEmerald)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Pembimbing IQRA").font(.headline).foregroundStyle(Color.iqraInk)
+                Text(message).font(.subheadline).foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
+        .padding(14)
+        .background(Color.iqraEmerald.opacity(0.09), in: RoundedRectangle(cornerRadius: 14))
     }
 
     private func scoreCard(_ title: String, _ score: Double?) -> some View {

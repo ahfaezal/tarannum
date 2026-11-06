@@ -19,6 +19,10 @@ struct IqraSample: Identifiable, Equatable, Hashable {
     let instruction: String
     let title: String
     let sequence: Int
+
+    var words: [String] {
+        arabicText.split(whereSeparator: { $0.isWhitespace }).map(String.init)
+    }
 }
 
 struct IqraPhonemeAssessment: Decodable, Equatable {
