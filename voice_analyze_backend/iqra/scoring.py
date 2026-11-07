@@ -138,6 +138,16 @@ def decide_iqra_attempt(
         content_similarity = _value((fastconformer or {}).get("text_similarity"))
         content_coverage = _value((fastconformer or {}).get("word_coverage"))
         effective_completeness = max(completeness_value, content_coverage if confirms_reference else 0.0)
+        clarity_scores = [
+            _value(score)
+            for score in word_scores
+            if score is not None
+        ]
+        all_words_clear = (
+            bool(word_scores)
+            and len(clarity_scores) == len(word_scores)
+            and all(score >= 80 for score in clarity_scores)
+        )
         if fastconformer and fastconformer.get("status") == "completed":
             total = (
                 0.45 * accuracy_value
@@ -151,16 +161,14 @@ def decide_iqra_attempt(
             total >= 70
             and effective_completeness >= 85
             and accuracy_value >= 60
+            and all_words_clear
         )
-        reason = (
-            "Lulus ayat."
-            if passed
-            else (
-                "Ayat dikesan lengkap; ulang untuk memperkemas sebutan dan baris."
-                if confirms_reference
-                else "Ulang ayat; baca secara bersambung, jelas dan lengkap."
-            )
-        )
+        if passed:
+            reason = "Ayat lengkap dan semua sebutan jelas."
+        elif effective_completeness < 85:
+            reason = "Ayat tidak lengkap. Baca semula keseluruhan ayat."
+        else:
+            reason = "Ayat lengkap. Baca semula keseluruhan ayat sehingga semua sebutan jelas."
     else:
         total = accuracy_value
         passed = False

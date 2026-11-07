@@ -33,19 +33,19 @@ class IqraScoringTests(unittest.TestCase):
         decision = decide_iqra_attempt(6, 92, 80, 90, [92])
         self.assertFalse(decision.passed)
 
-    def test_iqra_six_does_not_cap_ayah_score_with_uncalibrated_phonemes(self):
+    def test_iqra_six_requires_every_word_to_be_clear(self):
         words = [
             {"accuracy_score": 80, "phonemes": [{"accuracy_score": value} for value in [62, 75, 72, 84, 69, 50]]},
             {"accuracy_score": 92, "phonemes": [{"accuracy_score": value} for value in [19, 29, 72, 100, 89, 100]]},
         ]
         diagnosed = apply_level_word_diagnostics(6, words)
         decision = decide_iqra_attempt(6, 86, 100, 71, [item["accuracy_score"] for item in diagnosed], diagnosed)
-        self.assertTrue(decision.passed)
+        self.assertFalse(decision.passed)
         self.assertGreaterEqual(decision.score, 70)
         self.assertEqual(diagnosed[1]["azure_accuracy_score"], 92)
         self.assertLess(diagnosed[1]["accuracy_score"], 70)
 
-    def test_fastconformer_can_confirm_connected_ayah_completeness(self):
+    def test_fastconformer_can_confirm_content_but_not_pronunciation_clarity(self):
         shadow = {
             "status": "completed",
             "text_similarity": 96,
@@ -53,7 +53,7 @@ class IqraScoringTests(unittest.TestCase):
             "confirms_reference": True,
         }
         decision = decide_iqra_attempt(6, 82, 50, 80, [], [], shadow)
-        self.assertTrue(decision.passed)
+        self.assertFalse(decision.passed)
         self.assertGreaterEqual(decision.score, 70)
 
     def test_fastconformer_confirmation_clears_false_omission_without_inventing_score(self):
@@ -67,7 +67,7 @@ class IqraScoringTests(unittest.TestCase):
         self.assertTrue(reconciled[0]["content_confirmed"])
         self.assertIsNone(reconciled[0]["accuracy_score"])
 
-    def test_iqra_six_passes_balanced_connected_reading(self):
+    def test_iqra_six_does_not_advance_while_any_word_is_below_eighty(self):
         words = [
             {"accuracy_score": 86, "phonemes": [{"accuracy_score": value} for value in [65, 79, 83, 88]]},
             {"accuracy_score": 90, "phonemes": [{"accuracy_score": value} for value in [70, 76, 84, 89]]},
@@ -76,8 +76,27 @@ class IqraScoringTests(unittest.TestCase):
         ]
         diagnosed = apply_level_word_diagnostics(6, words)
         decision = decide_iqra_attempt(6, 93, 100, 98, [item["accuracy_score"] for item in diagnosed], diagnosed)
-        self.assertTrue(decision.passed)
+        self.assertFalse(decision.passed)
         self.assertGreaterEqual(decision.score, 75)
+
+    def test_iqra_six_advances_when_complete_and_every_word_is_clear(self):
+        shadow = {
+            "status": "completed",
+            "text_similarity": 100,
+            "word_coverage": 100,
+            "confirms_reference": True,
+        }
+        decision = decide_iqra_attempt(
+            6,
+            92,
+            100,
+            94,
+            [88, 84, 91, 86],
+            [{"accuracy_score": score} for score in [88, 84, 91, 86]],
+            shadow,
+        )
+        self.assertTrue(decision.passed)
+        self.assertEqual(decision.reason, "Ayat lengkap dan semua sebutan jelas.")
 
     def test_azure_insertions_do_not_create_extra_child_facing_cards(self):
         aligned = align_word_results(

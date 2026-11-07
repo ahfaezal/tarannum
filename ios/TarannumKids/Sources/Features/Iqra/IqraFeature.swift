@@ -91,6 +91,19 @@ struct IqraAssessmentResult: Decodable, Equatable {
             .trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
         return !cleaned.isEmpty && (pronunciationScore ?? 0) > 0
     }
+
+    var isAyahComplete: Bool {
+        hasDetectedSpeech
+            && !words.isEmpty
+            && words.allSatisfy {
+                $0.errorType.caseInsensitiveCompare("Omission") != .orderedSame
+            }
+    }
+
+    var areAllWordsClear: Bool {
+        isAyahComplete
+            && words.allSatisfy { ($0.accuracyScore ?? -1) >= 80 }
+    }
 }
 
 struct IqraProgressItem: Decodable, Equatable, Identifiable {

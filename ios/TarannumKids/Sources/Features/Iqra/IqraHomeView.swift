@@ -250,7 +250,33 @@ private struct IqraSampleView: View {
 
             if let result = model.result {
                 IqraScoreGrid(result: result, level: sample.level)
-                if result.passed == true, let next = IqraFeature.nextSample(after: sample) {
+                if sample.level == .six {
+                    if result.areAllWordsClear,
+                       let next = IqraFeature.nextSample(after: sample),
+                       next.level == .six {
+                        NavigationLink {
+                            IqraSampleView(sample: next)
+                        } label: {
+                            Label("Baca Ayat Seterusnya", systemImage: "arrow.right.circle.fill")
+                                .font(.title3.bold())
+                                .frame(maxWidth: 420)
+                                .padding(.vertical, 15)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(Color.iqraEmerald)
+                    } else if !result.areAllWordsClear {
+                        Button {
+                            Task { await model.toggleRecording(for: sample) }
+                        } label: {
+                            Label("Baca Semula Ayat", systemImage: "arrow.clockwise.circle.fill")
+                                .font(.title3.bold())
+                                .frame(maxWidth: 420)
+                                .padding(.vertical, 15)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(Color.iqraEmerald)
+                    }
+                } else if result.passed == true, let next = IqraFeature.nextSample(after: sample) {
                     NavigationLink {
                         IqraSampleView(sample: next)
                     } label: {
@@ -272,6 +298,16 @@ private struct IqraScoreGrid: View {
     let level: IqraLevel
 
     var body: some View {
+        Group {
+            if level == .six {
+                IqraSixResultView(result: result)
+            } else {
+                legacyScoreGrid
+            }
+        }
+    }
+
+    private var legacyScoreGrid: some View {
         VStack(spacing: 12) {
             Text("Keputusan latihan")
                 .font(.title3.bold())
@@ -427,6 +463,187 @@ private struct IqraScoreGrid: View {
         case 40..<60: return .orange
         default: return .red
         }
+    }
+
+    private func legendItem(_ text: String, color: Color) -> some View {
+        HStack(spacing: 4) {
+            Circle().fill(color).frame(width: 9, height: 9)
+            Text(text).foregroundStyle(.secondary)
+        }
+    }
+}
+
+private struct IqraSixResultView: View {
+    let result: IqraAssessmentResult
+
+    var body: some View {
+        VStack(spacing: 18) {
+            Text("Keputusan Bacaan")
+                .font(.title.bold())
+                .foregroundStyle(Color.iqraInk)
+
+            completenessCard
+            clarityCard
+            coachCard
+        }
+    }
+
+    private var completenessCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("1. Kesempurnaan Bacaan")
+                .font(.title2.bold())
+                .foregroundStyle(Color.iqraInk)
+
+            HStack(spacing: 14) {
+                Image(systemName: result.isAyahComplete ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+                    .font(.system(size: 42))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(result.isAyahComplete ? "Ayat lengkap" : "Ayat tidak lengkap")
+                        .font(.title2.bold())
+                    Text(result.isAyahComplete ? "Semua perkataan telah disebut." : "Ada perkataan yang tidak disebut.")
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .foregroundStyle(result.isAyahComplete ? .green : .orange)
+
+            Text(completenessText)
+                .font(.system(size: 38, weight: .semibold))
+                .multilineTextAlignment(.center)
+                .environment(\.layoutDirection, .rightToLeft)
+                .frame(maxWidth: .infinity)
+                .padding(18)
+                .background(Color.iqraEmerald.opacity(0.06), in: RoundedRectangle(cornerRadius: 16))
+
+            Text("Sistem menyemak sama ada setiap perkataan disebut.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .center)
+        }
+        .padding(20)
+        .background(.white, in: RoundedRectangle(cornerRadius: 18))
+        .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.iqraEmerald.opacity(0.22)))
+    }
+
+    private var completenessText: AttributedString {
+        var output = AttributedString()
+        for (index, word) in result.words.enumerated() {
+            let omitted = word.errorType.caseInsensitiveCompare("Omission") == .orderedSame
+            var token = AttributedString((word.word?.isEmpty == false ? word.word : nil) ?? "—")
+            if omitted {
+                token.backgroundColor = .gray.opacity(0.30)
+                token.foregroundColor = .gray
+            } else {
+                token.foregroundColor = .iqraInk
+            }
+            output.append(token)
+            if index < result.words.count - 1 { output.append(AttributedString("  ")) }
+        }
+        return output
+    }
+
+    private var clarityCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("2. Kejelasan Sebutan")
+                .font(.title2.bold())
+                .foregroundStyle(Color.iqraInk)
+            Text("Warna menunjukkan kejelasan sebutan setiap perkataan.")
+                .foregroundStyle(.secondary)
+
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: 145), spacing: 12)],
+                spacing: 12
+            ) {
+                ForEach(Array(result.words.enumerated()), id: \.offset) { _, word in
+                    clarityWordCard(word)
+                }
+            }
+            .environment(\.layoutDirection, .rightToLeft)
+
+            HStack(spacing: 18) {
+                legendItem("Baik", color: .green)
+                legendItem("Amaran", color: .yellow)
+                legendItem("Perlu ulang", color: .red)
+                legendItem("Tidak disebut", color: .gray)
+            }
+            .font(.caption)
+            .frame(maxWidth: .infinity, alignment: .center)
+        }
+        .padding(20)
+        .background(.white, in: RoundedRectangle(cornerRadius: 18))
+        .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.iqraEmerald.opacity(0.22)))
+    }
+
+    private var coachCard: some View {
+        let omitted = result.words.filter { $0.errorType.caseInsensitiveCompare("Omission") == .orderedSame }
+        let unclear = result.words.filter {
+            $0.errorType.caseInsensitiveCompare("Omission") != .orderedSame
+                && ($0.accuracyScore ?? -1) < 80
+        }
+        let message: String
+        if !omitted.isEmpty {
+            let names = omitted.compactMap(\.word).joined(separator: "، ")
+            message = "Perkataan \(names) tidak disebut. Baca semula keseluruhan ayat dengan lengkap."
+        } else if !unclear.isEmpty {
+            let names = unclear.compactMap(\.word).joined(separator: "، ")
+            message = "Ayat anda lengkap. Perkemas sebutan \(names), kemudian baca semula keseluruhan ayat."
+        } else {
+            message = "Ayat lengkap dan semua sebutan jelas. Anda boleh membaca ayat seterusnya."
+        }
+
+        return HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "sparkles")
+                .font(.title2)
+                .foregroundStyle(Color.iqraEmerald)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Pembimbing IQRA")
+                    .font(.headline)
+                    .foregroundStyle(Color.iqraInk)
+                Text(message)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
+        .padding(16)
+        .background(Color.iqraEmerald.opacity(0.09), in: RoundedRectangle(cornerRadius: 14))
+    }
+
+    private func clarityWordCard(_ word: IqraWordAssessment) -> some View {
+        let omitted = word.errorType.caseInsensitiveCompare("Omission") == .orderedSame
+        let score = word.accuracyScore
+        let color: Color
+        let label: String
+        let isWarning: Bool
+        if omitted || score == nil {
+            color = .gray
+            label = omitted ? "Tidak disebut" : "Tidak dapat dinilai"
+            isWarning = false
+        } else if let score, score >= 80 {
+            color = .green
+            label = "Jelas"
+            isWarning = false
+        } else if let score, score >= 60 {
+            color = .yellow
+            label = "Amaran"
+            isWarning = true
+        } else {
+            color = .red
+            label = "Tidak jelas — ulang"
+            isWarning = false
+        }
+        return VStack(spacing: 6) {
+            Text((word.word?.isEmpty == false ? word.word : nil) ?? "—")
+                .font(.system(size: 28, weight: .semibold))
+                .foregroundStyle(Color.iqraInk)
+            Text(label)
+                .font(.caption.bold())
+                .foregroundStyle(isWarning ? Color.iqraInk : .white)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 14)
+        .padding(.horizontal, 8)
+        .background(color.opacity(isWarning ? 0.55 : 0.78), in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(color.opacity(0.9)))
     }
 
     private func legendItem(_ text: String, color: Color) -> some View {
