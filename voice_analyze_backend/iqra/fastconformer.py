@@ -60,10 +60,12 @@ def compare_transcription(audio_path: Path, reference_text: str) -> dict | None:
     timeout = float(os.getenv("IQRA_FASTCONFORMER_TIMEOUT_SECONDS", "25"))
     payload = json.dumps(
         {
+            "inputs": {
             "model": MODEL_ID,
             "language": "ar",
             "filename": audio_path.name,
             "audio_base64": base64.b64encode(audio_path.read_bytes()).decode("ascii"),
+            },
         }
     ).encode("utf-8")
     headers = {"Content-Type": "application/json"}
@@ -75,7 +77,10 @@ def compare_transcription(audio_path: Path, reference_text: str) -> dict | None:
         with urlopen(request, timeout=timeout) as response:
             body = json.loads(response.read().decode("utf-8"))
     except (HTTPError, URLError, TimeoutError, json.JSONDecodeError, OSError) as exc:
-        return {"status": "unavailable", "error": type(exc).__name__, "model": MODEL_ID}
+        diagnostic = {"status": "unavailable", "error": type(exc).__name__, "model": MODEL_ID}
+        if isinstance(exc, HTTPError):
+            diagnostic["http_status"] = exc.code
+        return diagnostic
 
     transcript = str(body.get("text") or body.get("transcript") or body.get("generated_text") or "").strip()
     normalized_reference = _normalize_arabic(reference_text)
