@@ -242,6 +242,7 @@ class IqraAttempt(Base):
     duration_seconds = Column(Float, nullable=False, default=0)
     credited_seconds = Column(Float, nullable=False, default=0)
     word_results = Column(JSON, nullable=False, default=list)
+    fastconformer_result = Column(JSON, nullable=True)
     provider = Column(String, nullable=False)
     decision_reason = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)

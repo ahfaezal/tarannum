@@ -45,6 +45,7 @@ class IqraWordResult(BaseModel):
     accuracy_score: Optional[float] = None
     error_type: str
     phonemes: list[IqraPhonemeResult]
+    content_confirmed: bool = False
 
 
 class IqraAssessmentResponse(BaseModel):

@@ -1,7 +1,8 @@
-"""Best-effort client for the isolated NVIDIA Arabic FastConformer endpoint.
+"""Client and diagnostics for the isolated NVIDIA Arabic FastConformer endpoint.
 
-This module never participates in the pass/fail decision.  It exists so IQRA 6
-recordings can be compared with Azure while the model is being validated.
+Azure remains the pronunciation assessor. FastConformer independently verifies
+that the connected IQRA 6 phrase was spoken, which makes Azure word-boundary
+omissions less likely to be presented to a child as a missing word.
 """
 import base64
 import json
@@ -24,6 +25,29 @@ def _normalize_arabic(value: str) -> str:
     value = re.sub(r"[\u064b-\u065f\u0670\u06d6-\u06ed]", "", value)
     value = value.translate(str.maketrans({"أ": "ا", "إ": "ا", "آ": "ا", "ٱ": "ا", "ى": "ي"}))
     return " ".join(re.sub(r"[^\u0621-\u063a\u0641-\u064a\s]", " ", value).split())
+
+
+def _reference_word_coverage(reference_text: str, transcript: str) -> tuple[float, list[str]]:
+    """Measure ordered reference-token coverage in an Arabic transcript."""
+    reference_words = _normalize_arabic(reference_text).split()
+    transcript_words = _normalize_arabic(transcript).split()
+    if not reference_words or not transcript_words:
+        return 0.0, []
+
+    matched: list[str] = []
+    cursor = 0
+    for reference_word in reference_words:
+        best_index = None
+        best_ratio = 0.0
+        for index in range(cursor, min(len(transcript_words), cursor + 3)):
+            ratio = SequenceMatcher(None, reference_word, transcript_words[index]).ratio()
+            if ratio > best_ratio:
+                best_ratio = ratio
+                best_index = index
+        if best_index is not None and best_ratio >= 0.72:
+            matched.append(reference_word)
+            cursor = best_index + 1
+    return round(100 * len(matched) / len(reference_words), 2), matched
 
 
 def compare_transcription(audio_path: Path, reference_text: str) -> dict | None:
@@ -60,9 +84,14 @@ def compare_transcription(audio_path: Path, reference_text: str) -> dict | None:
         round(100 * SequenceMatcher(None, normalized_reference, normalized_transcript).ratio(), 2)
         if normalized_transcript else 0.0
     )
+    word_coverage, matched_reference_words = _reference_word_coverage(reference_text, transcript)
+    confirms_reference = similarity >= 80 and word_coverage >= 75
     return {
         "status": "completed",
         "model": MODEL_ID,
         "transcript": transcript,
         "text_similarity": similarity,
+        "word_coverage": word_coverage,
+        "matched_reference_words": matched_reference_words,
+        "confirms_reference": confirms_reference,
     }

@@ -1,7 +1,12 @@
 import unittest
 
 from iqra.samples import SAMPLES, get_sample
-from iqra.scoring import apply_level_word_diagnostics, align_word_results, decide_iqra_attempt
+from iqra.scoring import (
+    apply_level_word_diagnostics,
+    align_word_results,
+    decide_iqra_attempt,
+    reconcile_fastconformer_words,
+)
 
 
 class IqraScoringTests(unittest.TestCase):
@@ -28,17 +33,39 @@ class IqraScoringTests(unittest.TestCase):
         decision = decide_iqra_attempt(6, 92, 80, 90, [92])
         self.assertFalse(decision.passed)
 
-    def test_iqra_six_rejects_high_word_scores_with_weak_phonemes(self):
+    def test_iqra_six_does_not_cap_ayah_score_with_uncalibrated_phonemes(self):
         words = [
             {"accuracy_score": 80, "phonemes": [{"accuracy_score": value} for value in [62, 75, 72, 84, 69, 50]]},
             {"accuracy_score": 92, "phonemes": [{"accuracy_score": value} for value in [19, 29, 72, 100, 89, 100]]},
         ]
         diagnosed = apply_level_word_diagnostics(6, words)
         decision = decide_iqra_attempt(6, 86, 100, 71, [item["accuracy_score"] for item in diagnosed], diagnosed)
-        self.assertFalse(decision.passed)
-        self.assertLess(decision.score, 70)
+        self.assertTrue(decision.passed)
+        self.assertGreaterEqual(decision.score, 70)
         self.assertEqual(diagnosed[1]["azure_accuracy_score"], 92)
         self.assertLess(diagnosed[1]["accuracy_score"], 70)
+
+    def test_fastconformer_can_confirm_connected_ayah_completeness(self):
+        shadow = {
+            "status": "completed",
+            "text_similarity": 96,
+            "word_coverage": 100,
+            "confirms_reference": True,
+        }
+        decision = decide_iqra_attempt(6, 82, 50, 80, [], [], shadow)
+        self.assertTrue(decision.passed)
+        self.assertGreaterEqual(decision.score, 70)
+
+    def test_fastconformer_confirmation_clears_false_omission_without_inventing_score(self):
+        words = [{"word": "اللَّهِ", "accuracy_score": None, "error_type": "Omission", "phonemes": []}]
+        shadow = {
+            "confirms_reference": True,
+            "matched_reference_words": ["الله"],
+        }
+        reconciled = reconcile_fastconformer_words(words, shadow)
+        self.assertEqual(reconciled[0]["error_type"], "ConfirmedByFastConformer")
+        self.assertTrue(reconciled[0]["content_confirmed"])
+        self.assertIsNone(reconciled[0]["accuracy_score"])
 
     def test_iqra_six_passes_balanced_connected_reading(self):
         words = [

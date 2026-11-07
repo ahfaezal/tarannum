@@ -341,6 +341,7 @@ private struct IqraScoreGrid: View {
                     legendItem("60–79", color: .yellow)
                     legendItem("40–59", color: .orange)
                     legendItem("0–39", color: .red)
+                    legendItem("Disahkan ayat", color: .blue)
                     legendItem("Tidak dikesan", color: .gray)
                 }
                 .font(.caption)
@@ -396,13 +397,18 @@ private struct IqraScoreGrid: View {
 
     private func wordCard(_ word: IqraWordAssessment) -> some View {
         let omitted = word.errorType.caseInsensitiveCompare("Omission") == .orderedSame
-        let color = omitted ? Color.gray : scoreColor(word.accuracyScore)
-        let isYellow = !omitted && (60..<80).contains(word.accuracyScore ?? -1)
+        let confirmed = word.contentConfirmed == true || word.errorType.caseInsensitiveCompare("ConfirmedByFastConformer") == .orderedSame
+        let color = omitted ? Color.gray : (confirmed ? Color.blue : scoreColor(word.accuracyScore))
+        let isYellow = !omitted && !confirmed && (60..<80).contains(word.accuracyScore ?? -1)
         return VStack(spacing: 5) {
             Text((word.word?.isEmpty == false ? word.word : nil) ?? "—")
                 .font(.system(size: 26, weight: .semibold))
                 .foregroundStyle(Color.iqraInk)
-            Text(omitted ? "Tidak dikesan" : word.accuracyScore.map { "\(Int($0.rounded()))" } ?? "Tiada markah")
+            Text(
+                omitted
+                    ? "Tidak dikesan"
+                    : (confirmed ? "Disahkan dalam ayat" : word.accuracyScore.map { "\(Int($0.rounded()))" } ?? "Tiada markah")
+            )
                 .font(.caption.weight(.bold))
                 .foregroundStyle(isYellow ? Color.iqraInk : .white)
         }

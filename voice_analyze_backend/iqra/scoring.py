@@ -15,7 +15,9 @@ _ARABIC_MARKS = re.compile(r"[\u0610-\u061a\u0640\u064b-\u065f\u0670\u06d6-\u06e
 
 
 def _normalise_arabic(value: str) -> str:
-    return _ARABIC_MARKS.sub("", value or "").strip(" .،؟؛")
+    normalized = _ARABIC_MARKS.sub("", value or "")
+    normalized = normalized.translate(str.maketrans({"أ": "ا", "إ": "ا", "آ": "ا", "ٱ": "ا", "ى": "ي"}))
+    return normalized.strip(" .،؟؛")
 
 
 def align_word_results(reference_text: str, words: list[dict]) -> list[dict]:
@@ -80,6 +82,26 @@ def apply_level_word_diagnostics(level: int, words: list[dict]) -> list[dict]:
     return diagnosed
 
 
+def reconcile_fastconformer_words(words: list[dict], fastconformer: Optional[dict]) -> list[dict]:
+    """Clear false omission labels when independent ASR confirms the ayah.
+
+    No pronunciation mark is invented here. Azure remains the source of marks;
+    FastConformer only confirms that the spoken content was present.
+    """
+    if not fastconformer or not fastconformer.get("confirms_reference"):
+        return words
+    matched = set(fastconformer.get("matched_reference_words") or [])
+    reconciled: list[dict] = []
+    for item in words:
+        word = dict(item)
+        normalized = _normalise_arabic(str(word.get("word") or ""))
+        if word.get("error_type") == "Omission" and normalized in matched:
+            word["error_type"] = "ConfirmedByFastConformer"
+            word["content_confirmed"] = True
+        reconciled.append(word)
+    return reconciled
+
+
 def _word_phoneme_averages(words: list[dict]) -> list[float]:
     averages: list[float] = []
     for word in words:
@@ -100,6 +122,7 @@ def decide_iqra_attempt(
     fluency: Optional[float],
     word_scores: list[Optional[float]],
     words: Optional[list[dict]] = None,
+    fastconformer: Optional[dict] = None,
 ) -> IqraDecision:
     accuracy_value = _value(accuracy)
     completeness_value = _value(completeness)
@@ -111,25 +134,32 @@ def decide_iqra_attempt(
         passed = total >= 70 and completeness_value >= 80 and weakest >= 60
         reason = "Lulus unit IQRA 3." if passed else "Ulang perkataan lemah sehingga semua perkataan mencapai sekurang-kurangnya 60."
     elif level == 6:
-        base_total = 0.50 * accuracy_value + 0.30 * completeness_value + 0.20 * fluency_value
-        phoneme_averages = _word_phoneme_averages(words or [])
-        overall_phoneme = (
-            sum(phoneme_averages) / len(phoneme_averages)
-            if phoneme_averages
-            else accuracy_value
-        )
-        weakest_word_phoneme = min(phoneme_averages) if phoneme_averages else accuracy_value
-        total = min(base_total, overall_phoneme)
+        confirms_reference = bool(fastconformer and fastconformer.get("confirms_reference"))
+        content_similarity = _value((fastconformer or {}).get("text_similarity"))
+        content_coverage = _value((fastconformer or {}).get("word_coverage"))
+        effective_completeness = max(completeness_value, content_coverage if confirms_reference else 0.0)
+        if fastconformer and fastconformer.get("status") == "completed":
+            total = (
+                0.45 * accuracy_value
+                + 0.25 * effective_completeness
+                + 0.15 * fluency_value
+                + 0.15 * content_similarity
+            )
+        else:
+            total = 0.50 * accuracy_value + 0.30 * effective_completeness + 0.20 * fluency_value
         passed = (
             total >= 70
-            and completeness_value >= 85
-            and overall_phoneme >= 75
-            and weakest_word_phoneme >= 65
+            and effective_completeness >= 85
+            and accuracy_value >= 60
         )
         reason = (
             "Lulus ayat."
             if passed
-            else "Ulang ayat; perkemas makhraj dan baris pada perkataan yang ditandakan."
+            else (
+                "Ayat dikesan lengkap; ulang untuk memperkemas sebutan dan baris."
+                if confirms_reference
+                else "Ulang ayat; baca secara bersambung, jelas dan lengkap."
+            )
         )
     else:
         total = accuracy_value

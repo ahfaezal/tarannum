@@ -13,7 +13,12 @@ from iqra.config import is_azure_speech_configured, is_iqra_enabled
 from iqra.azure_speech import AzureSpeechAssessmentError, assess_pronunciation
 from iqra.fastconformer import compare_transcription
 from iqra.samples import SAMPLES, get_sample
-from iqra.scoring import apply_level_word_diagnostics, align_word_results, decide_iqra_attempt
+from iqra.scoring import (
+    apply_level_word_diagnostics,
+    align_word_results,
+    decide_iqra_attempt,
+    reconcile_fastconformer_words,
+)
 from iqra.schemas import (
     IqraAssessmentResponse,
     IqraCatalogItem,
@@ -171,6 +176,8 @@ async def assess_iqra_sample(
         sample.level,
         align_word_results(sample.reference_text, result.get("words", [])),
     )
+    if sample.level == 6:
+        result["words"] = reconcile_fastconformer_words(result["words"], fastconformer_shadow)
     word_scores = [word.get("accuracy_score") for word in result["words"]]
     decision = decide_iqra_attempt(
         sample.level,
@@ -179,6 +186,7 @@ async def assess_iqra_sample(
         result.get("fluency_score"),
         word_scores,
         result["words"],
+        fastconformer_shadow,
     )
     recognized_text = (result.get("recognized_text") or "").strip()
     valid_attempt = bool(recognized_text) and duration_seconds >= 0.5 and decision.score > 0
@@ -203,6 +211,7 @@ async def assess_iqra_sample(
         duration_seconds=duration_seconds,
         credited_seconds=credited_seconds,
         word_results=result.get("words", []),
+        fastconformer_result=fastconformer_shadow,
         provider=result.get("provider", "azure-speech"),
         decision_reason=decision.reason,
     )

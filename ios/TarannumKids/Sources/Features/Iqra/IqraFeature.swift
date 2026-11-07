@@ -60,6 +60,7 @@ struct IqraWordAssessment: Decodable, Equatable, Identifiable {
     let accuracyScore: Double?
     let errorType: String
     let phonemes: [IqraPhonemeAssessment]
+    let contentConfirmed: Bool?
 
     var id: String {
         "\(word ?? "word")-\(accuracyScore ?? -1)-\(errorType)"
