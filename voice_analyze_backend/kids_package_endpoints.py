@@ -383,6 +383,19 @@ def create_package_version(
             required=unit.required,
             assessment_config=unit.assessment_config or {},
         ))
+    source_transitions = db.query(KidsPackageTransition).filter(
+        KidsPackageTransition.from_package_id == source.id,
+    ).all()
+    for transition in source_transitions:
+        db.add(KidsPackageTransition(
+            from_package_id=package.id,
+            to_package_id=transition.to_package_id,
+            outcome=transition.outcome,
+            priority=transition.priority,
+            conditions=transition.conditions or {},
+            requires_human_approval=transition.requires_human_approval,
+            is_active=transition.is_active,
+        ))
     db.commit()
     db.refresh(package)
     return _package_payload(package, db)

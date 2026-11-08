@@ -4,6 +4,12 @@ import { Link } from "react-router-dom";
 
 const adminSections = [
   {
+    to: "/admin/kids/packages",
+    title: "Pakej Tarannum Kids",
+    description: "Susun pakej muka surat atau surah, unit latihan, syarat tamat dan laluan agen.",
+    icon: BookOpenCheck,
+  },
+  {
     to: "/admin/pendaftaran-kursus",
     title: "Pendaftaran Kursus Muazzin",
     description: "Semak peserta, bayaran, baki tempat dan senarai menunggu.",
