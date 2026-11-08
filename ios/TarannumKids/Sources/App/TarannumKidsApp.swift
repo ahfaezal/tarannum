@@ -136,6 +136,8 @@ final class KidsViewModel: NSObject, ObservableObject {
     @Published var isMicrophoneReady = false
     @Published var learningAssignments: [KidsLearningAssignment] = []
     @Published var latestAgentDecision: KidsAgentDecision?
+    @Published var learningDataMessage: String?
+    @Published var isLoadingLearningData = false
     private let api = KidsAPIClient()
     private var audioRecorder: AVAudioRecorder?
     private var referencePlayer: AVPlayer?
@@ -385,8 +387,14 @@ final class KidsViewModel: NSObject, ObservableObject {
 
     func loadLearningAssignments() async {
         guard isSignedIn else { return }
+        isLoadingLearningData = true
+        learningDataMessage = nil
+        defer { isLoadingLearningData = false }
         do {
             learningAssignments = try await api.fetchActiveLearningAssignments()
+            if learningAssignments.isEmpty {
+                learningDataMessage = "Tiada pakej aktif diterima untuk akaun ini."
+            }
         } catch KidsAPIError.sessionExpired {
             session = nil
             learningAssignments = []
@@ -396,6 +404,7 @@ final class KidsViewModel: NSObject, ObservableObject {
             // Keep Tarannum/IQRA usable if staging package metadata is
             // temporarily unavailable.
             learningAssignments = []
+            learningDataMessage = "Pakej pembelajaran tidak dapat dimuatkan. Tekan Muat Semula."
         }
         do {
             latestAgentDecision = try await api.fetchLatestAgentDecision()
@@ -406,6 +415,9 @@ final class KidsViewModel: NSObject, ObservableObject {
             // A missing/temporarily unavailable coaching decision must not
             // hide an otherwise valid active assignment.
             latestAgentDecision = nil
+            if learningDataMessage == nil {
+                learningDataMessage = "Keputusan Pembimbing AI belum dapat dimuatkan."
+            }
         }
     }
 
@@ -940,12 +952,67 @@ struct KidsHomeView: View {
     }
 
     private var authorizationView: some View {
-        VStack(spacing: 12) {
-            Button("Sediakan sebagai Peranti Anak") { Task { await model.authorizeChildDevice() } }.buttonStyle(.borderedProminent)
-            Button("Aktifkan Mod Ujian / Admin") { Task { await model.authorizeTestMode() } }.buttonStyle(.bordered)
-            Text("Gunakan Mod Ujian / Admin pada peranti dewasa. Untuk penggunaan sebenar, pilih Peranti Anak pada iPad yang menggunakan Apple Account kanak-kanak dalam Family Sharing.")
-                .font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
-        }.disabled(model.isAuthorizing)
+        VStack(alignment: .leading, spacing: 18) {
+            Label("LANGKAH 1 DARIPADA 2", systemImage: "ipad.and.iphone")
+                .font(.caption.bold()).foregroundStyle(kidsTeal)
+            Text("Siapa yang akan menggunakan iPad ini?")
+                .font(.system(size: 28, weight: .bold, design: .rounded))
+                .foregroundStyle(Color(red: 0.04, green: 0.10, blue: 0.28))
+            Text("Pilih satu mod. Tetapan ini membantu Tarannum Kids menyediakan perlindungan dan pengalaman yang sesuai.")
+                .font(.headline).foregroundStyle(.secondary)
+
+            Button { Task { await model.authorizeChildDevice() } } label: {
+                setupChoice(
+                    icon: "figure.child.circle.fill",
+                    title: "Peranti Anak",
+                    subtitle: "Untuk pembelajaran harian dengan kawalan ibu bapa dan sasaran 60 minit.",
+                    badge: "DISYORKAN",
+                    color: kidsEmerald
+                )
+            }
+            .buttonStyle(.plain)
+
+            Button { Task { await model.authorizeTestMode() } } label: {
+                setupChoice(
+                    icon: "wrench.and.screwdriver.fill",
+                    title: "Mod Ujian / Admin",
+                    subtitle: "Untuk pembangunan, demonstrasi dan semakan pada peranti orang dewasa.",
+                    badge: "UJIAN",
+                    color: .blue
+                )
+            }
+            .buttonStyle(.plain)
+
+            Label("Pilihan ini tidak mengubah akaun atau rekod pembelajaran pelajar.", systemImage: "lock.shield.fill")
+                .font(.footnote).foregroundStyle(.secondary)
+        }
+        .padding(28)
+        .background(.white.opacity(0.94), in: RoundedRectangle(cornerRadius: 28))
+        .overlay(RoundedRectangle(cornerRadius: 28).stroke(kidsEmerald.opacity(0.18)))
+        .shadow(color: .black.opacity(0.06), radius: 18, y: 8)
+        .disabled(model.isAuthorizing)
+    }
+
+    private func setupChoice(icon: String, title: String, subtitle: String, badge: String, color: Color) -> some View {
+        HStack(spacing: 18) {
+            Image(systemName: icon)
+                .font(.system(size: 34)).foregroundStyle(color)
+                .frame(width: 66, height: 66).background(color.opacity(0.10), in: Circle())
+            VStack(alignment: .leading, spacing: 5) {
+                HStack {
+                    Text(title).font(.title2.bold())
+                    Text(badge).font(.caption2.bold()).foregroundStyle(color)
+                        .padding(.horizontal, 9).padding(.vertical, 4)
+                        .background(color.opacity(0.10), in: Capsule())
+                }
+                Text(subtitle).font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.leading)
+            }
+            Spacer()
+            Image(systemName: "arrow.right.circle.fill").font(.title).foregroundStyle(color)
+        }
+        .padding(20).frame(maxWidth: .infinity, minHeight: 112)
+        .background(.white, in: RoundedRectangle(cornerRadius: 20))
+        .overlay(RoundedRectangle(cornerRadius: 20).stroke(color.opacity(0.30), lineWidth: 1.5))
     }
 
     private var loginView: some View {
@@ -1059,9 +1126,9 @@ struct KidsHomeView: View {
         VStack(spacing: 18) {
             dashboardHeader
             studentProgressCard
-            taskCard
             if IqraFeature.isEnabled {
                 iqraEntryCard
+                learningDataStatus
                 if let decision = model.latestAgentDecision {
                     NavigationLink {
                         KidsAgentDecisionView(
@@ -1075,10 +1142,40 @@ struct KidsHomeView: View {
                     .buttonStyle(.plain)
                 }
             }
+            taskCard
             activitySelection
             guidanceBanner
             primaryActivityButton
             scoringDashboardCard
+        }
+    }
+
+    @ViewBuilder
+    private var learningDataStatus: some View {
+        if model.isLoadingLearningData {
+            HStack(spacing: 12) {
+                ProgressView()
+                Text("Menyelaraskan pakej dan keputusan Pembimbing AI…")
+                Spacer()
+            }
+            .font(.subheadline).foregroundStyle(.secondary)
+            .padding(.horizontal, 18).padding(.vertical, 14)
+            .background(Color.blue.opacity(0.06), in: RoundedRectangle(cornerRadius: 16))
+        } else if let message = model.learningDataMessage {
+            HStack(spacing: 12) {
+                Image(systemName: model.learningAssignments.isEmpty ? "exclamationmark.arrow.triangle.2.circlepath" : "info.circle.fill")
+                    .foregroundStyle(model.learningAssignments.isEmpty ? .orange : kidsTeal)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(model.learningAssignments.isEmpty ? "Status pakej" : "Status Pembimbing AI").font(.subheadline.bold())
+                    Text(message).font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("Muat Semula") { Task { await model.loadLearningAssignments() } }
+                    .buttonStyle(.bordered).tint(kidsTeal)
+            }
+            .padding(.horizontal, 18).padding(.vertical, 14)
+            .background(Color.orange.opacity(0.06), in: RoundedRectangle(cornerRadius: 16))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.orange.opacity(0.20)))
         }
     }
 
@@ -1185,10 +1282,10 @@ struct KidsHomeView: View {
                     .frame(width: 72, height: 72)
                     .background(Color.green.opacity(0.10), in: Circle())
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(model.learningAssignments.isEmpty ? "LATIHAN IQRA" : "PAKEJ AKTIF")
+                    Text(model.learningAssignments.isEmpty ? "LATIHAN BEBAS" : "PAKEJ AKTIF")
                         .font(.caption.bold())
                         .foregroundStyle(.secondary)
-                    Text(model.learningAssignments.first?.package.title ?? "Dari huruf kepada bacaan")
+                    Text(model.learningAssignments.first?.package.title ?? "Tiada pakej aktif")
                         .font(.title2.bold())
                         .foregroundStyle(Color(red: 0.04, green: 0.10, blue: 0.28))
                     Text(activePackageProgressText)
@@ -1209,7 +1306,7 @@ struct KidsHomeView: View {
 
     private var activePackageProgressText: String {
         guard let assignment = model.learningAssignments.first else {
-            return "Cuba sampel IQRA 1, 3 dan 6"
+            return "Pilih latihan sendiri atau muat semula assignment"
         }
         let units = assignment.activeRun?.units ?? assignment.package.units
         let completed = units.filter { $0.result?.passed == true }.count
