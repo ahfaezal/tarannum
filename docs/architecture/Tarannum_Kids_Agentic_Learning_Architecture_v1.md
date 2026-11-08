@@ -1,8 +1,8 @@
 # Tarannum Kids Agentic Learning Architecture
 
-Version: 1.0
+Version: 1.1
 Date: 2026-11-07
-Last Updated: 2026-11-07
+Last Updated: 2026-11-08
 Status: Locked
 
 ## Purpose
@@ -10,6 +10,19 @@ Status: Locked
 This document is the official architecture reference for the Tarannum Kids agentic learning system. It defines how learning packages are prepared, assessed, completed and acted upon by the learning agent.
 
 This architecture is isolated to Tarannum Kids. It does not authorize changes to the Tarannum.ai production experience, scoring formula or production data flow.
+
+## Central Identity And Data Contract
+
+Tarannum.ai is the system of record for account registration, authentication and the central student identity. Tarannum Kids, IQRA, Tarannum practice and the learning agent use the same immutable `users.id` for a student.
+
+Production learning records are stored in the approved central AWS database. The products share identity and authorised student history, but their data remains logically separated through product-specific tables, backend APIs, feature flags and role-based access controls.
+
+- the iPad application must never connect directly to the database;
+- all student reads and writes pass through authenticated backend APIs;
+- IQRA attempts, package execution, agent decisions and human overrides reference the central student identifier;
+- Tarannum Kids must not rewrite Tarannum assessment evidence or account records;
+- agent output is advisory and auditable, and never replaces original assessment evidence;
+- staging uses an isolated database and must not contain or mutate production student records.
 
 ## Core Principle
 
@@ -139,6 +152,19 @@ Every package-level agent action must record:
 
 This history is the official basis for parent, teacher and Admin reporting.
 
+## Execution And Decision Records
+
+The package lifecycle is persisted as separate, auditable records:
+
+- a package assignment identifies the student, package version, source and reason;
+- a package run defines one bounded execution of that assignment;
+- unit results retain score summaries and references to raw evidence without copying or rewriting the source assessment;
+- an agent decision records the evidence and rules snapshots, confidence, explanation, outcome, provider and policy version;
+- a learning plan identifies the approved target package and proposed action;
+- a human override records who accepted, rejected or replaced the decision and why.
+
+Historical runs and decisions are append-only audit evidence. A new evaluation creates a new decision; it does not overwrite an earlier decision.
+
 ## Cost And Service Controls
 
 External assessment services must operate with controlled cost boundaries:
@@ -169,6 +195,9 @@ The following decisions are locked for Version 1.0:
 8. Major regression should normally follow targeted remediation and sufficient evidence.
 9. Parent or teacher oversight remains available for uncertain or high-impact decisions.
 10. Tarannum.ai production is not changed by this architecture.
+11. Tarannum.ai owns registration, authentication and the central `users.id` used by every learning module.
+12. Production Kids and IQRA records reside in the approved central AWS database but remain logically isolated from Tarannum through tables, APIs, feature flags and access controls.
+13. Package evidence, agent decisions, learning plans and human overrides are stored as separate auditable records.
 
 ## Change Control
 

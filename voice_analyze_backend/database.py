@@ -363,6 +363,170 @@ class KidsPackageTransition(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 
+class KidsPackageAssignment(Base):
+    """One Admin- or agent-assigned package for a central Tarannum student."""
+    __tablename__ = "kids_package_assignments"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    student_id = Column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    package_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("kids_learning_packages.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    assigned_by = Column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    source = Column(String, nullable=False, default="admin", index=True)
+    status = Column(String, nullable=False, default="assigned", index=True)
+    reason = Column(Text, nullable=True)
+    assignment_metadata = Column(JSON, nullable=False, default=dict)
+    assigned_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    started_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+
+
+class KidsPackageRun(Base):
+    """Immutable execution boundary used to evaluate one package completion."""
+    __tablename__ = "kids_package_runs"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    assignment_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("kids_package_assignments.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    student_id = Column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    package_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("kids_learning_packages.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    package_version = Column(Integer, nullable=False)
+    status = Column(String, nullable=False, default="in_progress", index=True)
+    completion_evaluation = Column(JSON, nullable=False, default=dict)
+    valid_activity_seconds = Column(Float, nullable=False, default=0)
+    started_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    completed_at = Column(DateTime, nullable=True, index=True)
+
+
+class KidsPackageUnitResult(Base):
+    """Auditable assessment evidence for one package unit in one run."""
+    __tablename__ = "kids_package_unit_results"
+    __table_args__ = (
+        UniqueConstraint("run_id", "unit_id", name="uq_kids_package_unit_result"),
+    )
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    run_id = Column(
+        UUID(as_uuid=True), ForeignKey("kids_package_runs.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    unit_id = Column(
+        UUID(as_uuid=True), ForeignKey("kids_package_units.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    status = Column(String, nullable=False, default="pending", index=True)
+    passed = Column(Boolean, nullable=False, default=False)
+    score_summary = Column(JSON, nullable=False, default=dict)
+    evidence_refs = Column(JSON, nullable=False, default=list)
+    engine_results = Column(JSON, nullable=False, default=dict)
+    valid_attempt_count = Column(Integer, nullable=False, default=0)
+    credited_seconds = Column(Float, nullable=False, default=0)
+    evaluated_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class KidsAgentDecision(Base):
+    """Append-only, explainable package-level recommendation made by the agent."""
+    __tablename__ = "kids_agent_decisions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    run_id = Column(
+        UUID(as_uuid=True), ForeignKey("kids_package_runs.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    student_id = Column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    package_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("kids_learning_packages.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    transition_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("kids_package_transitions.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    outcome = Column(String, nullable=False, index=True)
+    confidence = Column(Float, nullable=False)
+    strengths = Column(JSON, nullable=False, default=list)
+    weaknesses = Column(JSON, nullable=False, default=list)
+    evidence_snapshot = Column(JSON, nullable=False, default=dict)
+    rules_snapshot = Column(JSON, nullable=False, default=dict)
+    explanation = Column(Text, nullable=False)
+    requires_human_review = Column(Boolean, nullable=False, default=False, index=True)
+    review_status = Column(String, nullable=False, default="not_required", index=True)
+    provider = Column(String, nullable=False)
+    model = Column(String, nullable=True)
+    policy_version = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+
+class KidsLearningPlan(Base):
+    """Next approved learning action produced from a package-level decision."""
+    __tablename__ = "kids_learning_plans"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    student_id = Column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    decision_id = Column(
+        UUID(as_uuid=True), ForeignKey("kids_agent_decisions.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    target_package_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("kids_learning_packages.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    action = Column(String, nullable=False, index=True)
+    status = Column(String, nullable=False, default="proposed", index=True)
+    rationale = Column(Text, nullable=False)
+    plan_metadata = Column(JSON, nullable=False, default=dict)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    activated_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+
+
+class KidsAgentOverride(Base):
+    """Human review that accepts, rejects or replaces an agent decision."""
+    __tablename__ = "kids_agent_overrides"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    decision_id = Column(
+        UUID(as_uuid=True), ForeignKey("kids_agent_decisions.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    student_id = Column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    overridden_by = Column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    action = Column(String, nullable=False, index=True)
+    reason = Column(Text, nullable=False)
+    replacement_payload = Column(JSON, nullable=False, default=dict)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+
 class Reference(Base):
     """Reference audio file metadata."""
     __tablename__ = "references"

@@ -189,3 +189,15 @@ Tarannum Kids defines one approved learning-book page or one complete surah as a
 The learning agent performs its full evaluation and action cycle after a package is completed. It may advance, retain, remediate, recommend a return to an approved foundation package, notify a parent or teacher, or escalate uncertain evidence, but only within Admin-approved boundaries. Assessment evidence and agent decisions remain separate and auditable. Azure and FastConformer remain approved evidence engines for Tarannum Kids. This architecture does not change Tarannum.ai production behaviour.
 
 The complete locked specification is defined in `docs/architecture/Tarannum_Kids_Agentic_Learning_Architecture_v1.md`.
+
+## Decision 018
+
+Title: Tarannum uses one central student identity with logically separated Kids learning records.
+
+Status: Approved and Locked.
+
+Date: 2026-11-08
+
+Tarannum.ai remains the system of record for registration, authentication and the central student identity. Tarannum Kids, IQRA, Tarannum practice and the learning agent reference the same `users.id`. Production learning data is stored in the approved central AWS database, while product-specific tables, authenticated APIs, feature flags and role-based access controls preserve logical separation.
+
+Package assignments, runs, unit evidence, agent decisions, learning plans and human overrides are recorded separately. Agent output does not alter original assessment evidence or Tarannum scoring. Staging remains isolated from production data.

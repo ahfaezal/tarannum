@@ -122,6 +122,28 @@ class KidsPackageValidationTests(unittest.TestCase):
             else:
                 os.environ["ENVIRONMENT"] = previous_environment
 
+    def test_agent_execution_migration_uses_central_identity_and_audit_tables(self):
+        root = Path(__file__).parent
+        migration = root.joinpath(
+            "alembic", "versions", "20261108_0010_kids_agent_execution.py"
+        ).read_text(encoding="utf-8")
+        database = root.joinpath("database.py").read_text(encoding="utf-8")
+
+        self.assertIn('down_revision: Union[str, None] = "20261108_0009"', migration)
+        for table in (
+            "kids_package_assignments",
+            "kids_package_runs",
+            "kids_package_unit_results",
+            "kids_agent_decisions",
+            "kids_learning_plans",
+            "kids_agent_overrides",
+        ):
+            self.assertIn(f'"{table}"', migration)
+        self.assertEqual(migration.count('ForeignKey("users.id"'), 7)
+        self.assertIn("class KidsAgentDecision", database)
+        self.assertIn("evidence_snapshot", database)
+        self.assertIn("policy_version", database)
+
 
 if __name__ == "__main__":
     unittest.main()
