@@ -263,6 +263,18 @@ def execute_agent_for_run(db: Session, run: KidsPackageRun) -> tuple[KidsAgentDe
 
 
 def agent_decision_payload(decision: KidsAgentDecision, plan: KidsLearningPlan) -> dict[str, Any]:
+    evidence = decision.evidence_snapshot or {}
+    rules = decision.rules_snapshot or {}
+    metrics = evidence.get("metrics") or {}
+    policy = rules.get("policy") or {}
+    unit_evidence = []
+    for row in evidence.get("units") or []:
+        unit_evidence.append({
+            "unit_key": row.get("unit_key"),
+            "score": row.get("score"),
+            "passed": bool(row.get("passed")),
+            "valid_attempt_count": int(row.get("valid_attempt_count") or 0),
+        })
     return {
         "id": str(decision.id),
         "run_id": str(decision.run_id),
@@ -278,6 +290,18 @@ def agent_decision_payload(decision: KidsAgentDecision, plan: KidsLearningPlan) 
         "provider": decision.provider,
         "policy_version": decision.policy_version,
         "created_at": decision.created_at.isoformat() if decision.created_at else None,
+        "evidence_summary": {
+            "average_score": metrics.get("average_score"),
+            "pass_rate": metrics.get("pass_rate"),
+            "failed_unit_count": metrics.get("failed_unit_count"),
+            "valid_activity_seconds": evidence.get("valid_activity_seconds"),
+            "units": unit_evidence,
+        },
+        "policy_summary": {
+            "minimum_confidence": policy.get("agent_minimum_confidence"),
+            "advance_minimum_score": policy.get("agent_advance_minimum_score"),
+            "remedial_below_score": policy.get("agent_remedial_below_score"),
+        },
         "plan": {
             "id": str(plan.id),
             "target_package_id": str(plan.target_package_id),

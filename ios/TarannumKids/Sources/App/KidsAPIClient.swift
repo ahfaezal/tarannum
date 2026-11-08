@@ -89,6 +89,27 @@ struct KidsAgentLearningPlan: Decodable, Equatable {
     let rationale: String
 }
 
+struct KidsAgentUnitEvidence: Decodable, Equatable {
+    let unitKey: String
+    let score: Double?
+    let passed: Bool
+    let validAttemptCount: Int
+}
+
+struct KidsAgentEvidenceSummary: Decodable, Equatable {
+    let averageScore: Double?
+    let passRate: Double?
+    let failedUnitCount: Int?
+    let validActivitySeconds: Double?
+    let units: [KidsAgentUnitEvidence]
+}
+
+struct KidsAgentPolicySummary: Decodable, Equatable {
+    let minimumConfidence: Double?
+    let advanceMinimumScore: Double?
+    let remedialBelowScore: Double?
+}
+
 struct KidsAgentDecision: Decodable, Identifiable, Equatable {
     let id: String
     let runId: String
@@ -103,6 +124,8 @@ struct KidsAgentDecision: Decodable, Identifiable, Equatable {
     let reviewStatus: String
     let provider: String
     let policyVersion: String
+    let evidenceSummary: KidsAgentEvidenceSummary?
+    let policySummary: KidsAgentPolicySummary?
     let plan: KidsAgentLearningPlan
 }
 

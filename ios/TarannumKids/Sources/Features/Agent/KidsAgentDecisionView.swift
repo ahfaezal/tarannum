@@ -32,9 +32,11 @@ struct KidsAgentDecisionView: View {
 
                 HStack(spacing: 16) {
                     summaryCard(icon: "checkmark.seal.fill", title: "Pakej lengkap", value: "Semua unit selesai")
-                    summaryCard(icon: "brain.head.profile", title: "Keyakinan bukti", value: "\(Int((decision.confidence * 100).rounded()))%")
+                    summaryCard(icon: "chart.bar.fill", title: "Purata pakej", value: averageScoreText)
                     summaryCard(icon: "arrow.up.right.circle.fill", title: "Keputusan agen", value: outcomeTitle)
                 }
+
+                decisionFlow
 
                 VStack(alignment: .leading, spacing: 16) {
                     Label("Cadangan Pembimbing AI", systemImage: "lightbulb.max.fill")
@@ -63,14 +65,14 @@ struct KidsAgentDecisionView: View {
                         title: "Kekuatan dikenal pasti",
                         icon: "hand.thumbsup.fill",
                         color: emerald,
-                        items: decision.strengths,
+                        items: strengthItems,
                         emptyText: "Semua unit wajib telah diselesaikan."
                     )
                     evidenceList(
                         title: "Perlu dikukuhkan",
                         icon: "scope",
                         color: .orange,
-                        items: decision.weaknesses,
+                        items: weaknessItems,
                         emptyText: "Tiada kelemahan utama dikesan."
                     )
                 }
@@ -78,9 +80,14 @@ struct KidsAgentDecisionView: View {
                 VStack(alignment: .leading, spacing: 15) {
                     Label("Jejak keputusan agen", systemImage: "point.3.connected.trianglepath.dotted")
                         .font(.title2.bold()).foregroundStyle(ink)
-                    decisionStep(number: "1", title: "Bukti dikumpulkan", detail: "Markah, unit gagal/lulus, percubaan dan masa aktiviti sah.")
-                    decisionStep(number: "2", title: "Polisi dinilai", detail: decision.provider + " · Polisi " + decision.policyVersion)
+                    decisionStep(number: "1", title: "Bukti dikumpulkan", detail: evidenceAuditText)
+                    decisionStep(number: "2", title: "Syarat pembelajaran dinilai", detail: policyExplanation)
                     decisionStep(number: "3", title: "Pelan latihan dicipta", detail: decision.plan.rationale)
+                    DisclosureGroup("Butiran audit teknikal") {
+                        Text("Enjin: \(decision.provider) · Polisi: \(decision.policyVersion)")
+                            .font(.caption).foregroundStyle(.secondary).padding(.top, 6)
+                    }
+                    .font(.subheadline.bold()).foregroundStyle(teal)
                     Divider()
                     Label(reviewLabel, systemImage: decision.requiresHumanReview ? "person.badge.shield.checkmark.fill" : "checkmark.shield.fill")
                         .font(.headline).foregroundStyle(decision.requiresHumanReview ? .orange : teal)
@@ -132,6 +139,41 @@ struct KidsAgentDecisionView: View {
         }
     }
 
+    private var decisionFlow: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Label("Cara Pembimbing AI membuat keputusan", systemImage: "arrow.triangle.branch")
+                .font(.title3.bold()).foregroundStyle(ink)
+            HStack(spacing: 8) {
+                flowStage(icon: "tray.full.fill", title: "Bukti", detail: evidenceCountText, color: teal)
+                flowArrow
+                flowStage(icon: "checklist", title: "Nilai", detail: policyShortText, color: .blue)
+                flowArrow
+                flowStage(icon: "brain.head.profile", title: "Pilih", detail: outcomeTitle, color: .purple)
+                flowArrow
+                flowStage(icon: "flag.checkered", title: "Tindakan", detail: targetPackageTitle ?? fallbackTargetTitle, color: emerald)
+            }
+        }
+        .padding(22)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.white, in: RoundedRectangle(cornerRadius: 22))
+        .overlay(RoundedRectangle(cornerRadius: 22).stroke(teal.opacity(0.18)))
+    }
+
+    private func flowStage(icon: String, title: String, detail: String, color: Color) -> some View {
+        VStack(spacing: 7) {
+            Image(systemName: icon).font(.title3).foregroundStyle(color)
+            Text(title).font(.caption.bold()).foregroundStyle(ink)
+            Text(detail).font(.caption2).foregroundStyle(.secondary).multilineTextAlignment(.center).lineLimit(2)
+        }
+        .frame(maxWidth: .infinity, minHeight: 104)
+        .padding(.horizontal, 6)
+        .background(color.opacity(0.07), in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    private var flowArrow: some View {
+        Image(systemName: "chevron.right").font(.caption.bold()).foregroundStyle(teal.opacity(0.55))
+    }
+
     private var reviewLabel: String {
         if decision.requiresHumanReview { return "Menunggu pengesahan ibu bapa atau guru" }
         return decision.reviewStatus == "approved" ? "Pelan telah disahkan" : "Autonomi terkawal · Semakan manusia tersedia"
@@ -150,6 +192,67 @@ struct KidsAgentDecisionView: View {
 
     private var outcomeTitle: String {
         ["advance": "Naik tahap", "retain": "Kekal & kukuhkan", "remedial": "Pakej pemulihan", "foundation": "Kembali ke asas", "human_review": "Semakan diperlukan"][decision.outcome] ?? "Pelan baharu"
+    }
+
+    private var unitEvidence: [KidsAgentUnitEvidence] { decision.evidenceSummary?.units ?? [] }
+
+    private var strengthItems: [String] {
+        evidenceDescriptions(for: decision.strengths)
+    }
+
+    private var weaknessItems: [String] {
+        evidenceDescriptions(for: decision.weaknesses)
+    }
+
+    private func evidenceDescriptions(for keys: [String]) -> [String] {
+        keys.map { key in
+            let title = friendlyUnitName(key)
+            guard let item = unitEvidence.first(where: { $0.unitKey == key }) else { return title }
+            let score = item.score.map { "Markah \(Int($0.rounded()))" } ?? (item.passed ? "Lulus" : "Belum lulus")
+            let attempts = item.validAttemptCount == 1 ? "1 percubaan" : "\(item.validAttemptCount) percubaan"
+            return "\(title) · \(score) · \(attempts)"
+        }
+    }
+
+    private func friendlyUnitName(_ key: String) -> String {
+        let parts = key.replacingOccurrences(of: "_", with: " ").replacingOccurrences(of: "-", with: " ").split(separator: " ")
+        return parts.map { token in
+            let value = String(token)
+            if value.lowercased() == "iqra" { return "IQRA" }
+            return value.prefix(1).uppercased() + String(value.dropFirst())
+        }.joined(separator: " ")
+    }
+
+    private var averageScoreText: String {
+        guard let score = decision.evidenceSummary?.averageScore else { return "Direkod" }
+        return "\(Int(score.rounded())) / 100"
+    }
+
+    private var evidenceCountText: String {
+        unitEvidence.isEmpty ? "Semua unit" : "\(unitEvidence.count) unit"
+    }
+
+    private var policyShortText: String {
+        guard let threshold = decision.policySummary?.advanceMinimumScore else { return "Syarat Admin" }
+        return "Ambang \(Int(threshold.rounded()))"
+    }
+
+    private var evidenceAuditText: String {
+        guard let evidence = decision.evidenceSummary else {
+            return "Markah, unit gagal/lulus, percubaan dan masa aktiviti sah."
+        }
+        let passRate = Int(((evidence.passRate ?? 0) * 100).rounded())
+        let attempts = evidence.units.reduce(0) { $0 + $1.validAttemptCount }
+        return "\(evidence.units.count) unit dinilai · kadar lulus \(passRate)% · \(attempts) percubaan sah."
+    }
+
+    private var policyExplanation: String {
+        guard let policy = decision.policySummary else {
+            return "Syarat pakej yang diluluskan Admin digunakan."
+        }
+        let advance = Int((policy.advanceMinimumScore ?? 80).rounded())
+        let confidence = Int((decision.confidence * 100).rounded())
+        return "Syarat naik tahap: semua unit lulus, purata sekurang-kurangnya \(advance), keyakinan bukti \(confidence)%."
     }
 
     private var fallbackTargetTitle: String {
