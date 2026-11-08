@@ -146,6 +146,7 @@ private struct IqraLevelCard: View {
 private struct IqraSampleView: View {
     let sample: IqraSample
     @StateObject private var model = IqraPracticeViewModel()
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         ScrollView {
@@ -205,6 +206,25 @@ private struct IqraSampleView: View {
         .background(Color(red: 0.95, green: 1.0, blue: 0.98).ignoresSafeArea())
         .navigationTitle(sample.level.title)
         .navigationBarTitleDisplayMode(.inline)
+        .fullScreenCover(
+            isPresented: Binding(
+                get: { model.completedAgentDecision != nil },
+                set: { if !$0 { model.dismissAgentDecision() } }
+            )
+        ) {
+            if let decision = model.completedAgentDecision {
+                KidsAgentDecisionView(
+                    decision: decision,
+                    completedPackageTitle: sample.level == .three
+                        ? "IQRA 3 · Latihan Perkataan"
+                        : "IQRA 6 · Surah Al-Fatihah",
+                    targetPackageTitle: model.agentTargetPackageTitle
+                ) {
+                    model.dismissAgentDecision()
+                    dismiss()
+                }
+            }
+        }
     }
 
     private var guidedArabicText: AttributedString {

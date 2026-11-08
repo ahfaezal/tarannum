@@ -965,7 +965,16 @@ struct KidsHomeView: View {
             if IqraFeature.isEnabled {
                 iqraEntryCard
                 if let decision = model.latestAgentDecision {
-                    agentDecisionCard(decision)
+                    NavigationLink {
+                        KidsAgentDecisionView(
+                            decision: decision,
+                            completedPackageTitle: completedPackageTitle(for: decision),
+                            targetPackageTitle: targetPackageTitle(for: decision)
+                        )
+                    } label: {
+                        agentDecisionCard(decision)
+                    }
+                    .buttonStyle(.plain)
                 }
             }
             activitySelection
@@ -1126,6 +1135,22 @@ struct KidsHomeView: View {
         .padding(18)
         .background(Color.green.opacity(0.07), in: RoundedRectangle(cornerRadius: 18))
         .overlay(RoundedRectangle(cornerRadius: 18).stroke(kidsEmerald.opacity(0.22)))
+    }
+
+    private func completedPackageTitle(for decision: KidsAgentDecision) -> String {
+        if decision.outcome == "advance", targetPackageTitle(for: decision)?.contains("IQRA 6") == true {
+            return "IQRA 3 · Latihan Perkataan"
+        }
+        if decision.outcome == "advance", targetPackageTitle(for: decision)?.contains("Tarannum") == true {
+            return "IQRA 6 · Surah Al-Fatihah"
+        }
+        return "Pakej latihan selesai"
+    }
+
+    private func targetPackageTitle(for decision: KidsAgentDecision) -> String? {
+        model.learningAssignments.first(where: {
+            $0.package.id == decision.plan.targetPackageId
+        })?.package.title
     }
 
     private var activitySelection: some View {

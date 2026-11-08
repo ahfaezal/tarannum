@@ -11,6 +11,8 @@ final class IqraPracticeViewModel: NSObject, ObservableObject {
     @Published private(set) var countdownValue: Int?
     @Published private(set) var activeWordRange: Range<Int>?
     @Published private(set) var isPreparing = false
+    @Published private(set) var completedAgentDecision: KidsAgentDecision?
+    @Published private(set) var agentTargetPackageTitle: String?
 
     private let api = KidsAPIClient()
     private var recorder: AVAudioRecorder?
@@ -34,6 +36,8 @@ final class IqraPracticeViewModel: NSObject, ObservableObject {
 
         do {
             result = nil
+            completedAgentDecision = nil
+            agentTargetPackageTitle = nil
             isPreparing = true
             message = "Bersedia. Bacakan satu perkataan apabila ia berwarna hijau."
             for value in stride(from: 3, through: 1, by: -1) {
@@ -134,6 +138,11 @@ final class IqraPracticeViewModel: NSObject, ObservableObject {
                     creditedSeconds: result?.creditedSeconds ?? 0
                ) {
                 if let decision = link.agentDecision {
+                    completedAgentDecision = decision
+                    let assignments = try? await api.fetchActiveLearningAssignments()
+                    agentTargetPackageTitle = assignments?.first(where: {
+                        $0.package.id == decision.plan.targetPackageId
+                    })?.package.title
                     message = "Pembimbing IQRA: \(decision.explanation)"
                 } else {
                     message = link.packageCompleted
@@ -146,5 +155,9 @@ final class IqraPracticeViewModel: NSObject, ObservableObject {
         } catch {
             message = error.localizedDescription
         }
+    }
+
+    func dismissAgentDecision() {
+        completedAgentDecision = nil
     }
 }
