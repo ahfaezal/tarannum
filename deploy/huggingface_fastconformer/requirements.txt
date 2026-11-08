@@ -1,2 +1,13 @@
-nemo_toolkit[asr]>=2.4.0,<3
+# NeMo 2.4's ASR stack is tested with the PyTorch 2.6 family and
+# Transformers 4.51-4.52. Pin the complete trio so pip cannot upgrade torch
+# while leaving the endpoint image's torchvision/torchaudio wheels behind.
+torch==2.6.0
+torchaudio==2.6.0
+torchvision==0.21.0
+transformers==4.51.3
+# NeMo ASR requires NumPy <2. Newer PyArrow wheels require NumPy >=2, so keep
+# the last compatible PyArrow generation used by the datasets dependency.
+numpy==1.26.4
+pyarrow==20.0.0
+nemo_toolkit[asr]==2.4.0
 soundfile>=0.12,<1
