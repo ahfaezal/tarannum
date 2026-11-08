@@ -790,13 +790,24 @@ final class KidsViewModel: NSObject, ObservableObject {
             )
             practiceMessage = "Rakaman diterima. Kemajuan telah dikemas kini."
             await refreshAccess()
-            Task { await waitForScoringResult(jobID: jobID) }
+            let submittedReferenceID = selectedReferenceID
+            Task {
+                await waitForScoringResult(
+                    jobID: jobID,
+                    referenceID: submittedReferenceID,
+                    creditedSeconds: duration
+                )
+            }
         } catch {
             practiceMessage = "Rakaman tidak berjaya dihantar. Masa belum dikreditkan. Cuba semula."
         }
     }
 
-    private func waitForScoringResult(jobID: String) async {
+    private func waitForScoringResult(
+        jobID: String,
+        referenceID: String,
+        creditedSeconds: Double
+    ) async {
         isWaitingForScore = true
         latestScore = nil
         scoringMessage = "Rakaman sedang menunggu penilaian AI…"
@@ -809,6 +820,23 @@ final class KidsViewModel: NSObject, ObservableObject {
                 if update.status == "completed", let result = update.result {
                     latestScore = result
                     scoringMessage = "Penilaian selesai."
+                    do {
+                        if let link = try await api.linkScoringJobToAssignedPackage(
+                            referenceID: referenceID,
+                            jobID: jobID,
+                            creditedSeconds: creditedSeconds
+                        ) {
+                            if let decision = link.agentDecision {
+                                scoringMessage = "Penilaian selesai. Pembimbing IQRA: \(decision.explanation)"
+                            } else if link.packageCompleted {
+                                scoringMessage = "Penilaian selesai dan pakej latihan lengkap."
+                            } else if link.unitPassed {
+                                scoringMessage = "Penilaian selesai dan unit pakej lulus."
+                            }
+                        }
+                    } catch {
+                        scoringMessage = "Penilaian selesai. Rekod pakej akan diselaraskan semula."
+                    }
                     return
                 }
                 if update.status == "failed" {

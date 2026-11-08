@@ -472,6 +472,73 @@ struct KidsAPIClient {
         )
     }
 
+    func linkScoringJobToAssignedPackage(
+        referenceID: String,
+        jobID: String,
+        creditedSeconds: Double
+    ) async throws -> KidsPackageEvidenceLink? {
+        let assignments = try await fetchActiveLearningAssignments()
+        guard let assignment = assignments.first(where: {
+            $0.package.units.contains(where: {
+                $0.activityType == "tarannum_record" && $0.referenceId == referenceID
+            })
+        }), let unit = assignment.package.units.first(where: {
+            $0.activityType == "tarannum_record" && $0.referenceId == referenceID
+        }) else {
+            return nil
+        }
+
+        let run: KidsLearningRun
+        if let activeRun = assignment.activeRun {
+            run = activeRun
+        } else {
+            let (data, response) = try await authorizedRequest(
+                path: "/api/kids/learning/assignments/\(assignment.id)/runs",
+                method: "POST"
+            )
+            guard response.statusCode == 200 else { throw apiError(status: response.statusCode, data: data) }
+            run = try learningDecoder.decode(KidsLearningRun.self, from: data)
+        }
+
+        let body = try JSONSerialization.data(withJSONObject: [
+            "evidence": ["evidence_type": "scoring_job", "evidence_id": jobID],
+            "client_activity_seconds": max(0, creditedSeconds),
+        ])
+        let (unitData, unitResponse) = try await authorizedRequest(
+            path: "/api/kids/learning/runs/\(run.id)/units/\(unit.id)",
+            method: "PUT",
+            body: body
+        )
+        guard unitResponse.statusCode == 200 else {
+            throw apiError(status: unitResponse.statusCode, data: unitData)
+        }
+        let recorded = try learningDecoder.decode(KidsLearningUnit.self, from: unitData)
+
+        var packageCompleted = false
+        var agentDecision: KidsAgentDecision?
+        if recorded.result?.passed == true {
+            let (completionData, completionResponse) = try await authorizedRequest(
+                path: "/api/kids/learning/runs/\(run.id)/complete",
+                method: "POST"
+            )
+            guard completionResponse.statusCode == 200 else {
+                throw apiError(status: completionResponse.statusCode, data: completionData)
+            }
+            let completedRun = try learningDecoder.decode(KidsLearningRun.self, from: completionData)
+            packageCompleted = completedRun.status == "completed"
+            agentDecision = completedRun.agentDecision
+        }
+        return KidsPackageEvidenceLink(
+            assignmentID: assignment.id,
+            runID: run.id,
+            unitID: unit.id,
+            packageTitle: assignment.package.title,
+            unitPassed: recorded.result?.passed == true,
+            packageCompleted: packageCompleted,
+            agentDecision: agentDecision
+        )
+    }
+
     private var learningDecoder: JSONDecoder {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
