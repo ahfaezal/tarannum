@@ -17,6 +17,7 @@ from kids_package_endpoints import (
 from seed_kids_staging_package import _require_staging
 from kids_assignment_endpoints import _validate_assignment_target
 from kids_learning_endpoints import _evaluate_completion_rows
+from kids_agent_service import evaluate_agent_policy
 
 
 def unit(**overrides):
@@ -200,6 +201,50 @@ class KidsPackageValidationTests(unittest.TestCase):
         )
         self.assertTrue(complete["eligible_for_agent"])
         self.assertEqual(complete["actual_pass_rate"], 1.0)
+
+    def test_bounded_agent_advances_only_through_admin_transition(self):
+        transition = SimpleNamespace(
+            outcome="advance", is_active=True, priority=1, created_at=None,
+            conditions={"min_average_score": 80}, requires_human_approval=False,
+        )
+        rows = [
+            {"unit_key": "u1", "passed": True, "score": 90, "valid_attempt_count": 1},
+            {"unit_key": "u2", "passed": True, "score": 86, "valid_attempt_count": 1},
+        ]
+        result = evaluate_agent_policy(
+            allowed_actions=["advance", "retain", "human_review"],
+            unit_rows=rows,
+            transitions=[transition],
+        )
+        self.assertEqual(result["outcome"], "advance")
+        self.assertIs(result["transition"], transition)
+        self.assertFalse(result["requires_human_review"])
+
+        no_route = evaluate_agent_policy(
+            allowed_actions=["advance", "retain"], unit_rows=rows, transitions=[]
+        )
+        self.assertEqual(no_route["outcome"], "retain")
+
+    def test_bounded_agent_fails_closed_for_unknown_transition_conditions(self):
+        transition = SimpleNamespace(
+            outcome="advance", is_active=True, priority=1, created_at=None,
+            conditions={"untrusted_future_rule": True}, requires_human_approval=False,
+        )
+        result = evaluate_agent_policy(
+            allowed_actions=["advance", "retain"],
+            unit_rows=[{"unit_key": "u1", "passed": True, "score": 95, "valid_attempt_count": 1}],
+            transitions=[transition],
+        )
+        self.assertEqual(result["outcome"], "retain")
+
+    def test_bounded_agent_requires_review_when_evidence_confidence_is_low(self):
+        result = evaluate_agent_policy(
+            allowed_actions=["advance", "retain", "human_review"],
+            unit_rows=[{"unit_key": "u1", "passed": True, "score": None, "valid_attempt_count": 1}],
+            transitions=[],
+        )
+        self.assertEqual(result["outcome"], "human_review")
+        self.assertTrue(result["requires_human_review"])
 
 
 if __name__ == "__main__":

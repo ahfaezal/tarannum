@@ -186,11 +186,23 @@ missing or failed unit keys, actual pass rate, and `eligible_for_agent`. Agent
 execution must only accept a completed run whose immutable evaluation has
 `eligible_for_agent: true`.
 
-This phase activates Admin-managed assignment, iPad run execution and the
-server completion gate. Bounded agent decisions, parent/teacher reports, and
-the OpenAI explanation layer remain separate later phases. Existing IQRA
-scoring, Azure Speech, FastConformer, and Tarannum assessment behaviour remain
-unchanged.
+When the completion gate succeeds, the server immediately executes the
+bounded rules policy and returns `agent_decision` with the run. The policy:
+
+- reads only server-verified unit evidence;
+- selects only an action listed in `allowed_agent_actions`;
+- uses only active Admin-authored package transitions whose conditions match;
+- fails closed when it encounters an unknown transition condition;
+- stores an append-only decision, evidence snapshot, rules snapshot and
+  learning plan;
+- creates the next assignment automatically only when human review is not
+  required.
+
+The student may retrieve the same result with
+`GET /api/kids/learning/runs/{run_id}/agent-decision`. Assessment scores are
+never changed by the agent. Parent/teacher reports and the optional OpenAI
+explanation layer remain separate later phases. Existing IQRA scoring, Azure
+Speech, FastConformer, and Tarannum assessment behaviour remain unchanged.
 
 ### Closed-staging seed
 

@@ -18,7 +18,9 @@ from sqlalchemy.orm import Session
 from auth import get_current_student_user
 from database import (
     IqraAttempt,
+    KidsAgentDecision,
     KidsLearningPackage,
+    KidsLearningPlan,
     KidsPackageAssignment,
     KidsPackageRun,
     KidsPackageUnit,
@@ -27,6 +29,7 @@ from database import (
     User,
     get_db,
 )
+from kids_agent_service import agent_decision_payload, execute_agent_for_run
 
 
 router = APIRouter(prefix="/api/kids/learning", tags=["kids-learning"])
@@ -82,6 +85,12 @@ def _run_payload(run: KidsPackageRun, db: Session) -> dict:
     units = db.query(KidsPackageUnit).filter(
         KidsPackageUnit.package_id == package.id
     ).order_by(KidsPackageUnit.sequence).all()
+    decision = db.query(KidsAgentDecision).filter(
+        KidsAgentDecision.run_id == run.id
+    ).order_by(KidsAgentDecision.created_at.desc()).first()
+    plan = None if decision is None else db.query(KidsLearningPlan).filter(
+        KidsLearningPlan.decision_id == decision.id
+    ).first()
     return {
         "id": str(run.id),
         "assignment_id": str(run.assignment_id),
@@ -97,6 +106,7 @@ def _run_payload(run: KidsPackageRun, db: Session) -> dict:
         "valid_activity_seconds": run.valid_activity_seconds,
         "started_at": run.started_at.isoformat() if run.started_at else None,
         "completed_at": run.completed_at.isoformat() if run.completed_at else None,
+        "agent_decision": None if decision is None or plan is None else agent_decision_payload(decision, plan),
         "units": [_unit_payload(unit, results.get(unit.id)) for unit in units],
     }
 
@@ -385,6 +395,10 @@ def complete_run(
 ):
     run = _student_run(db, run_id, student.id)
     if run.status == "completed":
+        if (run.completion_evaluation or {}).get("eligible_for_agent"):
+            execute_agent_for_run(db, run)
+            db.commit()
+            db.refresh(run)
         return _run_payload(run, db)
     package = db.query(KidsLearningPackage).filter(KidsLearningPackage.id == run.package_id).first()
     if package is None:
@@ -398,6 +412,26 @@ def complete_run(
         assignment = _student_assignment(db, run.assignment_id, student.id)
         assignment.status = "completed"
         assignment.completed_at = now
+        db.flush()
+        execute_agent_for_run(db, run)
     db.commit()
     db.refresh(run)
     return _run_payload(run, db)
+
+
+@router.get("/runs/{run_id}/agent-decision")
+def get_agent_decision(
+    run_id: UUID,
+    student: User = Depends(get_current_student_user),
+    db: Session = Depends(get_db),
+):
+    run = _student_run(db, run_id, student.id)
+    decision = db.query(KidsAgentDecision).filter(
+        KidsAgentDecision.run_id == run.id
+    ).order_by(KidsAgentDecision.created_at.desc()).first()
+    if decision is None:
+        raise HTTPException(404, "Keputusan agen belum tersedia.")
+    plan = db.query(KidsLearningPlan).filter(KidsLearningPlan.decision_id == decision.id).first()
+    if plan is None:
+        raise HTTPException(409, "Pelan pembelajaran bagi keputusan ini tidak tersedia.")
+    return agent_decision_payload(decision, plan)
