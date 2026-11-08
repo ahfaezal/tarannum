@@ -267,6 +267,102 @@ class IqraProgress(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
 
+class KidsLearningPackage(Base):
+    """Admin-authored, versioned learning package for Tarannum Kids."""
+    __tablename__ = "kids_learning_packages"
+    __table_args__ = (
+        UniqueConstraint("package_key", "version", name="uq_kids_package_key_version"),
+    )
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    package_key = Column(String, nullable=False, index=True)
+    version = Column(Integer, nullable=False, default=1)
+    title = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
+    package_type = Column(String, nullable=False, index=True)  # page | surah
+    level = Column(String, nullable=True, index=True)
+    source_metadata = Column(JSON, nullable=False, default=dict)
+    assessment_engines = Column(JSON, nullable=False, default=list)
+    completion_rules = Column(JSON, nullable=False, default=dict)
+    allowed_agent_actions = Column(JSON, nullable=False, default=list)
+    status = Column(String, nullable=False, default="draft", index=True)
+    created_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True)
+    published_at = Column(DateTime, nullable=True)
+    archived_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    units = relationship(
+        "KidsPackageUnit",
+        back_populates="package",
+        cascade="all, delete-orphan",
+        order_by="KidsPackageUnit.sequence",
+    )
+
+
+class KidsPackageUnit(Base):
+    """One required or optional learning activity inside a package."""
+    __tablename__ = "kids_package_units"
+    __table_args__ = (
+        UniqueConstraint("package_id", "unit_key", name="uq_kids_package_unit_key"),
+        UniqueConstraint("package_id", "sequence", name="uq_kids_package_unit_sequence"),
+    )
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    package_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("kids_learning_packages.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    unit_key = Column(String, nullable=False)
+    sequence = Column(Integer, nullable=False)
+    title = Column(String, nullable=False)
+    instruction = Column(Text, nullable=True)
+    activity_type = Column(String, nullable=False, index=True)
+    reference_text = Column(Text, nullable=True)
+    reference_id = Column(String, nullable=True)
+    sample_id = Column(String, nullable=True)
+    required = Column(Boolean, nullable=False, default=True)
+    assessment_config = Column(JSON, nullable=False, default=dict)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    package = relationship("KidsLearningPackage", back_populates="units")
+
+
+class KidsPackageTransition(Base):
+    """Admin-approved next-package option available to the learning agent."""
+    __tablename__ = "kids_package_transitions"
+    __table_args__ = (
+        UniqueConstraint(
+            "from_package_id",
+            "to_package_id",
+            "outcome",
+            name="uq_kids_package_transition",
+        ),
+    )
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    from_package_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("kids_learning_packages.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    to_package_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("kids_learning_packages.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    outcome = Column(String, nullable=False, index=True)
+    priority = Column(Integer, nullable=False, default=100)
+    conditions = Column(JSON, nullable=False, default=dict)
+    requires_human_approval = Column(Boolean, nullable=False, default=False)
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
 class Reference(Base):
     """Reference audio file metadata."""
     __tablename__ = "references"
