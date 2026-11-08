@@ -58,6 +58,38 @@ struct KidsAgentDecisionView: View {
                 .background(.white, in: RoundedRectangle(cornerRadius: 24))
                 .overlay(RoundedRectangle(cornerRadius: 24).stroke(emerald.opacity(0.25)))
 
+                HStack(alignment: .top, spacing: 18) {
+                    evidenceList(
+                        title: "Kekuatan dikenal pasti",
+                        icon: "hand.thumbsup.fill",
+                        color: emerald,
+                        items: decision.strengths,
+                        emptyText: "Semua unit wajib telah diselesaikan."
+                    )
+                    evidenceList(
+                        title: "Perlu dikukuhkan",
+                        icon: "scope",
+                        color: .orange,
+                        items: decision.weaknesses,
+                        emptyText: "Tiada kelemahan utama dikesan."
+                    )
+                }
+
+                VStack(alignment: .leading, spacing: 15) {
+                    Label("Jejak keputusan agen", systemImage: "point.3.connected.trianglepath.dotted")
+                        .font(.title2.bold()).foregroundStyle(ink)
+                    decisionStep(number: "1", title: "Bukti dikumpulkan", detail: "Markah, unit gagal/lulus, percubaan dan masa aktiviti sah.")
+                    decisionStep(number: "2", title: "Polisi dinilai", detail: decision.provider + " · Polisi " + decision.policyVersion)
+                    decisionStep(number: "3", title: "Pelan latihan dicipta", detail: decision.plan.rationale)
+                    Divider()
+                    Label(reviewLabel, systemImage: decision.requiresHumanReview ? "person.badge.shield.checkmark.fill" : "checkmark.shield.fill")
+                        .font(.headline).foregroundStyle(decision.requiresHumanReview ? .orange : teal)
+                }
+                .padding(24)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(.white, in: RoundedRectangle(cornerRadius: 24))
+                .overlay(RoundedRectangle(cornerRadius: 24).stroke(teal.opacity(0.20)))
+
                 Button {
                     if let onContinue { onContinue() } else { dismiss() }
                 } label: {
@@ -74,6 +106,35 @@ struct KidsAgentDecisionView: View {
             .padding(36).frame(maxWidth: 1000).frame(maxWidth: .infinity)
         }
         .background(LinearGradient(colors: [Color(red: 0.93, green: 1.0, blue: 0.97), .white], startPoint: .top, endPoint: .bottom).ignoresSafeArea())
+    }
+
+    private func evidenceList(title: String, icon: String, color: Color, items: [String], emptyText: String) -> some View {
+        VStack(alignment: .leading, spacing: 13) {
+            Label(title, systemImage: icon).font(.headline).foregroundStyle(color)
+            ForEach(items.isEmpty ? [emptyText] : items, id: \.self) { item in
+                Label(item, systemImage: items.isEmpty ? "checkmark" : "circle.fill")
+                    .font(.subheadline).foregroundStyle(ink)
+            }
+        }
+        .padding(20).frame(maxWidth: .infinity, minHeight: 150, alignment: .topLeading)
+        .background(color.opacity(0.07), in: RoundedRectangle(cornerRadius: 20))
+        .overlay(RoundedRectangle(cornerRadius: 20).stroke(color.opacity(0.20)))
+    }
+
+    private func decisionStep(number: String, title: String, detail: String) -> some View {
+        HStack(alignment: .top, spacing: 13) {
+            Text(number).font(.caption.bold()).foregroundStyle(.white)
+                .frame(width: 28, height: 28).background(teal, in: Circle())
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title).font(.headline).foregroundStyle(ink)
+                Text(detail).font(.subheadline).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var reviewLabel: String {
+        if decision.requiresHumanReview { return "Menunggu pengesahan ibu bapa atau guru" }
+        return decision.reviewStatus == "approved" ? "Pelan telah disahkan" : "Autonomi terkawal · Semakan manusia tersedia"
     }
 
     private func summaryCard(icon: String, title: String, value: String) -> some View {

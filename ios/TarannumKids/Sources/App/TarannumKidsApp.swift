@@ -1127,10 +1127,18 @@ struct KidsHomeView: View {
                 }
             }
             Spacer()
-            Button(model.isRefreshing ? "Sedang menyemak…" : "Semak Kemajuan") {
-                Task { await model.refreshAccess() }
+            NavigationLink {
+                KidsProgressReportView(
+                    studentName: model.session?.fullName ?? model.session?.email ?? "Pelajar",
+                    creditedSeconds: model.access?.creditedSeconds ?? 0,
+                    requiredSeconds: model.access?.requiredSeconds ?? KidsConstants.requiredPracticeSeconds,
+                    assignments: model.learningAssignments,
+                    latestDecision: model.latestAgentDecision
+                )
+            } label: {
+                Label("Semak Kemajuan", systemImage: "chart.bar.doc.horizontal.fill")
             }
-            .buttonStyle(.bordered).tint(kidsTeal).controlSize(.large).disabled(model.isRefreshing)
+            .buttonStyle(.bordered).tint(kidsTeal).controlSize(.large)
         }
         .dashboardCard()
     }
