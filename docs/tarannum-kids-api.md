@@ -135,3 +135,11 @@ does not yet activate autonomous learner assignment, package completion, the
 parent/teacher decision report, or the OpenAI explanation layer. Existing
 IQRA scoring, Azure Speech, FastConformer, and Tarannum assessment behaviour
 remain unchanged.
+
+### Closed-staging seed
+
+`voice_analyze_backend/seed_kids_staging_package.py` creates one idempotent
+IQRA 3 demonstration package for end-to-end Admin testing. The script refuses
+to run unless `RAILWAY_ENVIRONMENT_NAME` or `ENVIRONMENT` is exactly
+`staging`. It must never be used to populate production content; final content
+must be reviewed and published through the Admin workspace.

@@ -14,6 +14,7 @@ from kids_package_endpoints import (
     _validate_package_values,
     _validate_source_metadata,
 )
+from seed_kids_staging_package import _require_staging
 
 
 def unit(**overrides):
@@ -100,6 +101,26 @@ class KidsPackageValidationTests(unittest.TestCase):
         self.assertIn('down_revision: Union[str, None] = "20261107_0008"', migration)
         self.assertIn('"kids_learning_packages"', migration)
         self.assertIn("app.include_router(kids_package_admin_router)", main)
+
+    def test_seed_script_is_staging_only(self):
+        previous_railway = os.environ.get("RAILWAY_ENVIRONMENT_NAME")
+        previous_environment = os.environ.get("ENVIRONMENT")
+        try:
+            os.environ["RAILWAY_ENVIRONMENT_NAME"] = "production"
+            os.environ.pop("ENVIRONMENT", None)
+            with self.assertRaises(RuntimeError):
+                _require_staging()
+            os.environ["RAILWAY_ENVIRONMENT_NAME"] = "staging"
+            _require_staging()
+        finally:
+            if previous_railway is None:
+                os.environ.pop("RAILWAY_ENVIRONMENT_NAME", None)
+            else:
+                os.environ["RAILWAY_ENVIRONMENT_NAME"] = previous_railway
+            if previous_environment is None:
+                os.environ.pop("ENVIRONMENT", None)
+            else:
+                os.environ["ENVIRONMENT"] = previous_environment
 
 
 if __name__ == "__main__":
