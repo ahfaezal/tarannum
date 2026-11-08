@@ -133,9 +133,13 @@ final class IqraPracticeViewModel: NSObject, ObservableObject {
                     attemptID: attemptID,
                     creditedSeconds: result?.creditedSeconds ?? 0
                ) {
-                message = link.packageCompleted
-                    ? "Penilaian selesai. Pakej \(link.packageTitle) lengkap dan sedia dinilai agen."
-                    : "Penilaian selesai dan direkodkan dalam pakej \(link.packageTitle)."
+                if let decision = link.agentDecision {
+                    message = "Pembimbing IQRA: \(decision.explanation)"
+                } else {
+                    message = link.packageCompleted
+                        ? "Penilaian selesai. Pakej \(link.packageTitle) lengkap dan sedia dinilai agen."
+                        : "Penilaian selesai dan direkodkan dalam pakej \(link.packageTitle)."
+                }
             } else {
                 message = "Penilaian selesai."
             }

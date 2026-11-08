@@ -11,6 +11,7 @@ from kids_package_endpoints import (
     PackageUnitInput,
     _default_completion_rules,
     _require_draft,
+    _validate_transition_conditions,
     _validate_package_values,
     _validate_source_metadata,
 )
@@ -79,13 +80,31 @@ class KidsPackageValidationTests(unittest.TestCase):
         self.assertEqual(rules["required_unit_pass_rate"], 1.0)
         self.assertEqual(rules["minimum_valid_attempts_per_unit"], 1)
         self.assertTrue(rules["require_in_sequence"])
+        self.assertEqual(rules["agent_minimum_confidence"], 0.75)
+        self.assertEqual(rules["agent_advance_minimum_score"], 80.0)
+        self.assertEqual(rules["agent_remedial_below_score"], 70.0)
         for invalid in (
             {"required_unit_pass_rate": 0},
             {"required_unit_pass_rate": 1.1},
             {"minimum_valid_attempts_per_unit": 0},
+            {"agent_minimum_confidence": 1.1},
         ):
             with self.assertRaises(HTTPException):
                 _default_completion_rules(invalid)
+
+    def test_transition_conditions_match_bounded_agent_contract(self):
+        _validate_transition_conditions({
+            "min_average_score": 80,
+            "min_confidence": 0.75,
+            "max_failed_units": 0,
+        })
+        for invalid in (
+            {"minimum_mastery_score": 80},
+            {"min_confidence": 75},
+            {"max_failed_units": 1.5},
+        ):
+            with self.assertRaises(HTTPException):
+                _validate_transition_conditions(invalid)
 
     def test_published_and_archived_packages_are_immutable(self):
         _require_draft(SimpleNamespace(status="draft"))
@@ -179,6 +198,7 @@ class KidsPackageValidationTests(unittest.TestCase):
         self.assertIn("IqraAttempt.student_id == student_id", endpoint)
         self.assertIn("ScoringJob.user_id == student_id", endpoint)
         self.assertIn('@router.post("/runs/{run_id}/complete")', endpoint)
+        self.assertIn('@router.get("/agent-decisions/latest")', endpoint)
 
     def test_package_completion_gate_requires_all_evidence_by_default(self):
         first = SimpleNamespace(id="u1", unit_key="ayat-1")

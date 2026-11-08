@@ -135,6 +135,7 @@ final class KidsViewModel: NSObject, ObservableObject {
     @Published var microphoneStatus = "Mikrofon belum diperiksa"
     @Published var isMicrophoneReady = false
     @Published var learningAssignments: [KidsLearningAssignment] = []
+    @Published var latestAgentDecision: KidsAgentDecision?
     private let api = KidsAPIClient()
     private var audioRecorder: AVAudioRecorder?
     private var referencePlayer: AVPlayer?
@@ -313,6 +314,7 @@ final class KidsViewModel: NSObject, ObservableObject {
         session = nil
         access = nil
         learningAssignments = []
+        latestAgentDecision = nil
         SharedState.dailyAccess = nil
         password = ""
         message = "Anda telah log keluar. Aplikasi kekal dilindungi."
@@ -388,11 +390,22 @@ final class KidsViewModel: NSObject, ObservableObject {
         } catch KidsAPIError.sessionExpired {
             session = nil
             learningAssignments = []
+            latestAgentDecision = nil
         } catch {
             // Assignment is an enhancement to the existing Kids dashboard.
             // Keep Tarannum/IQRA usable if staging package metadata is
             // temporarily unavailable.
             learningAssignments = []
+        }
+        do {
+            latestAgentDecision = try await api.fetchLatestAgentDecision()
+        } catch KidsAPIError.sessionExpired {
+            session = nil
+            latestAgentDecision = nil
+        } catch {
+            // A missing/temporarily unavailable coaching decision must not
+            // hide an otherwise valid active assignment.
+            latestAgentDecision = nil
         }
     }
 
@@ -923,6 +936,9 @@ struct KidsHomeView: View {
             taskCard
             if IqraFeature.isEnabled {
                 iqraEntryCard
+                if let decision = model.latestAgentDecision {
+                    agentDecisionCard(decision)
+                }
             }
             activitySelection
             guidanceBanner
@@ -1051,6 +1067,37 @@ struct KidsHomeView: View {
         let units = assignment.activeRun?.units ?? assignment.package.units
         let completed = units.filter { $0.result?.passed == true }.count
         return "\(completed) daripada \(units.count) unit selesai"
+    }
+
+    private func agentDecisionCard(_ decision: KidsAgentDecision) -> some View {
+        let labels = [
+            "advance": "Naik ke tahap seterusnya",
+            "retain": "Kekal dan kukuhkan",
+            "remedial": "Latihan pemulihan",
+            "foundation": "Kembali ke asas",
+            "human_review": "Menunggu semakan guru/ibu bapa",
+        ]
+        return HStack(alignment: .top, spacing: 16) {
+            Image(systemName: "sparkles")
+                .font(.title2.bold()).foregroundStyle(kidsEmerald)
+                .frame(width: 48, height: 48).background(Color.green.opacity(0.10), in: Circle())
+            VStack(alignment: .leading, spacing: 5) {
+                Text("PEMBIMBING IQRA").font(.caption.bold()).foregroundStyle(kidsTeal)
+                Text(labels[decision.outcome] ?? "Cadangan latihan")
+                    .font(.headline).foregroundStyle(Color(red: 0.04, green: 0.10, blue: 0.28))
+                Text(decision.explanation).font(.subheadline).foregroundStyle(.secondary)
+                Text("Keyakinan bukti: \(Int((decision.confidence * 100).rounded()))%")
+                    .font(.caption.bold()).foregroundStyle(kidsTeal)
+                if decision.requiresHumanReview {
+                    Label("Perlu pengesahan guru atau ibu bapa", systemImage: "person.badge.shield.checkmark")
+                        .font(.caption).foregroundStyle(.orange)
+                }
+            }
+            Spacer()
+        }
+        .padding(18)
+        .background(Color.green.opacity(0.07), in: RoundedRectangle(cornerRadius: 18))
+        .overlay(RoundedRectangle(cornerRadius: 18).stroke(kidsEmerald.opacity(0.22)))
     }
 
     private var activitySelection: some View {

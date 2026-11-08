@@ -36,6 +36,16 @@ AGENT_ACTIONS = {
     "notify_teacher",
 }
 TRANSITION_OUTCOMES = {"advance", "remedial", "foundation"}
+TRANSITION_CONDITIONS = {
+    "min_average_score",
+    "max_average_score",
+    "min_pass_rate",
+    "max_pass_rate",
+    "min_confidence",
+    "max_confidence",
+    "min_failed_units",
+    "max_failed_units",
+}
 
 
 class PackageUnitInput(BaseModel):
@@ -135,7 +145,33 @@ def _default_completion_rules(rules: Dict[str, Any]) -> Dict[str, Any]:
         raise HTTPException(400, "required_unit_pass_rate must be greater than 0 and at most 1")
     if not isinstance(attempts, int) or attempts < 1:
         raise HTTPException(400, "minimum_valid_attempts_per_unit must be at least 1")
+    for key, default, maximum in (
+        ("agent_minimum_confidence", 0.75, 1),
+        ("agent_advance_minimum_score", 80, 100),
+        ("agent_remedial_below_score", 70, 100),
+    ):
+        value = normalized.get(key, default)
+        if not isinstance(value, (int, float)) or not 0 <= float(value) <= maximum:
+            raise HTTPException(400, f"{key} must be between 0 and {maximum}")
+        normalized[key] = float(value)
     return normalized
+
+
+def _validate_transition_conditions(conditions: Dict[str, Any]) -> None:
+    unknown = sorted(set(conditions) - TRANSITION_CONDITIONS)
+    if unknown:
+        raise HTTPException(400, f"Unknown transition conditions: {', '.join(unknown)}")
+    for key, value in conditions.items():
+        if not isinstance(value, (int, float)):
+            raise HTTPException(400, f"{key} must be numeric")
+        numeric = float(value)
+        if key.endswith("_score") and not 0 <= numeric <= 100:
+            raise HTTPException(400, f"{key} must be between 0 and 100")
+        if key.endswith("_rate") or key.endswith("_confidence"):
+            if not 0 <= numeric <= 1:
+                raise HTTPException(400, f"{key} must be between 0 and 1")
+        if key.endswith("_units") and (numeric < 0 or not numeric.is_integer()):
+            raise HTTPException(400, f"{key} must be a non-negative integer")
 
 
 def _unit_payload(unit: KidsPackageUnit) -> dict:
@@ -417,6 +453,7 @@ def replace_transitions(
             raise HTTPException(400, f"Invalid transition outcome: {item.outcome}")
         if item.to_package_id == package.id:
             raise HTTPException(400, "A package cannot transition to itself")
+        _validate_transition_conditions(item.conditions)
         target = _get_package(db, item.to_package_id)
         key = (target.id, item.outcome)
         if key in seen:

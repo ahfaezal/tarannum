@@ -94,6 +94,9 @@ const emptyDraft = (): PackageDraft => ({
     required_unit_pass_rate: 1,
     minimum_valid_attempts_per_unit: 1,
     require_in_sequence: true,
+    agent_minimum_confidence: 0.75,
+    agent_advance_minimum_score: 80,
+    agent_remedial_below_score: 70,
   },
   allowed_agent_actions: ["advance", "retain", "remedial", "foundation", "human_review"],
   units: [emptyUnit(1)],
@@ -111,6 +114,25 @@ const packageToDraft = (item: KidsLearningPackage): PackageDraft => ({
   allowed_agent_actions: [...item.allowed_agent_actions],
   units: item.units.map(({ id: _id, ...unit }) => ({ ...unit, assessment_config: { ...unit.assessment_config } })),
 });
+
+const normalizedTransition = (transition: KidsPackageTransition): KidsPackageTransition => {
+  const conditions = { ...transition.conditions };
+  const legacyScore = conditions.minimum_mastery_score;
+  if (typeof legacyScore === "number") {
+    if (transition.outcome === "advance") conditions.min_average_score = legacyScore;
+    else conditions.max_average_score = legacyScore;
+  }
+  delete conditions.minimum_mastery_score;
+  delete conditions.minimum_completed_packages;
+  return {
+    ...transition,
+    conditions: Object.keys(conditions).length > 0
+      ? conditions
+      : transition.outcome === "advance"
+        ? { min_average_score: 80, min_confidence: 0.75, max_failed_units: 0 }
+        : { max_average_score: 69, min_confidence: 0.75, min_failed_units: 1 },
+  };
+};
 
 const FieldLabel: React.FC<React.PropsWithChildren> = ({ children }) => (
   <label className="mb-1 block text-sm font-semibold text-slate-700">{children}</label>
@@ -147,7 +169,7 @@ const AdminKidsPackages: React.FC = () => {
         if (current) {
           setSelectedId(current.id);
           setDraft(packageToDraft(current));
-          setTransitions(current.transitions.map((item) => ({ ...item, conditions: { ...item.conditions } })));
+          setTransitions(current.transitions.map(normalizedTransition));
         }
       }
     } catch (loadError) {
@@ -164,7 +186,7 @@ const AdminKidsPackages: React.FC = () => {
   const selectPackage = (item: KidsLearningPackage) => {
     setSelectedId(item.id);
     setDraft(packageToDraft(item));
-    setTransitions(item.transitions.map((transition) => ({ ...transition, conditions: { ...transition.conditions } })));
+    setTransitions(item.transitions.map(normalizedTransition));
     setMessage(null);
     setError(null);
   };
@@ -261,10 +283,15 @@ const AdminKidsPackages: React.FC = () => {
       to_package_id: target.id,
       outcome: "advance",
       priority: (current.length + 1) * 10,
-      conditions: {},
+      conditions: { min_average_score: 80, min_confidence: 0.75, max_failed_units: 0 },
       requires_human_approval: false,
       is_active: true,
     }]);
+  };
+
+  const transitionDefaults = (outcome: TransitionOutcome): Record<string, number> => {
+    if (outcome === "advance") return { min_average_score: 80, min_confidence: 0.75, max_failed_units: 0 };
+    return { max_average_score: 69, min_confidence: 0.75, min_failed_units: 1 };
   };
 
   const updateTransition = (index: number, patch: Partial<KidsPackageTransition>) => setTransitions((current) =>
@@ -368,6 +395,9 @@ const AdminKidsPackages: React.FC = () => {
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
                 <div><FieldLabel>Kadar unit lulus</FieldLabel><input disabled={!editable} type="number" min={0.1} max={1} step={0.05} value={Number(draft.completion_rules.required_unit_pass_rate || 1)} onChange={(event) => setDraft({ ...draft, completion_rules: { ...draft.completion_rules, required_unit_pass_rate: Number(event.target.value) } })} className="w-full rounded-lg border border-slate-300 px-3 py-2 disabled:bg-slate-100" /></div>
                 <div><FieldLabel>Percubaan sah minimum</FieldLabel><input disabled={!editable} type="number" min={1} value={Number(draft.completion_rules.minimum_valid_attempts_per_unit || 1)} onChange={(event) => setDraft({ ...draft, completion_rules: { ...draft.completion_rules, minimum_valid_attempts_per_unit: Number(event.target.value) } })} className="w-full rounded-lg border border-slate-300 px-3 py-2 disabled:bg-slate-100" /></div>
+                <div><FieldLabel>Keyakinan agen minimum</FieldLabel><input disabled={!editable} type="number" min={0} max={1} step={0.05} value={Number(draft.completion_rules.agent_minimum_confidence ?? 0.75)} onChange={(event) => setDraft({ ...draft, completion_rules: { ...draft.completion_rules, agent_minimum_confidence: Number(event.target.value) } })} className="w-full rounded-lg border border-slate-300 px-3 py-2 disabled:bg-slate-100" /></div>
+                <div><FieldLabel>Markah naik tahap</FieldLabel><input disabled={!editable} type="number" min={0} max={100} value={Number(draft.completion_rules.agent_advance_minimum_score ?? 80)} onChange={(event) => setDraft({ ...draft, completion_rules: { ...draft.completion_rules, agent_advance_minimum_score: Number(event.target.value) } })} className="w-full rounded-lg border border-slate-300 px-3 py-2 disabled:bg-slate-100" /></div>
+                <div><FieldLabel>Markah bawah pemulihan</FieldLabel><input disabled={!editable} type="number" min={0} max={100} value={Number(draft.completion_rules.agent_remedial_below_score ?? 70)} onChange={(event) => setDraft({ ...draft, completion_rules: { ...draft.completion_rules, agent_remedial_below_score: Number(event.target.value) } })} className="w-full rounded-lg border border-slate-300 px-3 py-2 disabled:bg-slate-100" /></div>
               </div>
               <label className="mt-3 flex items-center gap-2 text-sm font-medium"><input disabled={!editable} type="checkbox" checked={Boolean(draft.completion_rules.require_in_sequence)} onChange={(event) => setDraft({ ...draft, completion_rules: { ...draft.completion_rules, require_in_sequence: event.target.checked } })} className="h-4 w-4 accent-emerald-600" /> Wajib ikut susunan unit</label>
             </div>
@@ -382,13 +412,19 @@ const AdminKidsPackages: React.FC = () => {
             <div className="mt-4 space-y-3">{transitions.length === 0 && <p className="rounded-xl bg-slate-50 p-4 text-sm text-slate-500">Belum ada laluan. Keputusan kekal tidak memerlukan laluan.</p>}{transitions.map((transition, index) => <div key={`${transition.to_package_id}-${index}`} className="rounded-xl border border-slate-200 p-4">
               <div className="grid gap-3 md:grid-cols-[minmax(220px,1fr)_180px_100px_auto]">
                 <div><FieldLabel>Pakej sasaran</FieldLabel><select disabled={!editable} value={transition.to_package_id} onChange={(event) => updateTransition(index, { to_package_id: event.target.value })} className="w-full rounded-lg border border-slate-300 px-3 py-2 disabled:bg-slate-100">{packages.filter((item) => item.id !== selectedId && item.status === "published").map((item) => <option key={item.id} value={item.id}>{item.title} · v{item.version}</option>)}</select></div>
-                <div><FieldLabel>Keputusan</FieldLabel><select disabled={!editable} value={transition.outcome} onChange={(event) => updateTransition(index, { outcome: event.target.value as TransitionOutcome })} className="w-full rounded-lg border border-slate-300 px-3 py-2 disabled:bg-slate-100"><option value="advance">Naik tahap</option><option value="remedial">Pemulihan</option><option value="foundation">Kembali ke asas</option></select></div>
+                <div><FieldLabel>Keputusan</FieldLabel><select disabled={!editable} value={transition.outcome} onChange={(event) => { const outcome = event.target.value as TransitionOutcome; updateTransition(index, { outcome, conditions: transitionDefaults(outcome), requires_human_approval: outcome === "foundation" }); }} className="w-full rounded-lg border border-slate-300 px-3 py-2 disabled:bg-slate-100"><option value="advance">Naik tahap</option><option value="remedial">Pemulihan</option><option value="foundation">Kembali ke asas</option></select></div>
                 <div><FieldLabel>Keutamaan</FieldLabel><input disabled={!editable} type="number" min={1} value={transition.priority} onChange={(event) => updateTransition(index, { priority: Number(event.target.value) })} className="w-full rounded-lg border border-slate-300 px-3 py-2 disabled:bg-slate-100" /></div>
                 {editable && <button aria-label="Buang laluan" onClick={() => setTransitions((current) => current.filter((_, transitionIndex) => transitionIndex !== index))} className="mt-6 rounded-lg p-2 text-red-600 hover:bg-red-50"><Trash2 className="h-5 w-5" /></button>}
               </div>
-              <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                <div><FieldLabel>Markah penguasaan minimum</FieldLabel><input disabled={!editable} type="number" min={0} max={100} value={Number(transition.conditions.minimum_mastery_score ?? 0)} onChange={(event) => updateTransition(index, { conditions: { ...transition.conditions, minimum_mastery_score: Number(event.target.value) } })} className="w-full rounded-lg border border-slate-300 px-3 py-2 disabled:bg-slate-100" /></div>
-                <div><FieldLabel>Bilangan pakej selesai minimum</FieldLabel><input disabled={!editable} type="number" min={1} value={Number(transition.conditions.minimum_completed_packages ?? 1)} onChange={(event) => updateTransition(index, { conditions: { ...transition.conditions, minimum_completed_packages: Number(event.target.value) } })} className="w-full rounded-lg border border-slate-300 px-3 py-2 disabled:bg-slate-100" /></div>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                {transition.outcome === "advance" ? <>
+                  <div><FieldLabel>Markah purata minimum</FieldLabel><input disabled={!editable} type="number" min={0} max={100} value={Number(transition.conditions.min_average_score ?? 80)} onChange={(event) => updateTransition(index, { conditions: { ...transition.conditions, min_average_score: Number(event.target.value) } })} className="w-full rounded-lg border border-slate-300 px-3 py-2 disabled:bg-slate-100" /></div>
+                  <div><FieldLabel>Unit gagal maksimum</FieldLabel><input disabled={!editable} type="number" min={0} value={Number(transition.conditions.max_failed_units ?? 0)} onChange={(event) => updateTransition(index, { conditions: { ...transition.conditions, max_failed_units: Number(event.target.value) } })} className="w-full rounded-lg border border-slate-300 px-3 py-2 disabled:bg-slate-100" /></div>
+                </> : <>
+                  <div><FieldLabel>Markah purata maksimum</FieldLabel><input disabled={!editable} type="number" min={0} max={100} value={Number(transition.conditions.max_average_score ?? 69)} onChange={(event) => updateTransition(index, { conditions: { ...transition.conditions, max_average_score: Number(event.target.value) } })} className="w-full rounded-lg border border-slate-300 px-3 py-2 disabled:bg-slate-100" /></div>
+                  <div><FieldLabel>Unit gagal minimum</FieldLabel><input disabled={!editable} type="number" min={0} value={Number(transition.conditions.min_failed_units ?? 1)} onChange={(event) => updateTransition(index, { conditions: { ...transition.conditions, min_failed_units: Number(event.target.value) } })} className="w-full rounded-lg border border-slate-300 px-3 py-2 disabled:bg-slate-100" /></div>
+                </>}
+                <div><FieldLabel>Keyakinan minimum</FieldLabel><input disabled={!editable} type="number" min={0} max={1} step={0.05} value={Number(transition.conditions.min_confidence ?? 0.75)} onChange={(event) => updateTransition(index, { conditions: { ...transition.conditions, min_confidence: Number(event.target.value) } })} className="w-full rounded-lg border border-slate-300 px-3 py-2 disabled:bg-slate-100" /></div>
                 <label className="flex items-end gap-2 pb-2 text-sm font-medium text-slate-700"><input disabled={!editable} type="checkbox" checked={transition.requires_human_approval} onChange={(event) => updateTransition(index, { requires_human_approval: event.target.checked })} className="h-4 w-4 accent-emerald-600" /> Perlu kelulusan guru/ibu bapa</label>
               </div>
             </div>)}</div>

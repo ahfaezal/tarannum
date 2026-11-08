@@ -78,6 +78,32 @@ struct KidsLearningRun: Decodable, Identifiable, Equatable {
     let status: String
     let validActivitySeconds: Double
     let units: [KidsLearningUnit]
+    let agentDecision: KidsAgentDecision?
+}
+
+struct KidsAgentLearningPlan: Decodable, Equatable {
+    let id: String
+    let targetPackageId: String
+    let action: String
+    let status: String
+    let rationale: String
+}
+
+struct KidsAgentDecision: Decodable, Identifiable, Equatable {
+    let id: String
+    let runId: String
+    let packageId: String
+    let transitionId: String?
+    let outcome: String
+    let confidence: Double
+    let strengths: [String]
+    let weaknesses: [String]
+    let explanation: String
+    let requiresHumanReview: Bool
+    let reviewStatus: String
+    let provider: String
+    let policyVersion: String
+    let plan: KidsAgentLearningPlan
 }
 
 struct KidsLearningPackage: Decodable, Identifiable, Equatable {
@@ -106,6 +132,7 @@ struct KidsPackageEvidenceLink: Equatable {
     let packageTitle: String
     let unitPassed: Bool
     let packageCompleted: Bool
+    let agentDecision: KidsAgentDecision?
 }
 
 enum KidsAPIError: LocalizedError {
@@ -375,6 +402,13 @@ struct KidsAPIClient {
         return try learningDecoder.decode([KidsLearningAssignment].self, from: data)
     }
 
+    func fetchLatestAgentDecision() async throws -> KidsAgentDecision? {
+        let (data, response) = try await authorizedRequest(path: "/api/kids/learning/agent-decisions/latest")
+        if response.statusCode == 404 { return nil }
+        guard response.statusCode == 200 else { throw apiError(status: response.statusCode, data: data) }
+        return try learningDecoder.decode(KidsAgentDecision.self, from: data)
+    }
+
     func linkIqraAttemptToAssignedPackage(
         sampleID: String,
         attemptID: String,
@@ -414,6 +448,7 @@ struct KidsAPIClient {
         let recorded = try learningDecoder.decode(KidsLearningUnit.self, from: unitData)
 
         var packageCompleted = false
+        var agentDecision: KidsAgentDecision?
         if recorded.result?.passed == true {
             let (completionData, completionResponse) = try await authorizedRequest(
                 path: "/api/kids/learning/runs/\(run.id)/complete",
@@ -422,7 +457,9 @@ struct KidsAPIClient {
             guard completionResponse.statusCode == 200 else {
                 throw apiError(status: completionResponse.statusCode, data: completionData)
             }
-            packageCompleted = try learningDecoder.decode(KidsLearningRun.self, from: completionData).status == "completed"
+            let completedRun = try learningDecoder.decode(KidsLearningRun.self, from: completionData)
+            packageCompleted = completedRun.status == "completed"
+            agentDecision = completedRun.agentDecision
         }
         return KidsPackageEvidenceLink(
             assignmentID: assignment.id,
@@ -430,7 +467,8 @@ struct KidsAPIClient {
             unitID: unit.id,
             packageTitle: assignment.package.title,
             unitPassed: recorded.result?.passed == true,
-            packageCompleted: packageCompleted
+            packageCompleted: packageCompleted,
+            agentDecision: agentDecision
         )
     }
 

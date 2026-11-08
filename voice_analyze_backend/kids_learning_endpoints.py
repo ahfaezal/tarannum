@@ -435,3 +435,19 @@ def get_agent_decision(
     if plan is None:
         raise HTTPException(409, "Pelan pembelajaran bagi keputusan ini tidak tersedia.")
     return agent_decision_payload(decision, plan)
+
+
+@router.get("/agent-decisions/latest")
+def get_latest_agent_decision(
+    student: User = Depends(get_current_student_user),
+    db: Session = Depends(get_db),
+):
+    decision = db.query(KidsAgentDecision).filter(
+        KidsAgentDecision.student_id == student.id
+    ).order_by(KidsAgentDecision.created_at.desc()).first()
+    if decision is None:
+        raise HTTPException(404, "Keputusan agen belum tersedia.")
+    plan = db.query(KidsLearningPlan).filter(KidsLearningPlan.decision_id == decision.id).first()
+    if plan is None:
+        raise HTTPException(409, "Pelan pembelajaran bagi keputusan ini tidak tersedia.")
+    return agent_decision_payload(decision, plan)
