@@ -136,6 +136,7 @@ final class KidsViewModel: NSObject, ObservableObject {
     @Published var isMicrophoneReady = false
     @Published var learningAssignments: [KidsLearningAssignment] = []
     @Published var latestAgentDecision: KidsAgentDecision?
+    @Published var learningHistory: [KidsLearningHistoryItem] = []
     @Published var learningDataMessage: String?
     @Published var isLoadingLearningData = false
     private let api = KidsAPIClient()
@@ -317,6 +318,7 @@ final class KidsViewModel: NSObject, ObservableObject {
         access = nil
         learningAssignments = []
         latestAgentDecision = nil
+        learningHistory = []
         SharedState.dailyAccess = nil
         password = ""
         message = "Anda telah log keluar. Aplikasi kekal dilindungi."
@@ -417,6 +419,17 @@ final class KidsViewModel: NSObject, ObservableObject {
             latestAgentDecision = nil
             if learningDataMessage == nil {
                 learningDataMessage = "Keputusan Pembimbing AI belum dapat dimuatkan."
+            }
+        }
+        do {
+            learningHistory = try await api.fetchLearningHistory()
+        } catch KidsAPIError.sessionExpired {
+            session = nil
+            learningHistory = []
+        } catch {
+            learningHistory = []
+            if learningDataMessage == nil {
+                learningDataMessage = "Sejarah pembelajaran belum dapat dimuatkan."
             }
         }
     }
@@ -1141,6 +1154,9 @@ struct KidsHomeView: View {
                     }
                     .buttonStyle(.plain)
                 }
+                if !model.learningHistory.isEmpty {
+                    learningHistorySection
+                }
             }
             taskCard
             activitySelection
@@ -1342,6 +1358,59 @@ struct KidsHomeView: View {
         .padding(18)
         .background(Color.green.opacity(0.07), in: RoundedRectangle(cornerRadius: 18))
         .overlay(RoundedRectangle(cornerRadius: 18).stroke(kidsEmerald.opacity(0.22)))
+    }
+
+    private var learningHistorySection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label("SEJARAH & PENCAPAIAN", systemImage: "clock.arrow.circlepath")
+                    .font(.headline).foregroundStyle(Color(red: 0.04, green: 0.10, blue: 0.28))
+                Spacer()
+                Text("Markah terbaik dikekalkan")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            ForEach(model.learningHistory.prefix(3)) { item in
+                NavigationLink {
+                    KidsLearningHistoryDetailView(item: item)
+                } label: {
+                    learningHistoryCard(item)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(18)
+        .background(Color.white.opacity(0.76), in: RoundedRectangle(cornerRadius: 20))
+        .overlay(RoundedRectangle(cornerRadius: 20).stroke(kidsEmerald.opacity(0.16)))
+    }
+
+    private func learningHistoryCard(_ item: KidsLearningHistoryItem) -> some View {
+        HStack(spacing: 14) {
+            Image(systemName: "checkmark.seal.fill")
+                .font(.title2).foregroundStyle(kidsEmerald)
+                .frame(width: 48, height: 48).background(Color.green.opacity(0.10), in: Circle())
+            VStack(alignment: .leading, spacing: 4) {
+                Text(item.packageTitle).font(.headline)
+                    .foregroundStyle(Color(red: 0.04, green: 0.10, blue: 0.28))
+                Text("Lulus · \(item.units.count) unit · \(item.attemptCount) percubaan")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+            VStack(alignment: .trailing, spacing: 2) {
+                Text("TERBAIK").font(.caption2.bold()).foregroundStyle(.secondary)
+                Text(scoreLabel(item.bestScore)).font(.title3.bold()).foregroundStyle(kidsTeal)
+                if let latest = item.latestScore, let best = item.bestScore, latest < best {
+                    Text("Terkini \(scoreLabel(latest))").font(.caption2).foregroundStyle(.orange)
+                }
+            }
+            Image(systemName: "chevron.right").foregroundStyle(kidsTeal)
+        }
+        .padding(14)
+        .background(.white, in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    private func scoreLabel(_ score: Double?) -> String {
+        guard let score else { return "—" }
+        return "\(Int(score.rounded()))"
     }
 
     private func completedPackageTitle(for decision: KidsAgentDecision) -> String {

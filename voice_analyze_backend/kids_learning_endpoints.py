@@ -36,6 +36,21 @@ router = APIRouter(prefix="/api/kids/learning", tags=["kids-learning"])
 ACTIVE_ASSIGNMENT_STATUSES = {"assigned", "in_progress"}
 
 
+def _score_from_summary(summary: dict | None) -> float | None:
+    """Return a normalized unit score from either IQRA or Tarannum evidence."""
+    values = summary or {}
+    raw = values.get("unit_score", values.get("score"))
+    try:
+        return max(0.0, min(100.0, float(raw))) if raw is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _average_score(values: list[float | None]) -> float | None:
+    valid = [float(value) for value in values if value is not None]
+    return round(sum(valid) / len(valid), 1) if valid else None
+
+
 class UnitEvidenceInput(BaseModel):
     evidence_type: Literal["iqra_attempt", "scoring_job"]
     evidence_id: UUID
@@ -171,6 +186,81 @@ def active_assignments(
                 "units": [_unit_payload(unit) for unit in units],
             },
             "active_run": None if run is None else _run_payload(run, db),
+        })
+    return output
+
+
+@router.get("/history")
+def learning_history(
+    student: User = Depends(get_current_student_user),
+    db: Session = Depends(get_db),
+):
+    """Return completed package history plus later voluntary IQRA retries.
+
+    The package run and agent decision remain immutable audit records.  Retry
+    attempts are summarized separately as first/latest/best so improvement is
+    visible without rewriting the decision that originally advanced a child.
+    """
+    runs = db.query(KidsPackageRun).filter(
+        KidsPackageRun.student_id == student.id,
+        KidsPackageRun.status == "completed",
+    ).order_by(KidsPackageRun.completed_at.desc()).all()
+    output = []
+    for run in runs:
+        package = db.query(KidsLearningPackage).filter(
+            KidsLearningPackage.id == run.package_id
+        ).first()
+        if package is None:
+            continue
+        units = db.query(KidsPackageUnit).filter(
+            KidsPackageUnit.package_id == package.id
+        ).order_by(KidsPackageUnit.sequence).all()
+        results = {
+            row.unit_id: row for row in db.query(KidsPackageUnitResult).filter(
+                KidsPackageUnitResult.run_id == run.id
+            ).all()
+        }
+        unit_history = []
+        for unit in units:
+            result = results.get(unit.id)
+            attempts = []
+            if unit.sample_id:
+                attempts = db.query(IqraAttempt).filter(
+                    IqraAttempt.student_id == student.id,
+                    IqraAttempt.sample_id == unit.sample_id,
+                    IqraAttempt.valid_attempt.is_(True),
+                ).order_by(IqraAttempt.created_at.asc()).all()
+            scores = [float(item.unit_score) for item in attempts]
+            original_score = _score_from_summary(result.score_summary if result else None)
+            if not scores and original_score is not None:
+                scores = [original_score]
+            unit_history.append({
+                "unit_id": str(unit.id),
+                "unit_key": unit.unit_key,
+                "sequence": unit.sequence,
+                "title": unit.title,
+                "sample_id": unit.sample_id,
+                "passed": bool(result.passed) if result else False,
+                "first_score": round(scores[0], 1) if scores else None,
+                "latest_score": round(scores[-1], 1) if scores else None,
+                "best_score": round(max(scores), 1) if scores else None,
+                "attempt_count": len(attempts) if attempts else int(result.valid_attempt_count or 0) if result else 0,
+            })
+        output.append({
+            "run_id": str(run.id),
+            "package_id": str(package.id),
+            "package_key": package.package_key,
+            "package_title": package.title,
+            "package_type": package.package_type,
+            "level": package.level,
+            "status": run.status,
+            "completed_at": run.completed_at.isoformat() if run.completed_at else None,
+            "first_score": _average_score([item["first_score"] for item in unit_history]),
+            "latest_score": _average_score([item["latest_score"] for item in unit_history]),
+            "best_score": _average_score([item["best_score"] for item in unit_history]),
+            "attempt_count": sum(item["attempt_count"] for item in unit_history),
+            "units": unit_history,
+            "agent_decision": _run_payload(run, db).get("agent_decision"),
         })
     return output
 

@@ -148,6 +148,40 @@ struct KidsLearningAssignment: Decodable, Identifiable, Equatable {
     let activeRun: KidsLearningRun?
 }
 
+struct KidsLearningHistoryUnit: Decodable, Identifiable, Equatable {
+    let unitId: String
+    let unitKey: String
+    let sequence: Int
+    let title: String
+    let sampleId: String?
+    let passed: Bool
+    let firstScore: Double?
+    let latestScore: Double?
+    let bestScore: Double?
+    let attemptCount: Int
+
+    var id: String { unitId }
+}
+
+struct KidsLearningHistoryItem: Decodable, Identifiable, Equatable {
+    let runId: String
+    let packageId: String
+    let packageKey: String
+    let packageTitle: String
+    let packageType: String
+    let level: String?
+    let status: String
+    let completedAt: String?
+    let firstScore: Double?
+    let latestScore: Double?
+    let bestScore: Double?
+    let attemptCount: Int
+    let units: [KidsLearningHistoryUnit]
+    let agentDecision: KidsAgentDecision?
+
+    var id: String { runId }
+}
+
 struct KidsPackageEvidenceLink: Equatable {
     let assignmentID: String
     let runID: String
@@ -430,6 +464,12 @@ struct KidsAPIClient {
         if response.statusCode == 404 { return nil }
         guard response.statusCode == 200 else { throw apiError(status: response.statusCode, data: data) }
         return try learningDecoder.decode(KidsAgentDecision.self, from: data)
+    }
+
+    func fetchLearningHistory() async throws -> [KidsLearningHistoryItem] {
+        let (data, response) = try await authorizedRequest(path: "/api/kids/learning/history")
+        guard response.statusCode == 200 else { throw apiError(status: response.statusCode, data: data) }
+        return try learningDecoder.decode([KidsLearningHistoryItem].self, from: data)
     }
 
     func linkIqraAttemptToAssignedPackage(

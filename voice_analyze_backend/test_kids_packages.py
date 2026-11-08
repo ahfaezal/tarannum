@@ -199,6 +199,16 @@ class KidsPackageValidationTests(unittest.TestCase):
         self.assertIn("ScoringJob.user_id == student_id", endpoint)
         self.assertIn('@router.post("/runs/{run_id}/complete")', endpoint)
         self.assertIn('@router.get("/agent-decisions/latest")', endpoint)
+        self.assertIn('@router.get("/history")', endpoint)
+
+    def test_history_score_helpers_normalize_and_average(self):
+        from kids_learning_endpoints import _average_score, _score_from_summary
+
+        self.assertEqual(_score_from_summary({"unit_score": 82.25}), 82.25)
+        self.assertEqual(_score_from_summary({"score": 110}), 100.0)
+        self.assertIsNone(_score_from_summary({"score": "invalid"}))
+        self.assertEqual(_average_score([70.0, None, 90.0]), 80.0)
+        self.assertIsNone(_average_score([None]))
 
     def test_package_completion_gate_requires_all_evidence_by_default(self):
         first = SimpleNamespace(id="u1", unit_key="ayat-1")
