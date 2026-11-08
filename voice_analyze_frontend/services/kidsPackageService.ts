@@ -60,6 +60,36 @@ export interface KidsLearningPackage {
   transitions: KidsPackageTransition[];
 }
 
+export interface KidsStudent {
+  id: string;
+  name: string;
+  email: string;
+}
+
+export interface KidsAssignment {
+  id: string;
+  student_id: string;
+  student_name: string;
+  student_email: string;
+  package_id: string;
+  package_title: string;
+  package_key: string;
+  package_version: number;
+  source: "admin" | "agent";
+  status: "assigned" | "in_progress" | "completed" | "cancelled";
+  reason?: string | null;
+  assigned_at?: string | null;
+  started_at?: string | null;
+  completed_at?: string | null;
+  latest_run?: {
+    id: string;
+    status: string;
+    valid_activity_seconds: number;
+    started_at?: string | null;
+    completed_at?: string | null;
+  } | null;
+}
+
 export type PackageDraft = Omit<
   KidsLearningPackage,
   "id" | "version" | "status" | "created_by" | "published_at" | "archived_at" | "created_at" | "updated_at" | "transitions"
@@ -104,3 +134,18 @@ export const publishKidsPackage = (id: string): Promise<KidsLearningPackage> =>
 
 export const archiveKidsPackage = (id: string): Promise<KidsLearningPackage> =>
   request(`/api/admin/kids/packages/${encodeURIComponent(id)}/archive`, { method: "POST" });
+
+export const listKidsStudents = (search = ""): Promise<KidsStudent[]> =>
+  request(`/api/admin/kids/students?search=${encodeURIComponent(search)}`);
+
+export const listKidsAssignments = (status?: KidsAssignment["status"]): Promise<KidsAssignment[]> =>
+  request(`/api/admin/kids/assignments${status ? `?status=${encodeURIComponent(status)}` : ""}`);
+
+export const createKidsAssignment = (payload: {
+  student_id: string;
+  package_id: string;
+  reason?: string;
+}): Promise<KidsAssignment> => request("/api/admin/kids/assignments", {
+  method: "POST",
+  body: JSON.stringify(payload),
+});

@@ -1,5 +1,5 @@
 import React from "react";
-import { Activity, Award, BookOpenCheck, ClipboardCheck, Settings2, ShieldCheck, Users } from "lucide-react";
+import { Activity, Award, BookOpenCheck, ClipboardCheck, Settings2, ShieldCheck, UserRoundCheck, Users } from "lucide-react";
 import { Link } from "react-router-dom";
 
 const adminSections = [
@@ -8,6 +8,12 @@ const adminSections = [
     title: "Pakej Tarannum Kids",
     description: "Susun pakej muka surat atau surah, unit latihan, syarat tamat dan laluan agen.",
     icon: BookOpenCheck,
+  },
+  {
+    to: "/admin/kids/assignments",
+    title: "Assignment Tarannum Kids",
+    description: "Berikan pakej diterbitkan kepada akaun pelajar pusat dan pantau kemajuan run.",
+    icon: UserRoundCheck,
   },
   {
     to: "/admin/pendaftaran-kursus",

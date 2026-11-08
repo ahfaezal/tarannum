@@ -42,6 +42,7 @@ const CertificatesPage = lazy(() => import("./views/CertificatesPage"));
 const QariCertification = lazy(() => import("./views/QariCertification"));
 const AdminCertification = lazy(() => import("./views/AdminCertification"));
 const AdminKidsPackages = lazy(() => import("./views/AdminKidsPackages"));
+const AdminKidsAssignments = lazy(() => import("./views/AdminKidsAssignments"));
 const CourseScannerPage = lazy(() => import("./views/CourseScannerPage"));
 const CourseJoinPage = lazy(() => import("./views/CourseJoinPage"));
 
@@ -127,6 +128,7 @@ const App: React.FC = () => {
               <Route path="/admin/expert-validation" element={<AdminExpertValidation />} />
               <Route path="/admin/certification" element={<AdminCertification />} />
               <Route path="/admin/kids/packages" element={<AdminKidsPackages />} />
+              <Route path="/admin/kids/assignments" element={<AdminKidsAssignments />} />
             </Route>
           </Route>
         </Route>

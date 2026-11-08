@@ -130,11 +130,32 @@ in the current package, so it does not require a self-transition record.
 ]
 ```
 
-This phase provides the versioned content and governance foundation only. It
-does not yet activate autonomous learner assignment, package completion, the
-parent/teacher decision report, or the OpenAI explanation layer. Existing
-IQRA scoring, Azure Speech, FastConformer, and Tarannum assessment behaviour
-remain unchanged.
+### Central-student package assignment
+
+The Admin assignment workspace uses the existing Tarannum.ai student account;
+it never creates a second Kids identity.
+
+- `GET /api/admin/kids/students` lists active central student accounts and
+  supports a `search` query.
+- `GET /api/admin/kids/assignments` lists assignments and their latest package
+  run. It supports optional `student_id` and `status` filters.
+- `POST /api/admin/kids/assignments` assigns one published package to one
+  active student. A second active assignment for the same student and package
+  is rejected.
+
+```json
+{
+  "student_id": "00000000-0000-0000-0000-000000000000",
+  "package_id": "00000000-0000-0000-0000-000000000000",
+  "reason": "Pakej permulaan IQRA 3"
+}
+```
+
+This phase activates Admin-managed learner assignment and monitoring. Package
+completion, bounded agent execution, parent/teacher decision reports, and the
+OpenAI explanation layer remain separate later phases. Existing IQRA scoring,
+Azure Speech, FastConformer, and Tarannum assessment behaviour remain
+unchanged.
 
 ### Closed-staging seed
 

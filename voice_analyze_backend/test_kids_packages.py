@@ -15,6 +15,7 @@ from kids_package_endpoints import (
     _validate_source_metadata,
 )
 from seed_kids_staging_package import _require_staging
+from kids_assignment_endpoints import _validate_assignment_target
 
 
 def unit(**overrides):
@@ -143,6 +144,29 @@ class KidsPackageValidationTests(unittest.TestCase):
         self.assertIn("class KidsAgentDecision", database)
         self.assertIn("evidence_snapshot", database)
         self.assertIn("policy_version", database)
+
+    def test_assignment_requires_active_student_and_published_package(self):
+        student = SimpleNamespace(role="student", is_active=True)
+        package = SimpleNamespace(status="published")
+        _validate_assignment_target(student, package)
+
+        for invalid_student in (
+            SimpleNamespace(role="qari", is_active=True),
+            SimpleNamespace(role="student", is_active=False),
+        ):
+            with self.assertRaises(HTTPException):
+                _validate_assignment_target(invalid_student, package)
+        with self.assertRaises(HTTPException):
+            _validate_assignment_target(student, SimpleNamespace(status="draft"))
+
+    def test_assignment_router_is_registered(self):
+        root = Path(__file__).parent
+        main = root.joinpath("main.py").read_text(encoding="utf-8")
+        endpoint = root.joinpath("kids_assignment_endpoints.py").read_text(encoding="utf-8")
+        self.assertIn("app.include_router(kids_assignment_admin_router)", main)
+        self.assertIn('ForeignKey("users.id"', root.joinpath("database.py").read_text(encoding="utf-8"))
+        self.assertIn('@router.post("/assignments")', endpoint)
+        self.assertIn('@router.get("/students")', endpoint)
 
 
 if __name__ == "__main__":
