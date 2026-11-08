@@ -151,10 +151,45 @@ it never creates a second Kids identity.
 }
 ```
 
-This phase activates Admin-managed learner assignment and monitoring. Package
-completion, bounded agent execution, parent/teacher decision reports, and the
-OpenAI explanation layer remain separate later phases. Existing IQRA scoring,
-Azure Speech, FastConformer, and Tarannum assessment behaviour remain
+### Student package execution
+
+The iPad uses the central Tarannum student token. It cannot submit arbitrary
+scores or declare a package complete. A unit result must reference an existing
+server-owned IQRA attempt or completed Tarannum scoring job belonging to the
+same student.
+
+- `GET /api/kids/learning/assignments/active` returns active assignments,
+  ordered units and any resumable run.
+- `POST /api/kids/learning/assignments/{assignment_id}/runs` creates or resumes
+  the single in-progress run for that assignment.
+- `PUT /api/kids/learning/runs/{run_id}/units/{unit_id}` links verified evidence
+  to a unit and derives its pass state, scores, engine result and credited time
+  from the source record.
+- `POST /api/kids/learning/runs/{run_id}/complete` evaluates the Admin-authored
+  rules on the server. It only closes the assignment when every required gate
+  is satisfied.
+
+For IQRA evidence:
+
+```json
+{
+  "evidence": {
+    "evidence_type": "iqra_attempt",
+    "evidence_id": "00000000-0000-0000-0000-000000000000"
+  },
+  "client_activity_seconds": 15
+}
+```
+
+The completion snapshot includes required, attempted and passed counts,
+missing or failed unit keys, actual pass rate, and `eligible_for_agent`. Agent
+execution must only accept a completed run whose immutable evaluation has
+`eligible_for_agent: true`.
+
+This phase activates Admin-managed assignment, iPad run execution and the
+server completion gate. Bounded agent decisions, parent/teacher reports, and
+the OpenAI explanation layer remain separate later phases. Existing IQRA
+scoring, Azure Speech, FastConformer, and Tarannum assessment behaviour remain
 unchanged.
 
 ### Closed-staging seed

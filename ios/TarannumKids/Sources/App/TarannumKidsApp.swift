@@ -134,6 +134,7 @@ final class KidsViewModel: NSObject, ObservableObject {
     @Published var countdownTitle = ""
     @Published var microphoneStatus = "Mikrofon belum diperiksa"
     @Published var isMicrophoneReady = false
+    @Published var learningAssignments: [KidsLearningAssignment] = []
     private let api = KidsAPIClient()
     private var audioRecorder: AVAudioRecorder?
     private var referencePlayer: AVPlayer?
@@ -299,6 +300,7 @@ final class KidsViewModel: NSObject, ObservableObject {
             password = ""
             await refreshAccess()
             await loadReferences()
+            await loadLearningAssignments()
         } catch {
             message = error.localizedDescription
             ShieldManager.apply()
@@ -310,6 +312,7 @@ final class KidsViewModel: NSObject, ObservableObject {
         api.logout()
         session = nil
         access = nil
+        learningAssignments = []
         SharedState.dailyAccess = nil
         password = ""
         message = "Anda telah log keluar. Aplikasi kekal dilindungi."
@@ -322,6 +325,7 @@ final class KidsViewModel: NSObject, ObservableObject {
             if isSignedIn {
                 await refreshAccess()
                 await loadReferences()
+                await loadLearningAssignments()
             }
             else { message = "Log masuk menggunakan akaun pelajar Tarannum.ai."; ShieldManager.apply() }
         } catch {
@@ -374,6 +378,21 @@ final class KidsViewModel: NSObject, ObservableObject {
             else { await loadReferencePitch() }
         } catch {
             practiceMessage = "Tugasan tidak dapat dimuatkan. Cuba buka semula aplikasi."
+        }
+    }
+
+    func loadLearningAssignments() async {
+        guard isSignedIn else { return }
+        do {
+            learningAssignments = try await api.fetchActiveLearningAssignments()
+        } catch KidsAPIError.sessionExpired {
+            session = nil
+            learningAssignments = []
+        } catch {
+            // Assignment is an enhancement to the existing Kids dashboard.
+            // Keep Tarannum/IQRA usable if staging package metadata is
+            // temporarily unavailable.
+            learningAssignments = []
         }
     }
 
@@ -1003,13 +1022,13 @@ struct KidsHomeView: View {
                     .frame(width: 72, height: 72)
                     .background(Color.green.opacity(0.10), in: Circle())
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("LATIHAN IQRA")
+                    Text(model.learningAssignments.isEmpty ? "LATIHAN IQRA" : "PAKEJ AKTIF")
                         .font(.caption.bold())
                         .foregroundStyle(.secondary)
-                    Text("Dari huruf kepada bacaan")
+                    Text(model.learningAssignments.first?.package.title ?? "Dari huruf kepada bacaan")
                         .font(.title2.bold())
                         .foregroundStyle(Color(red: 0.04, green: 0.10, blue: 0.28))
-                    Text("Cuba sampel IQRA 1, 3 dan 6")
+                    Text(activePackageProgressText)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
@@ -1023,6 +1042,15 @@ struct KidsHomeView: View {
             .overlay(RoundedRectangle(cornerRadius: 18).stroke(kidsEmerald.opacity(0.24)))
         }
         .buttonStyle(.plain)
+    }
+
+    private var activePackageProgressText: String {
+        guard let assignment = model.learningAssignments.first else {
+            return "Cuba sampel IQRA 1, 3 dan 6"
+        }
+        let units = assignment.activeRun?.units ?? assignment.package.units
+        let completed = units.filter { $0.result?.passed == true }.count
+        return "\(completed) daripada \(units.count) unit selesai"
     }
 
     private var activitySelection: some View {

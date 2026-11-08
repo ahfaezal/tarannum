@@ -127,7 +127,18 @@ final class IqraPracticeViewModel: NSObject, ObservableObject {
 
         do {
             result = try await api.assessIqra(sampleID: sample.id, fileURL: recordingURL)
-            message = "Penilaian selesai."
+            if let attemptID = result?.attemptId,
+               let link = try await api.linkIqraAttemptToAssignedPackage(
+                    sampleID: sample.id,
+                    attemptID: attemptID,
+                    creditedSeconds: result?.creditedSeconds ?? 0
+               ) {
+                message = link.packageCompleted
+                    ? "Penilaian selesai. Pakej \(link.packageTitle) lengkap dan sedia dinilai agen."
+                    : "Penilaian selesai dan direkodkan dalam pakej \(link.packageTitle)."
+            } else {
+                message = "Penilaian selesai."
+            }
         } catch {
             message = error.localizedDescription
         }

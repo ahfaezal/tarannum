@@ -524,6 +524,7 @@ try:
     from iqra.router import router as iqra_router
     from kids_package_endpoints import router as kids_package_admin_router
     from kids_assignment_endpoints import router as kids_assignment_admin_router
+    from kids_learning_endpoints import router as kids_learning_router
     app.include_router(auth_router)
     app.include_router(auth_debug_router)
     app.include_router(platform_router)
@@ -533,6 +534,7 @@ try:
     app.include_router(iqra_router)
     app.include_router(kids_package_admin_router)
     app.include_router(kids_assignment_admin_router)
+    app.include_router(kids_learning_router)
 except ImportError as e:
     logger.warning(f"Could not import routers: {e}")
 

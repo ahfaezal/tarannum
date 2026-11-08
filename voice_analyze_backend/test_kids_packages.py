@@ -16,6 +16,7 @@ from kids_package_endpoints import (
 )
 from seed_kids_staging_package import _require_staging
 from kids_assignment_endpoints import _validate_assignment_target
+from kids_learning_endpoints import _evaluate_completion_rows
 
 
 def unit(**overrides):
@@ -167,6 +168,38 @@ class KidsPackageValidationTests(unittest.TestCase):
         self.assertIn('ForeignKey("users.id"', root.joinpath("database.py").read_text(encoding="utf-8"))
         self.assertIn('@router.post("/assignments")', endpoint)
         self.assertIn('@router.get("/students")', endpoint)
+
+    def test_student_learning_router_uses_verified_evidence_and_is_registered(self):
+        root = Path(__file__).parent
+        main = root.joinpath("main.py").read_text(encoding="utf-8")
+        endpoint = root.joinpath("kids_learning_endpoints.py").read_text(encoding="utf-8")
+        self.assertIn("app.include_router(kids_learning_router)", main)
+        self.assertIn("Depends(get_current_student_user)", endpoint)
+        self.assertIn("IqraAttempt.student_id == student_id", endpoint)
+        self.assertIn("ScoringJob.user_id == student_id", endpoint)
+        self.assertIn('@router.post("/runs/{run_id}/complete")', endpoint)
+
+    def test_package_completion_gate_requires_all_evidence_by_default(self):
+        first = SimpleNamespace(id="u1", unit_key="ayat-1")
+        second = SimpleNamespace(id="u2", unit_key="ayat-2")
+        passed = SimpleNamespace(passed=True, valid_attempt_count=1)
+        failed = SimpleNamespace(passed=False, valid_attempt_count=1)
+
+        incomplete = _evaluate_completion_rows([first, second], {"u1": passed}, {})
+        self.assertFalse(incomplete["eligible_for_agent"])
+        self.assertEqual(incomplete["missing_unit_keys"], ["ayat-2"])
+
+        not_passed = _evaluate_completion_rows(
+            [first, second], {"u1": passed, "u2": failed}, {}
+        )
+        self.assertFalse(not_passed["eligible_for_agent"])
+        self.assertEqual(not_passed["failed_unit_keys"], ["ayat-2"])
+
+        complete = _evaluate_completion_rows(
+            [first, second], {"u1": passed, "u2": passed}, {}
+        )
+        self.assertTrue(complete["eligible_for_agent"])
+        self.assertEqual(complete["actual_pass_rate"], 1.0)
 
 
 if __name__ == "__main__":
