@@ -880,6 +880,7 @@ final class KidsViewModel: NSObject, ObservableObject {
 
 struct KidsHomeView: View {
     @EnvironmentObject private var model: KidsViewModel
+    @State private var showsLogin = false
     @State private var graphZoom = 1.0
     @State private var graphAutoFollow = true
     @State private var isGraphFullScreen = false
@@ -891,8 +892,11 @@ struct KidsHomeView: View {
                         onboardingHeader
                         authorizationView
                     } else if !model.isSignedIn {
-                        onboardingHeader
-                        loginView
+                        if showsLogin {
+                            loginView
+                        } else {
+                            landingView
+                        }
                     } else {
                         progressView
                     }
@@ -945,16 +949,110 @@ struct KidsHomeView: View {
     }
 
     private var loginView: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 20) {
+            HStack {
+                Button {
+                    showsLogin = false
+                } label: {
+                    Label("Kembali", systemImage: "chevron.left")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(kidsTeal)
+                Spacer()
+            }
+
+            Image("TarannumKidsLogo")
+                .resizable().scaledToFit().frame(width: 96, height: 96)
+                .clipShape(Circle())
+            Text("Log Masuk Pelajar")
+                .font(.system(size: 34, weight: .bold, design: .rounded))
+                .foregroundStyle(Color(red: 0.04, green: 0.10, blue: 0.28))
+            Text("Gunakan akaun pelajar Tarannum.ai")
+                .font(.headline).foregroundStyle(.secondary)
             TextField("E-mel pelajar", text: $model.email)
                 .textContentType(.username).textInputAutocapitalization(.never).keyboardType(.emailAddress)
-                .autocorrectionDisabled().textFieldStyle(.roundedBorder)
-            SecureField("Kata laluan", text: $model.password).textContentType(.password).textFieldStyle(.roundedBorder)
+                .autocorrectionDisabled().textFieldStyle(.roundedBorder).controlSize(.large)
+            SecureField("Kata laluan", text: $model.password)
+                .textContentType(.password).textFieldStyle(.roundedBorder).controlSize(.large)
             Button(model.isSigningIn ? "Sedang log masuk…" : "Log masuk") { Task { await model.signIn() } }
-                .buttonStyle(.borderedProminent).disabled(model.isSigningIn)
+                .buttonStyle(.borderedProminent).tint(kidsTeal).controlSize(.large)
+                .frame(maxWidth: .infinity).disabled(model.isSigningIn)
             if model.isSigningIn { ProgressView("Menghubungi Tarannum.ai") }
-            Text("Gunakan akaun pelajar yang sama seperti di Tarannum.ai.").font(.footnote).foregroundStyle(.secondary)
+            Text(model.message).font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
         }
+        .padding(28)
+        .background(.white.opacity(0.94), in: RoundedRectangle(cornerRadius: 26))
+        .overlay(RoundedRectangle(cornerRadius: 26).stroke(kidsEmerald.opacity(0.18)))
+        .shadow(color: .black.opacity(0.06), radius: 18, y: 8)
+    }
+
+    private var landingView: some View {
+        VStack(spacing: 24) {
+            Image("TarannumKidsLogo")
+                .resizable().scaledToFit().frame(width: 112, height: 112)
+                .clipShape(Circle())
+
+            VStack(spacing: 8) {
+                Text("Tarannum Kids")
+                    .font(.system(size: 40, weight: .bold, design: .rounded))
+                    .foregroundStyle(kidsTeal)
+                Text("Belajar Al-Quran Dengan Yakin")
+                    .font(.system(size: 30, weight: .bold, design: .rounded))
+                    .foregroundStyle(Color(red: 0.04, green: 0.10, blue: 0.28))
+                Text("Dari asas IQRA hingga bacaan bertarannum, dengan bimbingan yang jelas untuk setiap langkah.")
+                    .font(.headline).foregroundStyle(.secondary).multilineTextAlignment(.center)
+            }
+
+            HStack(spacing: 16) {
+                landingPathCard(
+                    icon: "text.book.closed.fill",
+                    title: "IQRA",
+                    subtitle: "Belajar asas membaca Al-Quran langkah demi langkah",
+                    color: kidsEmerald
+                )
+                landingPathCard(
+                    icon: "waveform.path",
+                    title: "Tarannum",
+                    subtitle: "Belajar membaca Al-Quran dengan bacaan bertarannum",
+                    color: kidsTeal
+                )
+            }
+
+            Button {
+                showsLogin = true
+            } label: {
+                Label("Log Masuk", systemImage: "person.crop.circle.fill")
+                    .font(.title3.bold()).frame(maxWidth: .infinity).padding(.vertical, 16)
+            }
+            .buttonStyle(.plain).foregroundStyle(.white)
+            .background(
+                LinearGradient(colors: [kidsEmerald, kidsTeal], startPoint: .leading, endPoint: .trailing),
+                in: RoundedRectangle(cornerRadius: 20)
+            )
+
+            Label("Ibu bapa dan guru boleh menyemak kemajuan serta cadangan Pembimbing AI.", systemImage: "person.2.fill")
+                .font(.subheadline).foregroundStyle(kidsTeal)
+                .padding(.horizontal, 18).padding(.vertical, 12)
+                .background(Color.green.opacity(0.09), in: Capsule())
+        }
+        .padding(30)
+        .background(.white.opacity(0.78), in: RoundedRectangle(cornerRadius: 30))
+    }
+
+    private func landingPathCard(icon: String, title: String, subtitle: String, color: Color) -> some View {
+        HStack(spacing: 14) {
+            Image(systemName: icon)
+                .font(.system(size: 34)).foregroundStyle(color)
+                .frame(width: 64, height: 64).background(color.opacity(0.10), in: Circle())
+            VStack(alignment: .leading, spacing: 5) {
+                Text(title).font(.title2.bold()).foregroundStyle(Color(red: 0.04, green: 0.10, blue: 0.28))
+                Text(subtitle).font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.leading)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(20).frame(maxWidth: .infinity, minHeight: 118)
+        .background(.white, in: RoundedRectangle(cornerRadius: 20))
+        .overlay(RoundedRectangle(cornerRadius: 20).stroke(color.opacity(0.24)))
     }
 
     private var progressView: some View {
@@ -1066,7 +1164,11 @@ struct KidsHomeView: View {
 
     private var iqraEntryCard: some View {
         NavigationLink {
-            IqraHomeView()
+            if let assignment = model.learningAssignments.first {
+                KidsActivePackageView(assignment: assignment)
+            } else {
+                IqraHomeView()
+            }
         } label: {
             HStack(spacing: 18) {
                 Image(systemName: "text.book.closed.fill")
