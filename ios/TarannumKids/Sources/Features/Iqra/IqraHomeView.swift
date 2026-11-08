@@ -172,6 +172,19 @@ private struct IqraSampleView: View {
                     .multilineTextAlignment(.center)
 
                 if sample.level == .three || sample.level == .six {
+                    Label(
+                        model.microphoneStatus,
+                        systemImage: model.isMicrophoneReady ? "mic.circle.fill" : "mic.slash.circle.fill"
+                    )
+                    .font(.headline)
+                    .foregroundStyle(model.isMicrophoneReady ? Color.iqraEmerald : .secondary)
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 10)
+                    .background(
+                        (model.isMicrophoneReady ? Color.iqraEmerald : Color.gray).opacity(0.10),
+                        in: Capsule()
+                    )
+
                     if let countdown = model.countdownValue {
                         VStack(spacing: 6) {
                             Text("Bersedia").font(.headline)
@@ -179,13 +192,20 @@ private struct IqraSampleView: View {
                                 .foregroundStyle(Color.iqraEmerald)
                         }
                     } else if model.isRecording {
-                        Label(
-                            sample.level == .six
-                                ? "Baca ayat secara bersambung mengikut frasa hijau."
-                                : "Sebut satu perkataan setiap kali penanda hijau bergerak.",
-                            systemImage: "lightbulb.fill"
-                        )
-                            .font(.headline).foregroundStyle(Color.iqraEmerald)
+                        HStack(spacing: 14) {
+                            Image(systemName: "waveform")
+                                .font(.title2.bold()).symbolEffect(.variableColor.iterative)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("Sedang mendengar…").font(.headline)
+                                Text(sample.level == .six
+                                     ? "Baca ayat secara bersambung mengikut frasa hijau."
+                                     : "Sebut perkataan yang sedang ditandakan hijau.")
+                                    .font(.subheadline)
+                            }
+                        }
+                        .foregroundStyle(Color.iqraEmerald)
+                        .padding(.horizontal, 20).padding(.vertical, 12)
+                        .background(Color.iqraEmerald.opacity(0.09), in: RoundedRectangle(cornerRadius: 16))
                     }
                     assessmentControls
                 } else {
@@ -206,23 +226,24 @@ private struct IqraSampleView: View {
         .background(Color(red: 0.95, green: 1.0, blue: 0.98).ignoresSafeArea())
         .navigationTitle(sample.level.title)
         .navigationBarTitleDisplayMode(.inline)
+        .task {
+            if sample.level == .three || sample.level == .six {
+                await model.auditMicrophone()
+            }
+        }
         .fullScreenCover(
-            isPresented: Binding(
-                get: { model.completedAgentDecision != nil },
-                set: { if !$0 { model.dismissAgentDecision() } }
-            )
+            isPresented: Binding(get: { model.isPackageSummaryPresented }, set: { if !$0 { model.dismissPackageSummary() } })
         ) {
-            if let decision = model.completedAgentDecision {
-                KidsAgentDecisionView(
-                    decision: decision,
-                    completedPackageTitle: sample.level == .three
-                        ? "IQRA 3 · Latihan Perkataan"
-                        : "IQRA 6 · Surah Al-Fatihah",
-                    targetPackageTitle: model.agentTargetPackageTitle
-                ) {
-                    model.dismissAgentDecision()
-                    dismiss()
-                }
+            KidsPackageCompletionView(
+                packageTitle: model.completedPackageTitle ?? (sample.level == .three
+                    ? "IQRA 3 · Latihan Perkataan"
+                    : "IQRA 6 · Surah Al-Fatihah"),
+                decision: model.completedAgentDecision,
+                targetPackageTitle: model.agentTargetPackageTitle
+            ) {
+                model.dismissPackageSummary()
+                model.dismissAgentDecision()
+                dismiss()
             }
         }
     }

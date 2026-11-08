@@ -13,11 +13,39 @@ final class IqraPracticeViewModel: NSObject, ObservableObject {
     @Published private(set) var isPreparing = false
     @Published private(set) var completedAgentDecision: KidsAgentDecision?
     @Published private(set) var agentTargetPackageTitle: String?
+    @Published private(set) var isPackageSummaryPresented = false
+    @Published private(set) var completedPackageTitle: String?
+    @Published private(set) var microphoneStatus = "Mikrofon belum diperiksa"
+    @Published private(set) var isMicrophoneReady = false
 
     private let api = KidsAPIClient()
     private var recorder: AVAudioRecorder?
     private var recordingURL: URL?
     private var guideTask: Task<Void, Never>?
+
+    func auditMicrophone() async {
+        let permitted = await AVAudioApplication.requestRecordPermission()
+        guard permitted else {
+            isMicrophoneReady = false
+            microphoneStatus = "Akses mikrofon belum dibenarkan"
+            return
+        }
+        do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.playAndRecord, mode: .measurement, options: [.defaultToSpeaker, .allowBluetoothHFP])
+            try session.setActive(true)
+            if let input = session.currentRoute.inputs.first {
+                isMicrophoneReady = true
+                microphoneStatus = "Mikrofon bersedia: \(input.portName)"
+            } else {
+                isMicrophoneReady = false
+                microphoneStatus = "Tiada mikrofon dikesan"
+            }
+        } catch {
+            isMicrophoneReady = false
+            microphoneStatus = "Mikrofon tidak tersedia"
+        }
+    }
 
     func toggleRecording(for sample: IqraSample) async {
         if isRecording {
@@ -30,6 +58,8 @@ final class IqraPracticeViewModel: NSObject, ObservableObject {
     private func startRecording(for sample: IqraSample) async {
         let permitted = await AVAudioApplication.requestRecordPermission()
         guard permitted else {
+            isMicrophoneReady = false
+            microphoneStatus = "Akses mikrofon belum dibenarkan"
             message = "Benarkan akses mikrofon dalam Settings untuk membuat latihan IQRA."
             return
         }
@@ -53,6 +83,13 @@ final class IqraPracticeViewModel: NSObject, ObservableObject {
                 options: [.defaultToSpeaker, .allowBluetoothHFP]
             )
             try session.setActive(true)
+            if let input = session.currentRoute.inputs.first {
+                isMicrophoneReady = true
+                microphoneStatus = "Mikrofon bersedia: \(input.portName)"
+            } else {
+                isMicrophoneReady = false
+                microphoneStatus = "Tiada mikrofon dikesan"
+            }
 
             let url = FileManager.default.temporaryDirectory
                 .appending(path: "iqra-\(UUID().uuidString).m4a")
@@ -143,8 +180,14 @@ final class IqraPracticeViewModel: NSObject, ObservableObject {
                     agentTargetPackageTitle = assignments?.first(where: {
                         $0.package.id == decision.plan.targetPackageId
                     })?.package.title
-                    message = "Pembimbing IQRA: \(decision.explanation)"
+                    completedPackageTitle = link.packageTitle
+                    isPackageSummaryPresented = true
+                    message = "Pakej lengkap. Pembimbing AI sedia menilai bukti latihan."
                 } else {
+                    if link.packageCompleted {
+                        completedPackageTitle = link.packageTitle
+                        isPackageSummaryPresented = true
+                    }
                     message = link.packageCompleted
                         ? "Penilaian selesai. Pakej \(link.packageTitle) lengkap dan sedia dinilai agen."
                         : "Penilaian selesai dan direkodkan dalam pakej \(link.packageTitle)."
@@ -159,5 +202,9 @@ final class IqraPracticeViewModel: NSObject, ObservableObject {
 
     func dismissAgentDecision() {
         completedAgentDecision = nil
+    }
+
+    func dismissPackageSummary() {
+        isPackageSummaryPresented = false
     }
 }
