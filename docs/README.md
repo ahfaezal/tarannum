@@ -2,7 +2,7 @@
 
 Version: 1.0  
 Date: 2026-06-26  
-Last Updated: 2026-07-19
+Last Updated: 2026-11-07
 
 ## Purpose
 
@@ -37,11 +37,13 @@ If the architecture changes, update the relevant document and record the decisio
 11. [Qari Dashboard Performance Audit — 2026-07-19](qari-dashboard-performance-audit-2026-07-19.md)
 12. [Qari Dashboard Product Specification](product/Qari_Dashboard_Product_Specification_v1.md)
 13. [Live Training Leaderboard Production QA — 2026-07-19](qa/Live_Training_Leaderboard_Production_QA_2026-07-19.md)
+14. [Tarannum Kids Agentic Learning Architecture](architecture/Tarannum_Kids_Agentic_Learning_Architecture_v1.md)
 
 ## Documentation Structure
 
 - `philosophy/` explains why Tarannum.ai exists and what learning experience it protects.
 - `architecture/` defines the agreed rendering architecture for Practice Live, Recording Analysis, graph rendering, and assessment scoring.
+- `architecture/Tarannum_Kids_Agentic_Learning_Architecture_v1.md` defines the locked package, Admin and bounded-agent architecture for Tarannum Kids.
 - `product/` defines product experience modes, subscription policy, qari royalty, and business rules.
 - `standards/` defines shared language and development principles.
 - `decisions/` records approved architecture decisions.

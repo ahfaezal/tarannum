@@ -1,8 +1,8 @@
 # Tarannum.ai Decision Log
 
-Version: 1.0  
-Date: 2026-06-26  
-Last Updated: 2026-07-19
+Version: 1.1
+Date: 2026-06-26
+Last Updated: 2026-11-07
 
 ## Purpose
 
@@ -175,3 +175,17 @@ A Live Training Leaderboard uses one reference, Qari-selected students and a def
 The board reads existing completed scoring results that match the selected participants, reference and time window. Each student's highest completed Experimental Score V2.3 is retained. Equal highest scores are ordered by the earliest time that score was achieved.
 
 The Qari fullscreen display shows only the Top 3 names and scores, refreshes every 20 seconds, and includes a LIVE indicator, remaining session time and last-refresh time. It is motivational and experimental, not an official tajwid result or certification ranking.
+
+## Decision 017
+
+Title: Tarannum Kids uses Admin-defined learning packages and bounded package-level agent autonomy.
+
+Status: Approved and Locked.
+
+Date: 2026-11-07
+
+Tarannum Kids defines one approved learning-book page or one complete surah as a learning package. Admin is responsible for creating, configuring, sequencing and publishing packages, including their assessment engines, completion requirements, progression paths and permitted remedial actions.
+
+The learning agent performs its full evaluation and action cycle after a package is completed. It may advance, retain, remediate, recommend a return to an approved foundation package, notify a parent or teacher, or escalate uncertain evidence, but only within Admin-approved boundaries. Assessment evidence and agent decisions remain separate and auditable. Azure and FastConformer remain approved evidence engines for Tarannum Kids. This architecture does not change Tarannum.ai production behaviour.
+
+The complete locked specification is defined in `docs/architecture/Tarannum_Kids_Agentic_Learning_Architecture_v1.md`.
