@@ -851,7 +851,14 @@ def request_password_reset(
     normalized_email = _normalize_email(payload.email)
     user = get_user_by_email(db, normalized_email)
 
-    if not user or not user.is_active or not user.email_verified:
+    # Admin-created participant accounts may not have completed public email
+    # verification. They can already sign in, so they must also be able to use
+    # the password-recovery flow.
+    if (
+        not user
+        or not user.is_active
+        or (not user.email_verified and not user.admin_provisioned)
+    ):
         return {"message": public_message}
 
     now = datetime.utcnow()
