@@ -63,6 +63,7 @@ export interface CourseProgress {
   eligible: boolean;
   certificate_id?: string | null;
   deadline: string;
+  submission_open?: boolean;
 }
 
 export interface CertificateSummary {
@@ -103,6 +104,11 @@ export interface CompetencyEligibility {
   payment_status?: string | null;
   payment_token?: string | null;
   payment_amount_cents?: number;
+  submission_action?: 'initial' | 'reassessment' | 'private';
+  assessment_attempt?: number;
+  submission_deadline?: string | null;
+  submission_open?: boolean;
+  active_application_id?: string | null;
 }
 
 export interface CertificationCourse {
@@ -168,6 +174,8 @@ export interface QariApplication {
   qari_assessment?: Record<string, number>;
   qari_score?: number;
   critical_error?: boolean;
+  assessment_attempt?: number;
+  payment_required?: boolean;
   submitted_at: string;
 }
 
@@ -188,6 +196,7 @@ export const getStudentCourseProgress = () => request<CourseProgress[]>("/studen
 export const getCompetencyEligibility = () => request<CompetencyEligibility[]>("/student/competency-eligibility");
 export const submitCompetencyApplication = (sessionId: string, certificateType: string, courseId: string) => request<any>("/student/competency-applications", { method: "POST", body: JSON.stringify({ session_id: sessionId, certificate_type: certificateType, course_id: courseId }) });
 export const createPrivateAssessmentCheckout = (sessionId: string, certificateType: string) => request<{status: string; payment_token: string; checkout_url?: string; application_id?: string | null}>("/student/private-assessment-checkout", { method: "POST", body: JSON.stringify({ session_id: sessionId, certificate_type: certificateType }) });
+export const createCourseReassessmentCheckout = (sessionId: string, certificateType: string, courseId: string) => request<{status: string; payment_token: string; checkout_url?: string; application_id?: string | null}>("/student/course-reassessment-checkout", { method: "POST", body: JSON.stringify({ session_id: sessionId, certificate_type: certificateType, course_id: courseId }) });
 export const getPrivateAssessmentPaymentStatus = (token: string) => request<{status: string; amount_cents: number; application_id?: string | null}>(`/student/private-assessment-payments/${encodeURIComponent(token)}`);
 export const getMyCertificates = () => request<CertificateSummary[]>("/certificates/mine");
 export const getAdminUserCertificates = (userId: string) => request<CertificateSummary[]>(`/admin/users/${encodeURIComponent(userId)}/certificates`);

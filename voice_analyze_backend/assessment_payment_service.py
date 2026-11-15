@@ -119,6 +119,9 @@ def callback_amount_is_correct(amount: str) -> bool:
 
 
 def create_application_after_payment(db: Session, payment: AssessmentPayment) -> CertificateApplication:
+    if payment.course_id:
+        from certification_service import create_course_reassessment_application
+        return create_course_reassessment_application(db, payment)
     existing = db.query(CertificateApplication).filter(CertificateApplication.session_id == payment.session_id).first()
     if existing:
         payment.application_id = existing.id

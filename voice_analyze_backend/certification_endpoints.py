@@ -26,6 +26,7 @@ from certification_service import (
     recalculate_enrollment,
     required_recording_count,
     submit_competency_application,
+    validate_course_reassessment,
 )
 from certificate_renderer import render_certificate_pdf
 from database import (
@@ -116,6 +117,12 @@ class CompetencyApplicationCreate(BaseModel):
 class PrivateAssessmentCheckoutCreate(BaseModel):
     session_id: UUID
     certificate_type: str
+
+
+class CourseReassessmentCheckoutCreate(BaseModel):
+    session_id: UUID
+    certificate_type: str
+    course_id: UUID
 
 
 class QariDecision(BaseModel):
@@ -808,6 +815,58 @@ def private_assessment_checkout(payload: PrivateAssessmentCheckoutCreate, studen
     return {"status": payment.status, "payment_token": payment.public_token, "checkout_url": f"https://toyyibpay.com/{bill_code}"}
 
 
+@router.post("/student/course-reassessment-checkout")
+def course_reassessment_checkout(payload: CourseReassessmentCheckoutCreate,
+                                 student: User = Depends(get_current_student_user), db: Session = Depends(get_db)):
+    """Start or resume the RM10 payment for a voluntary higher-score reassessment."""
+    import secrets
+    from assessment_payment_service import ASSESSMENT_PRICE_CENTS, create_bill
+    try:
+        session, _analysis, course, qari_id, attempt = validate_course_reassessment(
+            db, student, payload.session_id, payload.certificate_type, payload.course_id
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    payment = db.query(AssessmentPayment).filter(AssessmentPayment.session_id == session.id).with_for_update().first()
+    active = db.query(AssessmentPayment).filter(
+        AssessmentPayment.course_id == course.id,
+        AssessmentPayment.student_id == student.id,
+        AssessmentPayment.status.in_({"created", "payment_pending", "paid"}),
+    ).with_for_update().first()
+    if active and (not payment or active.id != payment.id):
+        raise HTTPException(409, "Satu bayaran penilaian semula masih aktif. Selesaikan bayaran tersebut dahulu")
+    if payment and payment.status in {"paid", "application_created"}:
+        return {"status": payment.status, "payment_token": payment.public_token,
+                "application_id": str(payment.application_id) if payment.application_id else None}
+    if payment and payment.status == "payment_pending" and payment.toyyibpay_bill_code:
+        return {"status": payment.status, "payment_token": payment.public_token,
+                "checkout_url": f"https://toyyibpay.com/{payment.toyyibpay_bill_code}"}
+    if not payment:
+        payment = AssessmentPayment(
+            public_token=secrets.token_urlsafe(24), student_id=student.id, qari_id=qari_id,
+            reference_id=session.reference_id, course_id=course.id, session_id=session.id,
+            certificate_type=payload.certificate_type, amount_cents=ASSESSMENT_PRICE_CENTS,
+            assessment_attempt=attempt, currency="MYR", status="created",
+        )
+        db.add(payment)
+        db.flush()
+    reference = db.query(Reference).filter(Reference.id == session.reference_id).first()
+    try:
+        bill_code = create_bill(payment, student, reference)
+    except HTTPException:
+        db.rollback()
+        raise
+    payment.toyyibpay_bill_code = bill_code
+    payment.status = "payment_pending"
+    db.add(AssessmentPaymentAttempt(payment_id=payment.id, bill_code=bill_code))
+    db.add(AuditLog(action="create_course_reassessment_bill", entity_type="assessment_payment",
+        entity_id=str(payment.id), user_id=student.id,
+        new_values={"course_id": str(course.id), "attempt": attempt, "amount_cents": payment.amount_cents, "bill_code": bill_code}))
+    db.commit()
+    return {"status": payment.status, "payment_token": payment.public_token,
+            "checkout_url": f"https://toyyibpay.com/{bill_code}"}
+
+
 @router.post("/toyyibpay/assessment-callback")
 def private_assessment_callback(
     refno: str = Form(...), status: str = Form(...), billcode: str = Form(...),
@@ -842,8 +901,9 @@ def private_assessment_callback(
             db.add(CertificationNotification(
                 user_id=payment.qari_id,
                 notification_type="qari_review_requested",
-                title="Penilaian berbayar baharu",
-                message="Bayaran RM10 telah disahkan dan satu rakaman menunggu semakan anda.",
+                title="Penilaian semula berbayar" if payment.course_id else "Penilaian berbayar baharu",
+                message=("Bayaran RM10 penilaian semula telah disahkan dan satu rakaman menunggu semakan anda."
+                         if payment.course_id else "Bayaran RM10 telah disahkan dan satu rakaman menunggu semakan anda."),
                 metadata_json={"application_id": str(application.id), "payment_id": str(payment.id)},
             ))
             db.add(AuditLog(action="private_assessment_paid", entity_type="assessment_payment", entity_id=str(payment.id), user_id=payment.student_id, new_values={"application_id": str(application.id), "amount_cents": payment.amount_cents, "reference_no": refno}))
@@ -903,14 +963,51 @@ def _competency_eligibility_rows(db: Session, student_id: UUID) -> list[dict]:
             (enrollment.required_recording_count or 0) > 0
             and (enrollment.valid_recording_count or 0) >= enrollment.required_recording_count
         ))
-        can_submit = bool((course and attended and practice_complete) or not course)
-        if not course:
-            blocked_reason = None
-        elif not attended:
-            blocked_reason = "Kehadiran belum disahkan"
-        elif not practice_complete:
-            blocked_reason = "Lengkapkan latihan rakaman 60 minit"
+        history = []
+        active_application = None
+        deadline = None
+        submission_open = True
+        submission_action = "private"
+        assessment_attempt = 1
+        if course:
+            history = db.query(CertificateApplication).filter(
+                CertificateApplication.course_id == course.id,
+                CertificateApplication.student_id == student_id,
+            ).order_by(CertificateApplication.assessment_attempt.asc()).all()
+            active_application = next((row for row in history if row.status == "pending"), None)
+            deadline = course.starts_at + timedelta(days=course.completion_window_days)
+            submission_open = datetime.utcnow() <= deadline
+            assessment_attempt = len(history) + 1
+            if application:
+                can_submit = False
+                blocked_reason = "Rakaman ini telah dihantar kepada Qari"
+            elif not attended:
+                can_submit = False
+                blocked_reason = "Kehadiran belum disahkan"
+            elif not practice_complete:
+                can_submit = False
+                blocked_reason = "Lengkapkan latihan rakaman 60 minit"
+            elif not submission_open:
+                can_submit = False
+                blocked_reason = "Tempoh 30 hari untuk penilaian Qari telah tamat"
+            elif active_application:
+                can_submit = False
+                blocked_reason = "Satu rakaman sedang menunggu semakan Qari"
+            elif history:
+                best_score = max(float(row.score_snapshot or 0) for row in history)
+                if float(analysis.score) <= best_score:
+                    can_submit = False
+                    blocked_reason = "Pilih rakaman dengan markah AI lebih tinggi untuk penilaian semula"
+                else:
+                    can_submit = True
+                    blocked_reason = None
+                    submission_action = "reassessment"
+            else:
+                can_submit = True
+                blocked_reason = None
+                submission_action = "initial"
         else:
+            can_submit = True
             blocked_reason = None
         result.append({
             "session_id": str(session.id),
@@ -929,10 +1026,15 @@ def _competency_eligibility_rows(db: Session, student_id: UUID) -> list[dict]:
             "practice_60_minutes_complete": practice_complete,
             "can_submit": can_submit,
             "blocked_reason": blocked_reason,
-            "payment_required": not bool(course),
+            "payment_required": submission_action in {"private", "reassessment"},
             "payment_status": payment.status if payment else None,
             "payment_token": payment.public_token if payment else None,
             "payment_amount_cents": payment.amount_cents if payment else 1000,
+            "submission_action": submission_action,
+            "assessment_attempt": assessment_attempt,
+            "submission_deadline": deadline.replace(tzinfo=timezone.utc).isoformat() if deadline else None,
+            "submission_open": submission_open,
+            "active_application_id": str(active_application.id) if active_application else None,
         })
     return result
 
@@ -1026,6 +1128,8 @@ def _qari_application_rows(db: Session, qari_id: UUID) -> list[dict]:
         "qari_assessment": row.qari_assessment_json,
         "qari_score": row.qari_score,
         "critical_error": row.critical_error,
+        "assessment_attempt": row.assessment_attempt,
+        "payment_required": row.payment_required,
         "submitted_at": row.submitted_at.isoformat(),
     } for row in rows]
 

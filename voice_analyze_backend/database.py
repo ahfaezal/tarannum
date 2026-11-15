@@ -597,6 +597,10 @@ class CertificateApplication(Base):
     qari_assessment_json = Column(JSON, nullable=True)
     qari_score = Column(Float, nullable=True)
     critical_error = Column(Boolean, nullable=False, default=False)
+    # The first managed-course review is included; later reviews are a paid
+    # reassessment and remain visible in the same audit trail.
+    assessment_attempt = Column(Integer, nullable=False, default=1)
+    payment_required = Column(Boolean, nullable=False, default=False)
     submitted_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     decided_at = Column(DateTime, nullable=True)
 
@@ -611,11 +615,13 @@ class AssessmentPayment(Base):
     student_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     qari_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True)
     reference_id = Column(String, ForeignKey("references.id", ondelete="RESTRICT"), nullable=False)
+    course_id = Column(UUID(as_uuid=True), ForeignKey("courses.id", ondelete="RESTRICT"), nullable=True, index=True)
     session_id = Column(UUID(as_uuid=True), ForeignKey("user_sessions.id", ondelete="RESTRICT"), nullable=False, index=True)
     application_id = Column(UUID(as_uuid=True), ForeignKey("certificate_applications.id", ondelete="SET NULL"), nullable=True, unique=True)
     certificate_type = Column(String, nullable=False)
     amount_cents = Column(Integer, nullable=False, default=1000)
     currency = Column(String, nullable=False, default="MYR")
+    assessment_attempt = Column(Integer, nullable=False, default=1)
     status = Column(String, nullable=False, default="created", index=True)  # created | payment_pending | paid | application_created | payment_failed
     toyyibpay_bill_code = Column(String, nullable=True, index=True)
     toyyibpay_reference_no = Column(String, nullable=True)
@@ -950,6 +956,7 @@ def init_db():
         ensure_promotion_meta_consent_column()
         ensure_student_names_uppercase()
         ensure_course_management_columns()
+        ensure_competency_application_workflow_columns()
         ensure_student_selected_recordings_table()
         ensure_user_profile_columns()
         ensure_student_activity_events_table()
@@ -1016,6 +1023,41 @@ def ensure_course_management_columns():
         conn.execute(text('ALTER TABLE course_enrollments ADD COLUMN IF NOT EXISTS eligibility_overridden_at TIMESTAMP'))
         conn.execute(text('ALTER TABLE course_enrollments ADD COLUMN IF NOT EXISTS eligibility_overridden_by UUID REFERENCES users(id) ON DELETE SET NULL'))
         conn.execute(text('ALTER TABLE certificates ADD COLUMN IF NOT EXISTS publication_released BOOLEAN DEFAULT FALSE NOT NULL'))
+
+
+def ensure_competency_application_workflow_columns():
+    """Upgrade managed-course reviews to an auditable one-selection workflow."""
+    with engine.begin() as conn:
+        conn.execute(text('ALTER TABLE certificate_applications ADD COLUMN IF NOT EXISTS assessment_attempt INTEGER NOT NULL DEFAULT 1'))
+        conn.execute(text('ALTER TABLE certificate_applications ADD COLUMN IF NOT EXISTS payment_required BOOLEAN NOT NULL DEFAULT FALSE'))
+        # Legacy duplicate applications become numbered history instead of
+        # preventing the one free-review uniqueness rule from being added.
+        conn.execute(text("""
+            WITH ranked AS (
+                SELECT id, ROW_NUMBER() OVER (
+                    PARTITION BY course_id, student_id ORDER BY submitted_at ASC, id ASC
+                ) AS attempt
+                FROM certificate_applications
+                WHERE course_id IS NOT NULL
+            )
+            UPDATE certificate_applications application
+            SET assessment_attempt = ranked.attempt,
+                payment_required = (ranked.attempt > 1)
+            FROM ranked
+            WHERE application.id = ranked.id
+        """))
+        conn.execute(text("""
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_course_first_competency_application
+            ON certificate_applications (course_id, student_id)
+            WHERE course_id IS NOT NULL AND assessment_attempt = 1
+        """))
+        conn.execute(text('ALTER TABLE assessment_payments ADD COLUMN IF NOT EXISTS course_id UUID REFERENCES courses(id) ON DELETE RESTRICT'))
+        conn.execute(text('ALTER TABLE assessment_payments ADD COLUMN IF NOT EXISTS assessment_attempt INTEGER NOT NULL DEFAULT 1'))
+        conn.execute(text("""
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_active_course_reassessment_payment
+            ON assessment_payments (course_id, student_id)
+            WHERE course_id IS NOT NULL AND status IN ('created', 'payment_pending', 'paid')
+        """))
 
 
 def _column_exists(conn, table_name: str, column_name: str) -> bool:

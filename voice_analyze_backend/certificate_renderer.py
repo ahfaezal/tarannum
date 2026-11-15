@@ -4,13 +4,18 @@ from __future__ import annotations
 import hashlib
 import io
 import os
+import re
 from datetime import datetime
 from pathlib import Path
 
+import arabic_reshaper
 import qrcode
+from bidi.algorithm import get_display
 from reportlab.lib.colors import Color, HexColor
 from reportlab.lib.pagesizes import A4, landscape
+from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.pdfmetrics import stringWidth
+from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas
 from reportlab.lib.utils import ImageReader
 from PIL import Image
@@ -44,6 +49,63 @@ GRADE_DETAILS = {
     "jayyid": ("JAYYID", "Baik", "grade-jayyid.png"),
 }
 
+ARABIC_FONT_NAME = "TarannumArabic"
+ARABIC_RUN = re.compile(r"[\u0600-\u06ff\u0750-\u077f\u08a0-\u08ff]+")
+_ARABIC_FONT_READY = False
+
+
+def _register_arabic_font() -> bool:
+    """Register the bundled Arabic font once for Qari notes in transcripts."""
+    global _ARABIC_FONT_READY
+    if _ARABIC_FONT_READY:
+        return True
+    font_path = Path(__file__).resolve().parent / "assets" / "NotoNaskhArabic-Regular.ttf"
+    if not font_path.is_file():
+        return False
+    try:
+        pdfmetrics.registerFont(TTFont(ARABIC_FONT_NAME, str(font_path)))
+        _ARABIC_FONT_READY = True
+    except Exception:
+        return False
+    return True
+
+
+def _is_arabic_run(value: str) -> bool:
+    return bool(ARABIC_RUN.fullmatch(value or ""))
+
+
+def _shape_arabic(value: str) -> str:
+    """Shape a single Arabic/Jawi run for ReportLab's left-to-right canvas."""
+    return get_display(arabic_reshaper.reshape(value))
+
+
+def _mixed_text_width(text: str, latin_font: str, arabic_font: str, size: float) -> float:
+    if arabic_font == ARABIC_FONT_NAME and not _register_arabic_font():
+        arabic_font = latin_font
+    return sum(
+        stringWidth(_shape_arabic(part) if (_is_arabic_run(part) and arabic_font == ARABIC_FONT_NAME) else part,
+                    arabic_font if (_is_arabic_run(part) and arabic_font == ARABIC_FONT_NAME) else latin_font, size)
+        for part in re.split(f"({ARABIC_RUN.pattern})", text or "")
+        if part
+    )
+
+
+def _draw_mixed_text(c: canvas.Canvas, text: str, x: float, y: float, *, latin_font: str,
+                     size: float, color=NAVY) -> None:
+    """Draw Malay notes with shaped Arabic/Jawi runs using an embedded font."""
+    arabic_font = ARABIC_FONT_NAME if _register_arabic_font() else latin_font
+    c.setFillColor(color)
+    cursor = x
+    for part in re.split(f"({ARABIC_RUN.pattern})", text or ""):
+        if not part:
+            continue
+        is_arabic = _is_arabic_run(part) and arabic_font == ARABIC_FONT_NAME
+        rendered = _shape_arabic(part) if is_arabic else part
+        font = arabic_font if is_arabic else latin_font
+        c.setFont(font, size)
+        c.drawString(cursor, y, rendered)
+        cursor += stringWidth(rendered, font, size)
+
 
 def _fit_font(text: str, font: str, maximum: float, max_width: float, minimum: float = 12) -> float:
     size = maximum
@@ -58,7 +120,7 @@ def _wrap_text_to_width(text: str, font: str, size: float, max_width: float) -> 
     current = ""
     for word in text.split():
         candidate = f"{current} {word}".strip()
-        if current and stringWidth(candidate, font, size) > max_width:
+        if current and _mixed_text_width(candidate, font, ARABIC_FONT_NAME, size) > max_width:
             lines.append(current)
             current = word
         else:
@@ -351,10 +413,8 @@ def _draw_wrapped(c: canvas.Canvas, text: str, x: float, y: float, width: float,
                   font: str = "Helvetica", size: float = 8.5, leading: float = 11,
                   max_lines: int = 4, color=NAVY) -> float:
     lines = _wrap_text_to_width((text or "").strip(), font, size, width)[:max_lines]
-    c.setFillColor(color)
-    c.setFont(font, size)
     for line in lines:
-        c.drawString(x, y, line)
+        _draw_mixed_text(c, line, x, y, latin_font=font, size=size, color=color)
         y -= leading
     return y
 

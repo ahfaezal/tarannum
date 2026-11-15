@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Award, Bell, CheckCircle2, Download, Loader2, LockKeyhole, RefreshCw } from "lucide-react";
-import { CertificateSummary, CompetencyEligibility, CourseProgress, createPrivateAssessmentCheckout, downloadCertificate, getCertificationNotifications, getCompetencyEligibility, getMyCertificates, getStudentCourseProgress, submitCompetencyApplication } from "../services/certificationService";
+import { CertificateSummary, CompetencyEligibility, CourseProgress, createCourseReassessmentCheckout, createPrivateAssessmentCheckout, downloadCertificate, getCertificationNotifications, getCompetencyEligibility, getMyCertificates, getStudentCourseProgress, submitCompetencyApplication } from "../services/certificationService";
 import { getStudentProfile, StudentProfile } from "../services/authService";
 
 const labels: Record<string, string> = {
@@ -20,6 +20,12 @@ const CertificatesPage: React.FC = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
   const [payingSessionId, setPayingSessionId] = useState<string | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const loadStatus = async () => {
     // Progress recalculation may issue a certificate. Read certificates and
@@ -90,6 +96,13 @@ const CertificatesPage: React.FC = () => {
           const uncreditedCount = item.uncredited_recording_count ?? Math.max(0, attemptedCount - validCount);
           const remainingCount = Math.max(0, item.required_recording_count - validCount);
           const percent = Math.min(100, Math.round(validCount * 100 / Math.max(1, item.required_recording_count)));
+          const millisecondsLeft = new Date(item.deadline).getTime() - now;
+          const expired = millisecondsLeft <= 0 || item.submission_open === false;
+          const totalMinutes = Math.max(0, Math.ceil(millisecondsLeft / 60_000));
+          const daysLeft = Math.floor(totalMinutes / (24 * 60));
+          const hoursLeft = Math.floor((totalMinutes % (24 * 60)) / 60);
+          const minutesLeft = totalMinutes % 60;
+          const urgent = !expired && millisecondsLeft <= 7 * 24 * 60 * 60_000;
           return <article key={item.enrollment_id} className="rounded-2xl border bg-white p-5 shadow-sm">
             <div className="flex items-start justify-between gap-3"><h3 className="font-bold text-slate-900">{item.title}</h3><span className={`rounded-full px-3 py-1 text-xs font-bold ${item.attendance_status === "attended" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>{item.attendance_status === "attended" ? "Hadir disahkan" : "Menunggu kehadiran"}</span></div>
             <div className="mt-4 h-3 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-emerald-600" style={{ width: `${percent}%` }} /></div>
@@ -103,7 +116,10 @@ const CertificatesPage: React.FC = () => {
               {remainingCount === 0 ? `Sasaran ${item.required_recording_count} rakaman sah telah lengkap.` : `Anda memerlukan ${remainingCount} lagi rakaman sah.`}
             </div>
             <p className="mt-3 text-xs leading-5 text-slate-500">Rakaman sah mestilah menggunakan rujukan kursus ini, dibuat dalam tempoh latihan, tidak berulang, mempunyai fail audio dan berdurasi sekurang-kurangnya 80% audio rujukan{item.minimum_recording_duration_seconds ? ` (${Math.ceil(item.minimum_recording_duration_seconds)} saat)` : ""}.</p>
-            <p className="mt-2 text-sm text-slate-500">Tarikh akhir {new Date(item.deadline).toLocaleDateString("ms-MY")}</p>
+            <div className={`mt-4 rounded-xl border p-3 ${expired ? "border-red-200 bg-red-50 text-red-900" : urgent ? "border-amber-200 bg-amber-50 text-amber-950" : "border-emerald-200 bg-emerald-50 text-emerald-950"}`}>
+              <p className="text-xs font-bold uppercase tracking-wide">Tempoh Penilaian Qari</p>
+              {expired ? <><p className="mt-1 font-bold">Tempoh 30 hari telah tamat</p><p className="mt-1 text-xs">Anda masih boleh berlatih dan melihat skor AI, tetapi rakaman baharu tidak boleh dihantar kepada Qari.</p></> : <><p className="mt-1 text-lg font-black tabular-nums">{daysLeft} hari {hoursLeft} jam {minutesLeft} minit</p><p className="mt-1 text-xs">Tamat {new Date(item.deadline).toLocaleString("ms-MY", { dateStyle: "medium", timeStyle: "short" })}. Sila pilih satu rakaman terbaik sebelum tempoh tamat.</p></>}
+            </div>
           </article>;
         })}
       </div>
@@ -111,7 +127,41 @@ const CertificatesPage: React.FC = () => {
 
     <section>
       <h2 className="mb-3 text-xl font-bold text-slate-900">Kelayakan Kompetensi</h2>
-      <div className="space-y-3">{eligibility.length === 0 && <p className="rounded-xl border bg-white p-5 text-slate-500">Belum ada rakaman dengan skor 75 ke atas.</p>}{eligibility.map((item) => <article key={item.session_id} className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border bg-white p-5 shadow-sm"><div><h3 className="font-bold">{item.reference_title}{item.maqam ? ` • ${item.maqam}` : ""}</h3><p className="text-sm text-slate-600">Skor latihan AI {Number(item.score).toFixed(1)}% • {item.application_status ? `Status: ${item.application_status}` : item.payment_required ? "Layak untuk penilaian persendirian Qari" : item.can_submit ? "Hadir dan latihan 60 minit lengkap — layak dihantar kepada Qari" : item.blocked_reason}</p>{item.course_title && <p className="mt-1 text-xs text-slate-500">Kursus: {item.course_title}</p>}{item.payment_required && !item.application_id && <p className="mt-1 text-xs font-semibold text-amber-700">Bayaran RM{((item.payment_amount_cents || 1000) / 100).toFixed(2)} diperlukan sebelum tugasan dihantar kepada qari.</p>}</div>{!item.application_id && item.certificate_type && <button disabled={!item.can_submit || payingSessionId === item.session_id || item.payment_status === 'application_created' || item.payment_status === 'paid'} onClick={async () => { setPayingSessionId(item.session_id); setError(''); try { if (item.payment_required) { const result = await createPrivateAssessmentCheckout(item.session_id, item.certificate_type); if (result.checkout_url) window.location.assign(result.checkout_url); else setEligibility(await getCompetencyEligibility()); } else if (item.course_id) { await submitCompetencyApplication(item.session_id, item.certificate_type, item.course_id); setEligibility(await getCompetencyEligibility()); } } catch (err: any) { setError(err.message || 'Permohonan tidak dapat dihantar.'); setPayingSessionId(null); } }} className="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-bold text-white disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-600">{payingSessionId === item.session_id ? 'Memproses…' : item.payment_required ? (item.payment_status === 'payment_pending' ? 'Sambung bayaran RM10' : 'Bayar RM10 & hantar') : (item.certificate_type === 'competency_azan' ? 'Mohon Kompetensi Azan' : 'Mohon Kompetensi Tarannum')}</button>}</article>)}</div>
+      <p className="mb-3 text-sm text-slate-600">Pilih satu rakaman terbaik untuk semakan Qari. Penilaian pertama termasuk dalam kursus; penilaian semula sukarela bagi rakaman dengan skor lebih tinggi ialah RM10.</p>
+      <div className="space-y-3">
+        {eligibility.length === 0 && <p className="rounded-xl border bg-white p-5 text-slate-500">Belum ada rakaman dengan skor 75 ke atas.</p>}
+        {eligibility.map((item) => {
+          const reassessment = item.submission_action === "reassessment";
+          const isBusy = payingSessionId === item.session_id;
+          const actionLabel = reassessment
+            ? (item.payment_status === "payment_pending" ? "Sambung bayaran RM10" : "Penilaian Semula RM10")
+            : item.payment_required ? (item.payment_status === "payment_pending" ? "Sambung bayaran RM10" : "Bayar RM10 & hantar")
+              : "Pilih rakaman ini";
+          return <article key={item.session_id} className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border bg-white p-5 shadow-sm">
+            <div>
+              <h3 className="font-bold">{item.reference_title}{item.maqam ? ` • ${item.maqam}` : ""}</h3>
+              <p className="text-sm text-slate-600">Skor latihan AI {Number(item.score).toFixed(1)}% • {item.application_status ? `Status: ${item.application_status}` : item.can_submit ? (reassessment ? "Layak untuk penilaian semula" : "Layak dipilih untuk semakan Qari") : item.blocked_reason}</p>
+              {item.course_title && <p className="mt-1 text-xs text-slate-500">Kursus: {item.course_title}{item.assessment_attempt ? ` • Percubaan ${item.assessment_attempt}` : ""}</p>}
+              {reassessment && !item.application_id && <p className="mt-1 text-xs font-semibold text-amber-700">Bayaran RM10 hanya dihantar kepada Qari selepas disahkan.</p>}
+            </div>
+            {!item.application_id && item.certificate_type && <button disabled={!item.can_submit || isBusy || item.payment_status === "application_created" || item.payment_status === "paid"} onClick={async () => {
+              setPayingSessionId(item.session_id); setError("");
+              try {
+                if (reassessment && item.course_id) {
+                  const result = await createCourseReassessmentCheckout(item.session_id, item.certificate_type, item.course_id);
+                  if (result.checkout_url) window.location.assign(result.checkout_url); else setEligibility(await getCompetencyEligibility());
+                } else if (item.payment_required) {
+                  const result = await createPrivateAssessmentCheckout(item.session_id, item.certificate_type);
+                  if (result.checkout_url) window.location.assign(result.checkout_url); else setEligibility(await getCompetencyEligibility());
+                } else if (item.course_id) {
+                  await submitCompetencyApplication(item.session_id, item.certificate_type, item.course_id);
+                  setEligibility(await getCompetencyEligibility());
+                }
+              } catch (err: any) { setError(err.message || "Permohonan tidak dapat dihantar."); setPayingSessionId(null); }
+            }} className="rounded-lg bg-emerald-700 px-3 py-2 text-sm font-bold text-white disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-600">{isBusy ? "Memproses…" : actionLabel}</button>}
+          </article>;
+        })}
+      </div>
     </section>
 
     <section>
