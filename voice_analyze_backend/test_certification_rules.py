@@ -32,6 +32,22 @@ class CertificationRuleTests(unittest.TestCase):
                 notes="   ", assessment=assessment,
             )
 
+    def test_unpaid_reassessment_cannot_be_decided_by_qari(self):
+        qari_id = UUID("00000000-0000-0000-0000-000000000020")
+        application = SimpleNamespace(
+            id=UUID("00000000-0000-0000-0000-000000000021"),
+            qari_id=qari_id,
+            status="pending",
+            payment_required=True,
+        )
+        db = MagicMock()
+        db.query.return_value.filter.return_value.first.return_value = None
+        with self.assertRaisesRegex(ValueError, "bayaran RM10 disahkan"):
+            decide_application(
+                db, application, SimpleNamespace(id=qari_id), "approved",
+                notes="Semakan lengkap.", assessment={},
+            )
+
     def test_completed_enrollment_recovers_missing_attendance_certificate(self):
         completed_at = datetime(2026, 9, 21, 3, 59)
         enrollment = SimpleNamespace(

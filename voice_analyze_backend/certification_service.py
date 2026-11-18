@@ -35,6 +35,7 @@ CEO_TITLE = os.getenv("CERTIFICATE_CEO_TITLE", "Ketua Pegawai Eksekutif")
 CEO_ORGANIZATION = os.getenv("CERTIFICATE_CEO_ORGANIZATION", "Tarannum Technologies")
 VERIFY_BASE_URL = os.getenv("CERTIFICATE_VERIFY_BASE_URL", "https://tarannum.ai/verify")
 VALID_GRADES = {"mumtaz", "jayyid_jiddan", "jayyid"}
+ARCHIVED_APPLICATION_STATUS = "cancelled"
 QARI_RUBRIC_WEIGHTS = {
     "lafaz_completion": 0.15,
     "pronunciation": 0.20,
@@ -391,11 +392,15 @@ def _managed_course_context(db: Session, student: User, session: UserSession,
     return course, enrollment, progress, qari_id
 
 
-def _course_application_history(db: Session, course_id, student_id) -> list[CertificateApplication]:
-    return db.query(CertificateApplication).filter(
+def _course_application_history(db: Session, course_id, student_id,
+                                include_archived: bool = False) -> list[CertificateApplication]:
+    query = db.query(CertificateApplication).filter(
         CertificateApplication.course_id == course_id,
         CertificateApplication.student_id == student_id,
-    ).order_by(CertificateApplication.assessment_attempt.asc(), CertificateApplication.submitted_at.asc()).all()
+    )
+    if not include_archived:
+        query = query.filter(CertificateApplication.status != ARCHIVED_APPLICATION_STATUS)
+    return query.order_by(CertificateApplication.assessment_attempt.asc(), CertificateApplication.submitted_at.asc()).all()
 
 
 def submit_competency_application(db: Session, student: User, session_id, certificate_type: str, course_id=None) -> CertificateApplication:
@@ -419,7 +424,10 @@ def submit_competency_application(db: Session, student: User, session_id, certif
         raise ValueError("Satu rakaman sedang menunggu semakan Qari. Sila tunggu keputusan terlebih dahulu")
     if history:
         raise ValueError("Penilaian seterusnya memerlukan pembayaran RM10")
-    existing = db.query(CertificateApplication).filter(CertificateApplication.session_id == session.id).first()
+    existing = db.query(CertificateApplication).filter(
+        CertificateApplication.session_id == session.id,
+        CertificateApplication.status != ARCHIVED_APPLICATION_STATUS,
+    ).first()
     if existing:
         return existing
     application = CertificateApplication(
@@ -455,7 +463,10 @@ def validate_course_reassessment(db: Session, student: User, session_id, certifi
     analysis = db.query(AnalysisResult).filter(AnalysisResult.user_session_id == session.id).first()
     if not analysis or analysis.score < 75:
         raise ValueError("Markah latihan AI sekurang-kurangnya 75% diperlukan")
-    if db.query(CertificateApplication.id).filter(CertificateApplication.session_id == session.id).first():
+    if db.query(CertificateApplication.id).filter(
+        CertificateApplication.session_id == session.id,
+        CertificateApplication.status != ARCHIVED_APPLICATION_STATUS,
+    ).first():
         raise ValueError("Rakaman ini telah mempunyai permohonan penilaian")
     course, _enrollment, _progress, qari_id = _managed_course_context(
         db, student, session, certificate_type, course_id
@@ -480,24 +491,50 @@ def create_course_reassessment_application(db: Session, payment) -> CertificateA
         db, student, payment.session_id, payment.certificate_type, payment.course_id
     )
     existing = db.query(CertificateApplication).filter(CertificateApplication.session_id == session.id).first()
-    if existing:
+    if existing and existing.status != ARCHIVED_APPLICATION_STATUS:
         payment.application_id = existing.id
         payment.status = "application_created"
         return existing
-    application = CertificateApplication(
-        certificate_type=payment.certificate_type,
-        course_id=course.id,
-        student_id=student.id,
-        qari_id=qari_id,
-        reference_id=session.reference_id,
-        session_id=session.id,
-        score_snapshot=analysis.score,
-        suggested_grade=grade_for_score(analysis.score),
-        assessment_attempt=attempt,
-        payment_required=True,
-        status="pending",
-    )
-    db.add(application)
+    if existing:
+        # A legacy unpaid reassessment may have reserved this session before
+        # the RM10 workflow existed.  Reuse the audited record only after a
+        # verified payment so the session-level uniqueness rule remains true.
+        application = existing
+        application.certificate_type = payment.certificate_type
+        application.course_id = course.id
+        application.student_id = student.id
+        application.qari_id = qari_id
+        application.reference_id = session.reference_id
+        application.score_snapshot = analysis.score
+        application.suggested_grade = grade_for_score(analysis.score)
+        application.assessment_attempt = attempt
+        application.payment_required = True
+        application.status = "pending"
+        application.final_grade = None
+        application.qari_notes = None
+        application.qari_assessment_json = None
+        application.qari_score = None
+        application.critical_error = False
+        application.decided_at = None
+        application.submitted_at = datetime.utcnow()
+        _audit(db, "reactivate_paid_reassessment", "certificate_application", application.id, student.id, {
+            "payment_id": str(payment.id), "assessment_attempt": attempt,
+        })
+    else:
+        application = CertificateApplication(
+            certificate_type=payment.certificate_type,
+            course_id=course.id,
+            student_id=student.id,
+            qari_id=qari_id,
+            reference_id=session.reference_id,
+            session_id=session.id,
+            score_snapshot=analysis.score,
+            suggested_grade=grade_for_score(analysis.score),
+            assessment_attempt=attempt,
+            payment_required=True,
+            status="pending",
+        )
+        db.add(application)
     db.flush()
     payment.application_id = application.id
     payment.status = "application_created"
@@ -510,6 +547,14 @@ def decide_application(db: Session, application: CertificateApplication, qari: U
         raise PermissionError("This application belongs to another Qari")
     if application.status != "pending":
         raise ValueError("This application has already been decided")
+    if getattr(application, "payment_required", False):
+        from database import AssessmentPayment
+        paid = db.query(AssessmentPayment.id).filter(
+            AssessmentPayment.application_id == application.id,
+            AssessmentPayment.status == "application_created",
+        ).first()
+        if not paid:
+            raise ValueError("Penilaian semula hanya boleh dinilai selepas bayaran RM10 disahkan")
     if decision not in {"approved", "rejected", "resubmission_requested"}:
         raise ValueError("Invalid decision")
     qari_score = calculate_qari_score(assessment or {})
@@ -527,14 +572,6 @@ def decide_application(db: Session, application: CertificateApplication, qari: U
                 CourseEnrollment.student_id == application.student_id).first()
             if not enrollment or not recalculate_enrollment(db, enrollment, actor_id=qari.id)['eligible']:
                 raise ValueError('Course attendance and 60 minutes of practice must remain verified')
-            if application.payment_required:
-                from database import AssessmentPayment
-                paid = db.query(AssessmentPayment.id).filter(
-                    AssessmentPayment.application_id == application.id,
-                    AssessmentPayment.status == "application_created",
-                ).first()
-                if not paid:
-                    raise ValueError('Verified RM10 payment is required for this reassessment')
         else:
             from database import AssessmentPayment
             paid = db.query(AssessmentPayment.id).filter(

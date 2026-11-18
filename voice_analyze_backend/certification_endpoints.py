@@ -14,7 +14,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, Query
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
-from sqlalchemy import or_
+from sqlalchemy import exists, or_
 from sqlalchemy.orm import Session
 from PIL import Image
 import qrcode
@@ -958,6 +958,8 @@ def _competency_eligibility_rows(db: Session, student_id: UUID) -> list[dict]:
             if session.created_at <= pair[0].starts_at + timedelta(days=pair[0].completion_window_days)), None)
         course, enrollment = matched if matched else (None, None)
         payment = db.query(AssessmentPayment).filter(AssessmentPayment.session_id == session.id).first()
+        if application and application.status == "cancelled":
+            application = None
         attended = bool(enrollment and enrollment.attendance_status == "attended")
         practice_complete = bool(enrollment and (
             (enrollment.required_recording_count or 0) > 0
@@ -973,6 +975,7 @@ def _competency_eligibility_rows(db: Session, student_id: UUID) -> list[dict]:
             history = db.query(CertificateApplication).filter(
                 CertificateApplication.course_id == course.id,
                 CertificateApplication.student_id == student_id,
+                CertificateApplication.status != "cancelled",
             ).order_by(CertificateApplication.assessment_attempt.asc()).all()
             active_application = next((row for row in history if row.status == "pending"), None)
             deadline = course.starts_at + timedelta(days=course.completion_window_days)
@@ -1112,7 +1115,15 @@ def qari_applications(qari: User = Depends(_professional_qari), db: Session = De
 
 
 def _qari_application_rows(db: Session, qari_id: UUID) -> list[dict]:
-    rows = db.query(CertificateApplication).filter(CertificateApplication.qari_id == qari_id).order_by(CertificateApplication.submitted_at.desc()).all()
+    verified_payment = exists().where(
+        AssessmentPayment.application_id == CertificateApplication.id,
+        AssessmentPayment.status == "application_created",
+    )
+    rows = db.query(CertificateApplication).filter(
+        CertificateApplication.qari_id == qari_id,
+        CertificateApplication.status == "pending",
+        or_(CertificateApplication.payment_required.is_(False), verified_payment),
+    ).order_by(CertificateApplication.submitted_at.desc()).all()
     return [{
         "id": str(row.id),
         "student_id": str(row.student_id),

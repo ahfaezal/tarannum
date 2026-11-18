@@ -592,7 +592,9 @@ class CertificateApplication(Base):
     score_snapshot = Column(Float, nullable=False)
     suggested_grade = Column(String, nullable=False)
     final_grade = Column(String, nullable=True)
-    status = Column(String, nullable=False, default="pending", index=True)  # pending | approved | rejected | resubmission_requested
+    # ``cancelled`` retains legacy/duplicate submissions in the audit trail
+    # without exposing them to a Qari or treating them as an active attempt.
+    status = Column(String, nullable=False, default="pending", index=True)  # pending | approved | rejected | resubmission_requested | cancelled
     qari_notes = Column(Text, nullable=True)
     qari_assessment_json = Column(JSON, nullable=True)
     qari_score = Column(Float, nullable=True)
@@ -1057,6 +1059,63 @@ def ensure_competency_application_workflow_columns():
             CREATE UNIQUE INDEX IF NOT EXISTS uq_active_course_reassessment_payment
             ON assessment_payments (course_id, student_id)
             WHERE course_id IS NOT NULL AND status IN ('created', 'payment_pending', 'paid')
+        """))
+        # Before the RM10 reassessment workflow was enforced, a handful of
+        # managed-course recordings could be submitted directly and leave more
+        # than one unpaid reassessment in a Qari queue.  Keep those records for
+        # audit, but take them out of the actionable queue.  A reassessment is
+        # reviewable only after ToyyibPay has created its linked application.
+        conn.execute(text("""
+            WITH archived AS (
+                UPDATE certificate_applications application
+                SET status = 'cancelled',
+                    decided_at = COALESCE(application.decided_at, CURRENT_TIMESTAMP),
+                    qari_notes = COALESCE(
+                        NULLIF(application.qari_notes, ''),
+                        'Diarkibkan: permohonan penilaian semula lama tanpa bayaran RM10 yang disahkan.'
+                    )
+                WHERE application.status = 'pending'
+                  AND application.payment_required = TRUE
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM assessment_payments payment
+                      WHERE payment.application_id = application.id
+                        AND payment.status = 'application_created'
+                  )
+                RETURNING application.id, application.student_id,
+                    application.course_id, application.assessment_attempt,
+                    application.score_snapshot
+            )
+            INSERT INTO audit_logs (
+                id, action, entity_type, entity_id, user_id,
+                old_values, new_values, created_at
+            )
+            SELECT
+                gen_random_uuid(),
+                'archive_legacy_unpaid_reassessment',
+                'certificate_application',
+                archived.id::text,
+                archived.student_id,
+                jsonb_build_object(
+                    'status', 'pending',
+                    'assessment_attempt', archived.assessment_attempt,
+                    'score_snapshot', archived.score_snapshot
+                ),
+                jsonb_build_object(
+                    'status', 'cancelled',
+                    'reason', 'Legacy reassessment had no verified RM10 payment',
+                    'course_id', archived.course_id
+                ),
+                CURRENT_TIMESTAMP
+            FROM archived
+        """))
+        # No participant may have two Qari decisions waiting at once.  The
+        # legacy cleanup above runs first so the constraint can be introduced
+        # without discarding historical records.
+        conn.execute(text("""
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_course_active_competency_application
+            ON certificate_applications (course_id, student_id)
+            WHERE course_id IS NOT NULL AND status = 'pending'
         """))
 
 
