@@ -19,7 +19,7 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 
-from database import PromotionCampaign, PromotionPaymentAttempt, PromotionRegistration, User, get_db
+from database import PromotionCampaign, PromotionPaymentAttempt, PromotionRegistration, PromotionVoucher, User, get_db
 from auth import get_current_admin_user
 from meta_conversions import send_purchase_event
 
@@ -28,6 +28,7 @@ router = APIRouter(prefix="/api/promotions", tags=["promotions"])
 logger = logging.getLogger(__name__)
 CAMPAIGN_SLUG = "kursus-muazzin-hijjaz-2026"
 PROFESSIONAL_AZAN_SLUG = "kursus-profesional-azan-hijjaz-oktober-2026"
+PROFESSIONAL_AZAN_PUTRAJAYA_SLUG = "kursus-profesional-azan-putrajaya-disember-2026"
 RESERVATION_MINUTES = 60
 MALAYSIA_TZ = ZoneInfo("Asia/Kuala_Lumpur")
 # The 19 September 2026 intake is closed at 20 confirmed participants.
@@ -42,6 +43,7 @@ class RegistrationCreate(BaseModel):
     state: str = Field(default="", max_length=80)
     district: str = Field(default="", max_length=100)
     organization: Optional[str] = Field(default=None, max_length=180)
+    voucher_number: Optional[str] = Field(default=None, max_length=64)
     registration_consent: bool
     marketing_consent: bool = False
     meta_analytics_consent: bool = False
@@ -55,6 +57,16 @@ class RegistrationCreate(BaseModel):
         normalized = re.sub(r"[^0-9+]", "", value)
         if not re.fullmatch(r"(?:\+?6)?01\d{8,9}", normalized):
             raise ValueError("Masukkan nombor telefon Malaysia yang sah")
+        return normalized
+
+    @field_validator("voucher_number")
+    @classmethod
+    def normalize_voucher_number(cls, value: Optional[str]) -> Optional[str]:
+        if not value:
+            return None
+        normalized = re.sub(r"\s+", "", value).upper()
+        if not re.fullmatch(r"[A-Z0-9-]{3,64}", normalized):
+            raise ValueError("Voucher Number tidak sah")
         return normalized
 
 
@@ -135,6 +147,30 @@ def _campaign_payment_settings(campaign: PromotionCampaign) -> dict[str, str]:
                 "Pertanyaan: 019-250 4000\n\nDaripada team,\nTarannum Technologies"
             ),
         }
+    if campaign.slug == PROFESSIONAL_AZAN_PUTRAJAYA_SLUG:
+        return {
+            "category_code": os.getenv(
+                "TOYYIBPAY_PROFESSIONAL_AZAN_PUTRAJAYA_CATEGORY_CODE",
+                os.getenv("TOYYIBPAY_PROFESSIONAL_AZAN_CATEGORY_CODE", "o29hsoks"),
+            ).strip(),
+            "frontend_url": os.getenv(
+                "PROFESSIONAL_AZAN_PUTRAJAYA_FRONTEND_URL",
+                "http://localhost:3000/kursus-profesional-azan-putrajaya",
+            ).rstrip("/"),
+            "bill_name": "Kursus Profesional Azan Putrajaya",
+            "bill_description": "Kursus Profesional Azan menggunakan Sistem Tarannum.ai — 20 Disember 2026",
+            "confirmation": (
+                "Terima kasih. Pembayaran anda telah berjaya dan tempat anda disahkan "
+                "untuk Kursus Profesional Azan menggunakan Sistem Tarannum.ai.\n\n"
+                "Tarikh: 20 Disember 2026\n"
+                "Masa: 8:30 pagi - 4:00 petang\n"
+                "Lokasi: Masjid Tuanku Mizan Zainal Abidin, Putrajaya\n"
+                "Makanan dan minuman disediakan.\n\n"
+                "Sila buka akaun pelajar di https://tarannum.ai sebelum kursus bermula.\n\n"
+                "Maklumat lanjut akan dihantar melalui WhatsApp atau e-mel.\n"
+                "Pertanyaan: 019-250 4000\n\nDaripada team,\nTarannum Technologies"
+            ),
+        }
     return {
         "category_code": os.getenv("TOYYIBPAY_CATEGORY_CODE", "7d359q4h").strip(),
         "frontend_url": _frontend_url(),
@@ -173,7 +209,7 @@ def _create_toyyibpay_bill(campaign: PromotionCampaign, registration: PromotionR
         "billDescription": settings["bill_description"],
         "billPriceSetting": "1",
         "billPayorInfo": "1",
-        "billAmount": str(campaign.price_cents),
+        "billAmount": str(registration.payable_cents or campaign.price_cents),
         "billReturnUrl": f"{settings['frontend_url']}/pembayaran?registration={registration.public_token}",
         "billCallbackUrl": f"{_api_url()}/api/promotions/toyyibpay/callback",
         "billExternalReferenceNo": str(registration.id),
@@ -216,6 +252,25 @@ def _create_toyyibpay_bill(campaign: PromotionCampaign, registration: PromotionR
     return str(result[0]["BillCode"])
 
 
+def _voucher_pricing(
+    db: Session,
+    campaign: PromotionCampaign,
+    voucher_number: Optional[str],
+) -> tuple[int, Optional[str]]:
+    """Validate a voucher on the server; the browser never decides the amount."""
+    if not voucher_number:
+        return campaign.price_cents, None
+    voucher = db.query(PromotionVoucher).filter(
+        PromotionVoucher.campaign_id == campaign.id,
+        PromotionVoucher.code == voucher_number,
+        PromotionVoucher.is_active.is_(True),
+        (PromotionVoucher.expires_at.is_(None)) | (PromotionVoucher.expires_at > datetime.utcnow()),
+    ).with_for_update().first()
+    if not voucher:
+        raise HTTPException(400, "Voucher Number tidak sah atau telah tamat tempoh")
+    return voucher.price_cents, voucher.code
+
+
 @router.get("/{slug}")
 def get_campaign(slug: str, db: Session = Depends(get_db)):
     campaign = _campaign(db, slug)
@@ -239,6 +294,7 @@ def create_registration(slug: str, payload: RegistrationCreate, db: Session = De
         return {"status": registration.status, "registration_token": registration.public_token, "already_paid": True}
     if paid + reserved >= campaign.capacity:
         raise HTTPException(409, "Tempat telah penuh. Sila sertai senarai menunggu.")
+    payable_cents, voucher_number = _voucher_pricing(db, campaign, payload.voucher_number)
     if not registration:
         registration = PromotionRegistration(
             campaign_id=campaign.id,
@@ -251,6 +307,8 @@ def create_registration(slug: str, payload: RegistrationCreate, db: Session = De
     registration.state = payload.state.strip()
     registration.district = payload.district.strip()
     registration.organization = payload.organization.strip() if payload.organization else None
+    registration.voucher_number = voucher_number
+    registration.payable_cents = payable_cents
     registration.registration_consent = True
     registration.marketing_consent = payload.marketing_consent
     registration.meta_analytics_consent = payload.meta_analytics_consent
@@ -278,6 +336,7 @@ def create_registration(slug: str, payload: RegistrationCreate, db: Session = De
         "status": registration.status,
         "registration_token": registration.public_token,
         "checkout_url": f"https://toyyibpay.com/{bill_code}",
+        "payment_amount": payable_cents / 100,
         "reservation_minutes": RESERVATION_MINUTES,
     }
 
@@ -431,6 +490,8 @@ def admin_registrations(
                 "payment_method": "direct" if row.status in {"paid", "account_linked", "attended"} and not row.toyyibpay_bill_code else ("toyyibpay" if row.toyyibpay_bill_code else None),
                 "marketing_consent": row.marketing_consent,
                 "preferred_month": row.preferred_month,
+                "voucher_number": row.voucher_number,
+                "payable_amount": (row.payable_cents or campaign.price_cents) / 100,
                 "paid_at": row.paid_at.isoformat() if row.paid_at else None,
                 "account_linked": row.user_id is not None,
                 "created_at": row.created_at.isoformat(),
@@ -464,7 +525,7 @@ def record_direct_payment(
             raise HTTPException(409, "Tempat kursus telah penuh")
         registration.status = "paid"
         registration.paid_at = datetime.utcnow()
-        registration.payment_amount = campaign.price_cents / 100
+        registration.payment_amount = (registration.payable_cents or campaign.price_cents) / 100
         registration.reservation_expires_at = None
         registration.toyyibpay_bill_code = None
         registration.toyyibpay_reference_no = None

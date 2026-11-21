@@ -7,6 +7,7 @@ interface Registration {
   state: string; district: string; organization: string | null;
   status: string; marketing_consent: boolean; preferred_month: string | null;
   paid_at: string | null; account_linked: boolean; created_at: string; payment_method: "direct" | "toyyibpay" | null;
+  voucher_number?: string | null; payable_amount?: number;
   attribution_source: string; attribution_medium: string | null; attribution_campaign: string | null;
 }
 interface Report {
@@ -31,6 +32,7 @@ const date = (value: string | null) => {
 export default function AdminPromotionRegistrations() {
   const { campaignSlug = "kursus-muazzin-hijjaz-2026" } = useParams();
   const isProfessionalAzan = campaignSlug === "kursus-profesional-azan-hijjaz-oktober-2026";
+  const isPutrajayaProfessionalAzan = campaignSlug === "kursus-profesional-azan-putrajaya-disember-2026";
   const [data, setData] = useState<Report | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -40,7 +42,7 @@ export default function AdminPromotionRegistrations() {
   const [status, setStatus] = useState("all");
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const recordDirectPayment = async (row: Registration) => {
-    if (!window.confirm(`Sahkan bayaran terus RM${data?.campaign.price || (isProfessionalAzan ? 200 : 100)} untuk ${row.full_name}?`)) return;
+    if (!window.confirm(`Sahkan bayaran terus RM${row.payable_amount ?? data?.campaign.price ?? (isProfessionalAzan ? 200 : 100)} untuk ${row.full_name}?`)) return;
     setUpdatingId(row.id); setError("");
     try {
       const response = await fetch(`${import.meta.env.VITE_API_URL || "http://localhost:8000"}/api/promotions/${encodeURIComponent(campaignSlug)}/admin/registrations/${encodeURIComponent(row.id)}/direct-payment`, {
@@ -77,12 +79,13 @@ export default function AdminPromotionRegistrations() {
     <Link to="/admin" className="text-sm font-semibold text-emerald-700">← Dashboard admin</Link>
     <header className="rounded-2xl bg-emerald-950 p-6 text-white">
       <p className="text-sm text-emerald-200">Admin sahaja · Maklumat sulit peserta</p>
-      <h1 className="mt-2 text-2xl font-bold">{isProfessionalAzan ? "Pendaftaran Kursus Profesional Azan" : "Pendaftaran Kursus Pemantapan Muazzin"}</h1>
-      <p className="mt-2">{isProfessionalAzan ? "24 Oktober 2026 · Surau Jumaat Al-Amin, Kuala Lumpur" : "19 September 2026 · Masjid Bandar Seri Putra, Bangi"}</p>
+      <h1 className="mt-2 text-2xl font-bold">{isPutrajayaProfessionalAzan || isProfessionalAzan ? "Pendaftaran Kursus Profesional Azan" : "Pendaftaran Kursus Pemantapan Muazzin"}</h1>
+      <p className="mt-2">{isPutrajayaProfessionalAzan ? "20 Disember 2026 · Masjid Tuanku Mizan Zainal Abidin, Putrajaya" : isProfessionalAzan ? "24 Oktober 2026 · Surau Jumaat Al-Amin, Kuala Lumpur" : "19 September 2026 · Masjid Bandar Seri Putra, Bangi"}</p>
     </header>
     <nav className="flex flex-wrap gap-2" aria-label="Pilih kempen kursus">
-      <Link to="/admin/pendaftaran-kursus" className={`rounded-lg px-4 py-2 text-sm font-semibold ${!isProfessionalAzan ? "bg-emerald-700 text-white" : "border border-emerald-700 text-emerald-800"}`}>19 Sep · Pemantapan Muazzin</Link>
+      <Link to="/admin/pendaftaran-kursus" className={`rounded-lg px-4 py-2 text-sm font-semibold ${!isProfessionalAzan && !isPutrajayaProfessionalAzan ? "bg-emerald-700 text-white" : "border border-emerald-700 text-emerald-800"}`}>19 Sep · Pemantapan Muazzin</Link>
       <Link to="/admin/pendaftaran-kursus/kursus-profesional-azan-hijjaz-oktober-2026" className={`rounded-lg px-4 py-2 text-sm font-semibold ${isProfessionalAzan ? "bg-emerald-700 text-white" : "border border-emerald-700 text-emerald-800"}`}>24 Okt · Profesional Azan</Link>
+      <Link to="/admin/pendaftaran-kursus/kursus-profesional-azan-putrajaya-disember-2026" className={`rounded-lg px-4 py-2 text-sm font-semibold ${isPutrajayaProfessionalAzan ? "bg-emerald-700 text-white" : "border border-emerald-700 text-emerald-800"}`}>20 Dis · Profesional Azan Putrajaya</Link>
     </nav>
     <div className="flex flex-wrap items-center justify-between gap-3">
       <p className="text-sm text-slate-600">{updated && !loading && !error ? `Dikemas kini: ${date(updated)} (waktu Malaysia)` : "Semakan pendaftaran dan bayaran"}</p>
@@ -108,11 +111,12 @@ export default function AdminPromotionRegistrations() {
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
         <table className="w-full min-w-[1000px] text-left text-sm">
           <caption className="sr-only">Senarai pendaftaran kursus dan status pembayaran</caption>
-          <thead className="bg-slate-100"><tr>{["Peserta & hubungan", "Lokasi / organisasi", "Status & akaun", "Tarikh (Malaysia)", "Kursus seterusnya"].map(title => <th scope="col" key={title} className="p-4">{title}</th>)}</tr></thead>
+          <thead className="bg-slate-100"><tr>{["Peserta & hubungan", "Lokasi / organisasi", "Status & akaun", "Bayaran", "Tarikh (Malaysia)", "Kursus seterusnya"].map(title => <th scope="col" key={title} className="p-4">{title}</th>)}</tr></thead>
           <tbody>{rows.map(row => <tr key={row.id} className="border-t border-slate-100 align-top">
             <td className="p-4"><p className="font-bold">{row.full_name}</p><p className="mt-1">{row.phone}</p><p className="break-all">{row.email}</p></td>
             <td className="p-4">{row.district}, {row.state}<p className="mt-1 text-slate-500">{row.organization || "—"}</p></td>
             <td className="p-4"><span className={`inline-block rounded-lg px-2 py-1 font-semibold ${paidStatuses.has(row.status) ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-900"}`}>{labels[row.status] || row.status}</span>{row.payment_method === "direct" && <p className="mt-2 font-bold text-emerald-800">Nota: Bayaran secara terus</p>}<p className="mt-2 text-slate-600">{row.account_linked ? "Akaun dipautkan" : "Akaun belum dipautkan"}</p>{!paidStatuses.has(row.status) && row.status !== "payment_test" && <button type="button" onClick={() => void recordDirectPayment(row)} disabled={updatingId === row.id} className="mt-3 rounded-lg border border-emerald-700 px-3 py-2 font-semibold text-emerald-800 disabled:opacity-50">{updatingId === row.id ? "Merekod…" : "Rekod bayaran terus"}</button>}</td>
+            <td className="p-4"><p className="font-semibold">RM{(row.payable_amount ?? data.campaign.price).toFixed(2)}</p><p className="mt-1 text-slate-500">{row.voucher_number ? `Voucher: ${row.voucher_number}` : "Harga biasa"}</p></td>
             <td className="p-4"><p>Daftar: {date(row.created_at)}</p><p className="mt-2">Bayar: {date(row.paid_at)}</p><p className="mt-2 text-slate-500">Sumber: {row.attribution_source || "unknown"}{row.attribution_campaign ? ` · ${row.attribution_campaign}` : ""}</p></td>
             <td className="p-4"><p>{row.preferred_month || "Tiada pilihan bulan"}</p><p className="mt-2 text-slate-600">Persetujuan promosi: {row.marketing_consent ? "Ya" : "Tidak"}</p></td>
           </tr>)}</tbody>

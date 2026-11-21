@@ -15,6 +15,7 @@ const DemoInteractivePage = lazy(() => import("./views/public/DemoInteractivePag
 const ContactPage = lazy(() => import("./views/public/ContactPage"));
 const MuazzinCoursePage = lazy(() => import("./views/public/MuazzinCoursePage"));
 const ProfessionalAzanCoursePage = lazy(() => import("./views/public/ProfessionalAzanCoursePage"));
+const ProfessionalAzanPutrajayaCoursePage = lazy(() => import("./views/public/ProfessionalAzanPutrajayaCoursePage"));
 const ProgramsPage = lazy(() => import("./views/public/ProgramsPage"));
 const ProgramDetailPage = lazy(() => import("./views/public/ProgramDetailPage"));
 const AchievementsPage = lazy(() => import("./views/public/AchievementsPage"));
@@ -87,6 +88,7 @@ const App: React.FC = () => {
           <Route path="/pencapaian/:slug" element={<AchievementDetailPage />} />
           <Route path="/kursus-pemantapan-muazzin/*" element={<MuazzinCoursePage />} />
           <Route path="/kursus-profesional-azan/*" element={<ProfessionalAzanCoursePage />} />
+          <Route path="/kursus-profesional-azan-putrajaya/*" element={<ProfessionalAzanPutrajayaCoursePage />} />
           <Route path="/verify/:token" element={<VerifyCertificatePage />} />
           <Route path="/:deviceId" element={<AssetPage />} />
           <Route path="/login" element={isAuthenticated ? <Navigate to="/training" replace /> : <Login onSwitchToRegister={() => navigate("/register")} onSuccess={() => navigate(new URLSearchParams(location.search).get("next") || "/training")} />} />

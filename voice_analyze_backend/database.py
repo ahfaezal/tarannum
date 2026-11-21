@@ -5,6 +5,7 @@ import os
 from sqlalchemy import create_engine, Column, String, Integer, Float, Boolean, DateTime, Text, JSON, ForeignKey, UniqueConstraint, LargeBinary, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship, Session, validates
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.dialects.postgresql import UUID
 from datetime import datetime
 from typing import Optional
@@ -530,6 +531,10 @@ class PromotionRegistration(Base):
     paid_at = Column(DateTime, nullable=True, index=True)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     preferred_month = Column(String, nullable=True)
+    # The amount is captured when checkout is created so a later campaign-price
+    # change can never alter an already issued ToyyibPay bill.
+    voucher_number = Column(String(64), nullable=True, index=True)
+    payable_cents = Column(Integer, nullable=True)
     attribution_source = Column(String(80), nullable=True)
     attribution_medium = Column(String(80), nullable=True)
     attribution_campaign = Column(String(160), nullable=True)
@@ -538,6 +543,25 @@ class PromotionRegistration(Base):
 
     campaign = relationship("PromotionCampaign", foreign_keys=[campaign_id])
     user = relationship("User", foreign_keys=[user_id])
+
+
+class PromotionVoucher(Base):
+    """A campaign-bound voucher with an explicit, auditable checkout price."""
+    __tablename__ = "promotion_vouchers"
+    __table_args__ = (
+        UniqueConstraint("campaign_id", "code", name="uq_promotion_voucher_campaign_code"),
+    )
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    campaign_id = Column(UUID(as_uuid=True), ForeignKey("promotion_campaigns.id", ondelete="CASCADE"), nullable=False, index=True)
+    code = Column(String(64), nullable=False)
+    price_cents = Column(Integer, nullable=False)
+    is_active = Column(Boolean, nullable=False, default=True, index=True)
+    expires_at = Column(DateTime, nullable=True, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    campaign = relationship("PromotionCampaign", foreign_keys=[campaign_id])
 
 
 class PromotionPaymentAttempt(Base):
@@ -956,6 +980,8 @@ def init_db():
         ensure_email_otp_columns()
         ensure_promotion_attribution_columns()
         ensure_promotion_meta_consent_column()
+        ensure_promotion_voucher_columns()
+        ensure_professional_azan_putrajaya_campaign()
         ensure_student_names_uppercase()
         ensure_course_management_columns()
         ensure_competency_application_workflow_columns()
@@ -987,6 +1013,56 @@ def ensure_promotion_meta_consent_column():
             "ALTER TABLE promotion_registrations "
             "ADD COLUMN IF NOT EXISTS meta_analytics_consent BOOLEAN NOT NULL DEFAULT FALSE"
         ))
+
+
+def ensure_promotion_voucher_columns():
+    """Keep voucher pricing available on installations created before vouchers."""
+    with engine.begin() as conn:
+        conn.execute(text(
+            "ALTER TABLE promotion_registrations "
+            "ADD COLUMN IF NOT EXISTS voucher_number VARCHAR(64)"
+        ))
+        conn.execute(text(
+            "ALTER TABLE promotion_registrations "
+            "ADD COLUMN IF NOT EXISTS payable_cents INTEGER"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_promotion_registrations_voucher_number "
+            "ON promotion_registrations (voucher_number)"
+        ))
+
+
+def ensure_professional_azan_putrajaya_campaign():
+    """Seed the public 20 December 2026 campaign once, without touching past events."""
+    slug = "kursus-profesional-azan-putrajaya-disember-2026"
+    with SessionLocal() as db:
+        campaign = db.query(PromotionCampaign).filter(PromotionCampaign.slug == slug).first()
+        if campaign:
+            return
+        campaign = PromotionCampaign(
+            slug=slug,
+            title="Kursus Profesional Azan — Putrajaya",
+            starts_at=datetime(2026, 12, 20, 8, 30),
+            capacity=120,
+            price_cents=20000,
+            status="published",
+        )
+        db.add(campaign)
+        db.flush()
+        # This is the organiser voucher for the early-registration offer.
+        db.add(PromotionVoucher(
+            campaign_id=campaign.id,
+            code="MTMZA120",
+            price_cents=12000,
+            is_active=True,
+            expires_at=datetime(2026, 12, 20, 8, 30),
+        ))
+        try:
+            db.commit()
+        except IntegrityError:
+            # Several backend replicas can start together. Another replica may
+            # have inserted the same campaign after the existence check.
+            db.rollback()
 
 
 def ensure_student_names_uppercase():
