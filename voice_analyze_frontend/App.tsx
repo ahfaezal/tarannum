@@ -89,7 +89,6 @@ const App: React.FC = () => {
           <Route path="/kursus-pemantapan-muazzin/*" element={<MuazzinCoursePage />} />
           <Route path="/kursus-profesional-azan/*" element={<ProfessionalAzanCoursePage />} />
           <Route path="/kursus-profesional-azan-putrajaya/*" element={<ProfessionalAzanPutrajayaCoursePage />} />
-          <Route path="/kursus-profesional-azan-putrajaya." element={<ProfessionalAzanPutrajayaCoursePage />} />
           <Route path="/verify/:token" element={<VerifyCertificatePage />} />
           <Route path="/:deviceId" element={<AssetPage />} />
           <Route path="/login" element={isAuthenticated ? <Navigate to="/training" replace /> : <Login onSwitchToRegister={() => navigate("/register")} onSuccess={() => navigate(new URLSearchParams(location.search).get("next") || "/training")} />} />

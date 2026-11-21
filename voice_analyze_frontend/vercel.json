@@ -1,10 +1,6 @@
 {
   "rewrites": [
     {
-      "source": "/kursus-profesional-azan-putrajaya.",
-      "destination": "/professional-azan-putrajaya-promotion.html"
-    },
-    {
       "source": "/kursus-profesional-azan-putrajaya(.*)",
       "destination": "/professional-azan-putrajaya-promotion.html"
     },
