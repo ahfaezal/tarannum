@@ -162,8 +162,11 @@ def _campaign_payment_settings(campaign: PromotionCampaign) -> dict[str, str]:
                 "PROFESSIONAL_AZAN_PUTRAJAYA_FRONTEND_URL",
                 "http://localhost:3000/kursus-profesional-azan-putrajaya",
             ).rstrip("/"),
-            "bill_name": "Kursus Profesional Azan Putrajaya",
-            "bill_description": "Kursus Profesional Azan menggunakan Sistem Tarannum.ai — 20 Disember 2026",
+            # ToyyibPay accepts a bill name of up to 30 alphanumeric characters,
+            # spaces and underscores only.  Keep the public course title on the
+            # registration page, but use this compact API-safe bill label.
+            "bill_name": "Kursus Azan Putrajaya",
+            "bill_description": "Kursus Azan Putrajaya 20 Disember 2026",
             "confirmation": (
                 "Terima kasih. Pembayaran anda telah berjaya dan tempat anda disahkan "
                 "untuk Kursus Profesional Azan menggunakan Sistem Tarannum.ai.\n\n"
