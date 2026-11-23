@@ -194,6 +194,7 @@ struct KidsPackageEvidenceLink: Equatable {
 
 enum KidsAPIError: LocalizedError {
     case invalidCredentials
+    case centralAccountUnavailable
     case accountNotReady(String)
     case studentAccountRequired
     case sessionExpired
@@ -202,6 +203,7 @@ enum KidsAPIError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .invalidCredentials: return "E-mel atau kata laluan tidak tepat."
+        case .centralAccountUnavailable: return "Akaun Tarannum.ai sah, tetapi belum dapat disambungkan kepada Tarannum Kids. Cuba sebentar lagi."
         case .accountNotReady(let message): return message
         case .studentAccountRequired: return "Tarannum Kids memerlukan akaun pelajar Tarannum.ai."
         case .sessionExpired: return "Sesi telah tamat. Sila log masuk semula."
@@ -212,10 +214,11 @@ enum KidsAPIError: LocalizedError {
 
 struct KidsAPIClient {
     private let baseURL = KidsEnvironment.apiBaseURL
+    private let authBaseURL = KidsEnvironment.authBaseURL
     var savedSession: KidsAuthSession? { KidsKeychain.loadSession() }
 
     func login(email: String, password: String) async throws -> KidsAuthSession {
-        var request = URLRequest(url: baseURL.appending(path: "/api/auth/login"))
+        var request = URLRequest(url: authBaseURL.appending(path: "/api/auth/login"))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.timeoutInterval = 20
@@ -223,8 +226,30 @@ struct KidsAPIClient {
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
         guard http.statusCode == 200 else { throw apiError(status: http.statusCode, data: data) }
-        let result = try JSONDecoder().decode(LoginResponse.self, from: data)
+        var result = try JSONDecoder().decode(LoginResponse.self, from: data)
         guard result.role.lowercased() == "student" else { throw KidsAPIError.studentAccountRequired }
+
+        if authBaseURL != baseURL {
+            var exchange = URLRequest(url: baseURL.appending(path: "/api/kids/auth/exchange"))
+            exchange.httpMethod = "POST"
+            exchange.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            exchange.timeoutInterval = 20
+            exchange.httpBody = try JSONEncoder().encode(CentralTokenExchangeRequest(
+                centralAccessToken: result.accessToken
+            ))
+            let (exchangeData, exchangeResponse) = try await URLSession.shared.data(for: exchange)
+            guard let exchangeHTTP = exchangeResponse as? HTTPURLResponse else {
+                throw URLError(.badServerResponse)
+            }
+            guard exchangeHTTP.statusCode == 200 else {
+                if exchangeHTTP.statusCode == 403 {
+                    throw apiError(status: exchangeHTTP.statusCode, data: exchangeData)
+                }
+                throw KidsAPIError.centralAccountUnavailable
+            }
+            result = try JSONDecoder().decode(LoginResponse.self, from: exchangeData)
+        }
+
         let session = KidsAuthSession(accessToken: result.accessToken, email: result.email, fullName: result.fullName)
         try KidsKeychain.save(session)
         return session
@@ -672,6 +697,13 @@ struct KidsAPIClient {
 }
 
 private struct LoginRequest: Encodable { let email: String; let password: String }
+
+private struct CentralTokenExchangeRequest: Encodable {
+    let centralAccessToken: String
+    enum CodingKeys: String, CodingKey {
+        case centralAccessToken = "central_access_token"
+    }
+}
 
 private struct ReferenceListResponse: Decodable { let references: [PracticeReference] }
 

@@ -22,6 +22,7 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         CODE_SIGN_ENTITLEMENTS: Configuration/TarannumKids.entitlements
         KIDS_API_BASE_URL: https://tarannum-production.up.railway.app
+        KIDS_AUTH_BASE_URL: https://tarannum-production.up.railway.app
         KIDS_IQRA_ENABLED: NO
       configs:
         Release:
@@ -37,6 +38,7 @@ targets:
         CFBundleShortVersionString: "1.0"
         CFBundleIconName: AppIcon
         KidsAPIBaseURL: $(KIDS_API_BASE_URL)
+        KidsAuthBaseURL: $(KIDS_AUTH_BASE_URL)
         KidsIqraEnabled: $(KIDS_IQRA_ENABLED)
         ITSAppUsesNonExemptEncryption: false
         UISupportedInterfaceOrientations:

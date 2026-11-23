@@ -68,6 +68,7 @@ jobs:
           -destination "generic/platform=iOS Simulator"
           CODE_SIGNING_ALLOWED=NO
           KIDS_API_BASE_URL="${STAGING_API_BASE_URL:-https://tarannum-production.up.railway.app}"
+          KIDS_AUTH_BASE_URL="https://tarannum-production.up.railway.app"
           KIDS_IQRA_ENABLED="$([ "$ENABLE_IQRA" = "true" ] && echo YES || echo NO)"
           build
       - name: Upload generated project
@@ -143,6 +144,7 @@ jobs:
           -archivePath "$RUNNER_TEMP/TarannumKids.xcarchive"
           CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER"
           KIDS_API_BASE_URL="$STAGING_API_BASE_URL"
+          KIDS_AUTH_BASE_URL="https://tarannum-production.up.railway.app"
           KIDS_IQRA_ENABLED="$([ "$ENABLE_IQRA" = "true" ] && echo YES || echo NO)"
           archive
       - name: Export IPA
