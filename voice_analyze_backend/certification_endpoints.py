@@ -22,6 +22,7 @@ import qrcode
 from auth import get_current_admin_user, get_current_qari_user, get_current_student_user, get_current_user
 from certification_service import (
     certificate_public_payload,
+    course_completion_deadline,
     decide_application,
     recalculate_enrollment,
     required_recording_count,
@@ -155,6 +156,7 @@ def _course_payload(course: Course, reference: Reference) -> dict:
         "location": course.location,
         "required_practice_minutes": round(course.required_practice_seconds / 60),
         "completion_window_days": course.completion_window_days,
+        "completion_deadline": course_completion_deadline(course).isoformat(),
         "status": course.status,
         "join_enabled": bool(course.join_enabled),
         "join_expires_at": course.join_expires_at.isoformat() if course.join_expires_at else None,
@@ -463,7 +465,7 @@ def managed_enrollments(course_id: UUID, user: User = Depends(get_current_user),
     next_local_midnight_utc = datetime.combine(
         local_course_date + timedelta(days=1), datetime.min.time()
     ) - malaysia_offset
-    completion_end = course.starts_at + timedelta(days=course.completion_window_days)
+    completion_end = course_completion_deadline(course)
     for row in rows:
         enrollment = db.query(CourseEnrollment).filter(CourseEnrollment.id == row['id']).first()
         progress = recalculate_enrollment(db, enrollment, actor_id=user.id)
@@ -524,7 +526,7 @@ def managed_course_performance(course_id: UUID, user: User = Depends(get_current
     ).filter(CourseEnrollment.course_id == course_id).order_by(User.full_name.asc()).all()
     student_ids = [enrollment.student_id for enrollment, _ in enrollments]
 
-    completion_end = course.starts_at + timedelta(days=course.completion_window_days)
+    completion_end = course_completion_deadline(course)
     malaysia_offset = timedelta(hours=8)
     local_course_date = (course.starts_at + malaysia_offset).date()
     next_local_midnight_utc = datetime.combine(
@@ -955,7 +957,7 @@ def _competency_eligibility_rows(db: Session, student_id: UUID) -> list[dict]:
             .all()
         )
         matched = next((pair for pair in course_rows
-            if session.created_at <= pair[0].starts_at + timedelta(days=pair[0].completion_window_days)), None)
+            if session.created_at <= course_completion_deadline(pair[0])), None)
         course, enrollment = matched if matched else (None, None)
         payment = db.query(AssessmentPayment).filter(AssessmentPayment.session_id == session.id).first()
         if application and application.status == "cancelled":
@@ -978,7 +980,7 @@ def _competency_eligibility_rows(db: Session, student_id: UUID) -> list[dict]:
                 CertificateApplication.status != "cancelled",
             ).order_by(CertificateApplication.assessment_attempt.asc()).all()
             active_application = next((row for row in history if row.status == "pending"), None)
-            deadline = course.starts_at + timedelta(days=course.completion_window_days)
+            deadline = course_completion_deadline(course)
             submission_open = datetime.utcnow() <= deadline
             assessment_attempt = len(history) + 1
             if application:
@@ -1083,7 +1085,7 @@ def admin_student_flow_preview(user_id: UUID, admin: User = Depends(get_current_
                 valid >= required or bool(enrollment.eligibility_override)
             ),
             "eligibility_override": bool(enrollment.eligibility_override),
-            "deadline": (course.starts_at + timedelta(days=course.completion_window_days)).isoformat(),
+            "deadline": course_completion_deadline(course).isoformat(),
         })
 
     certificates = db.query(Certificate).filter(

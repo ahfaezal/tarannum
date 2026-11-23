@@ -61,6 +61,13 @@ def required_recording_count(required_seconds: int, reference_duration: float) -
     return int(math.ceil(required_seconds / reference_duration))
 
 
+def course_completion_deadline(course: Course) -> datetime:
+    """Return the course-specific cut-off, preserving the default 30-day rule."""
+    return getattr(course, "completion_deadline_at", None) or (
+        course.starts_at + timedelta(days=course.completion_window_days)
+    )
+
+
 def grade_for_score(score: float) -> str:
     """Official Qari grade, separate from the AI practice eligibility gate."""
     if score >= 90:
@@ -257,7 +264,7 @@ def recalculate_enrollment(db: Session, enrollment: CourseEnrollment, actor_id=N
         .all()
     )
 
-    deadline = course.starts_at + timedelta(days=course.completion_window_days)
+    deadline = course_completion_deadline(course)
     unique = []
     attempted_within_window = []
     seen = set()
@@ -355,7 +362,7 @@ def _managed_course_context(db: Session, student: User, session: UserSession,
         raise ValueError("Invalid competency certificate type")
     courses = db.query(Course).filter(Course.reference_id == session.reference_id,
         Course.qari_id.isnot(None), Course.starts_at <= session.created_at).order_by(Course.starts_at.desc()).all()
-    relevant = [c for c in courses if session.created_at <= c.starts_at + timedelta(days=c.completion_window_days)]
+    relevant = [c for c in courses if session.created_at <= course_completion_deadline(c)]
     course = None
     if course_id:
         course = next((c for c in relevant if c.id == _as_uuid(course_id)), None)
@@ -367,7 +374,7 @@ def _managed_course_context(db: Session, student: User, session: UserSession,
         if not course: raise ValueError('Only enrolled course participants may apply for this assessment')
     if not course:
         raise ValueError('Enrollment in a managed course is required for competency assessment')
-    deadline = course.starts_at + timedelta(days=course.completion_window_days)
+    deadline = course_completion_deadline(course)
     if datetime.utcnow() > deadline:
         raise ValueError('Tempoh 30 hari untuk menghantar rakaman kepada Qari telah tamat')
     enrollment = db.query(CourseEnrollment).filter(CourseEnrollment.course_id == course.id,

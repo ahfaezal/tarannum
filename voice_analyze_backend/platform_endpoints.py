@@ -403,7 +403,10 @@ def _create_training_challenge(payload, current_user, db, admin_managed=False):
         course = db.query(Course).filter(Course.id == course_id, Course.qari_id == current_user.id).first()
         if not course or course.reference_id != payload.reference_id:
             raise HTTPException(400, 'Course and Qari reference do not match')
-        if start_at < course.starts_at or end_at > course.starts_at + timedelta(days=course.completion_window_days):
+        course_deadline = getattr(course, "completion_deadline_at", None) or (
+            course.starts_at + timedelta(days=course.completion_window_days)
+        )
+        if start_at < course.starts_at or end_at > course_deadline:
             raise HTTPException(400, 'Live board must be inside the course training window')
         assigned_ids = {row[0] for row in db.query(CourseEnrollment.student_id).join(
             User, User.id == CourseEnrollment.student_id).filter(

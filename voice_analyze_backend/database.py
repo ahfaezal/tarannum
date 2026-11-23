@@ -475,6 +475,9 @@ class Course(Base):
     duration_minutes = Column(Integer, nullable=False, default=360)
     location = Column(String, nullable=True)
     completion_window_days = Column(Integer, nullable=False, default=30)
+    # Optional explicit cut-off for a course.  When unset, the normal
+    # ``starts_at + completion_window_days`` rule remains authoritative.
+    completion_deadline_at = Column(DateTime, nullable=True)
     required_practice_seconds = Column(Integer, nullable=False, default=3600)
     status = Column(String, nullable=False, default="draft", index=True)  # draft | published | completed | archived
     join_code = Column(String(64), unique=True, nullable=True, index=True)
