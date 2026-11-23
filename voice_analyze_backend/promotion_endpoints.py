@@ -149,9 +149,14 @@ def _campaign_payment_settings(campaign: PromotionCampaign) -> dict[str, str]:
         }
     if campaign.slug == PROFESSIONAL_AZAN_PUTRAJAYA_SLUG:
         return {
-            "category_code": os.getenv(
-                "TOYYIBPAY_PROFESSIONAL_AZAN_PUTRAJAYA_CATEGORY_CODE",
-                os.getenv("TOYYIBPAY_PROFESSIONAL_AZAN_CATEGORY_CODE", "o29hsoks"),
+            # Use the active account-level category unless Putrajaya is explicitly
+            # assigned its own category.  The previous fallback pointed at the
+            # October intake's legacy category, which may no longer be active.
+            "category_code": (
+                os.getenv("TOYYIBPAY_PROFESSIONAL_AZAN_PUTRAJAYA_CATEGORY_CODE")
+                or os.getenv("TOYYIBPAY_CATEGORY_CODE")
+                or os.getenv("TOYYIBPAY_PROFESSIONAL_AZAN_CATEGORY_CODE")
+                or "7d359q4h"
             ).strip(),
             "frontend_url": os.getenv(
                 "PROFESSIONAL_AZAN_PUTRAJAYA_FRONTEND_URL",
